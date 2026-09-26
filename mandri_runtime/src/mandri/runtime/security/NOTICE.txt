@@ -1,0 +1,4 @@
+Worker security profiles derive from Moby profiles, copyright The Moby Authors, licensed under Apache License 2.0.
+Source revision: 61eaf32614c7c71b60bd8927d3e6a4ffc8ff1f31
+https://github.com/moby/profiles
+Changes: permit nested user namespaces and mounts for native harness sandbox enforcement.

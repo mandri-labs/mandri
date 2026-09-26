@@ -1,0 +1,54 @@
+PUBLIC_PACKAGE_SCOPES = frozenset(
+    {
+        "angular",
+        "babel",
+        "eslint",
+        "eslint-community",
+        "jest",
+        "playwright",
+        "radix-ui",
+        "rollup",
+        "swc",
+        "tanstack",
+        "testing-library",
+        "types",
+        "typescript-eslint",
+        "vitejs",
+        "vitest",
+    }
+)
+
+PUBLIC_FORGES = frozenset({"github.com", "gitlab.com", "bitbucket.org", "codeberg.org", "sr.ht"})
+PUBLIC_HOSTS = PUBLIC_FORGES | frozenset(
+    {
+        "example.com",
+        "example.org",
+        "example.net",
+        "example.invalid",
+        "localhost",
+        "docs.python.org",
+        "pypi.org",
+        "python.org",
+        "npmjs.com",
+        "registry.npmjs.org",
+        "openai.com",
+        "anthropic.com",
+        "google.com",
+        "wikipedia.org",
+        "stackoverflow.com",
+        "json-schema.org",
+        "www.w3.org",
+        "developer.mozilla.org",
+        "react.dev",
+        "www.typescriptlang.org",
+        "nodejs.org",
+        "vite.dev",
+        "vitest.dev",
+        "playwright.dev",
+        "docs.pytest.org",
+        "www.python-httpx.org",
+        "fastapi.tiangolo.com",
+        "docs.pydantic.dev",
+        "docs.docker.com",
+    }
+)

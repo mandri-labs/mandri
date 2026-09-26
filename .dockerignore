@@ -1,0 +1,17 @@
+.git/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+*.log
+.env
+.env.*
+Dockerfile*
+.dockerignore
+.claude/
+.codex/
+.opencode/
+specs/
+AGENTS.local.md

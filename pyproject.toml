@@ -1,0 +1,218 @@
+[project]
+name = "mandri"
+version = "0.1.0b0"
+description = "Local control plane for AI agents"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Mandri Labs", email = "labs@mandri.io" }]
+requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = [
+    "aiosqlite==0.22.1",
+    "backoff==2.2.1",
+    "claude-agent-sdk==0.2.159",
+    "cryptography==50.0.1",
+    "fastapi==0.141.1",
+    "httpx==0.28.1",
+    "keyring==25.7.0",
+    "litellm==1.99.0",
+    "openai-codex-cli-bin==0.157.0",
+    "orjson>=3.12.0",
+    "psutil==7.2.2",
+    "pydantic==2.13.4",
+    "redis==8.1.0",
+    "rich==15.0.0",
+    "tomlkit==0.15.1",
+    "tzdata==2025.3",
+    "uvicorn==0.52.4",
+    "websockets==17.1",
+]
+
+[project.urls]
+Homepage = "https://mandri.io"
+Download = "https://get.mandri.io"
+
+[project.scripts]
+mandri = "mandri.cli.main:main"
+mandri-daemon = "mandri.daemon.main:main"
+
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+reproducible = true
+dev-mode-dirs = [
+    "mandri_api/src", "mandri_cli/src", "mandri_config/src", "mandri_core/src",
+    "mandri_daemon/src", "mandri_database/src", "mandri_gateway/src",
+    "mandri_providers/src", "mandri_runtime/src", "mandri_sessions/src",
+]
+
+[tool.hatch.build.targets.wheel]
+only-include = [
+    "mandri_api/src/mandri/api",
+    "mandri_cli/src/mandri/cli",
+    "mandri_config/src/mandri/config",
+    "mandri_core/src/mandri/core",
+    "mandri_daemon/src/mandri/daemon",
+    "mandri_database/src/mandri/database",
+    "mandri_gateway/src/mandri/gateway",
+    "mandri_providers/src/mandri/providers",
+    "mandri_runtime/src/mandri/runtime",
+    "mandri_sessions/src/mandri/sessions"
+]
+
+[tool.hatch.build.targets.wheel.sources]
+"mandri_api/src" = ""
+"mandri_cli/src" = ""
+"mandri_config/src" = ""
+"mandri_core/src" = ""
+"mandri_daemon/src" = ""
+"mandri_database/src" = ""
+"mandri_gateway/src" = ""
+"mandri_providers/src" = ""
+"mandri_runtime/src" = ""
+"mandri_sessions/src" = ""
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "pyproject.toml",
+    "README.md",
+    "LICENSE",
+    "mandri_api/src",
+    "mandri_cli/src",
+    "mandri_config/src",
+    "mandri_core/src",
+    "mandri_daemon/src",
+    "mandri_database/src",
+    "mandri_gateway/src",
+    "mandri_providers/src",
+    "mandri_runtime/src",
+    "mandri_sessions/src"
+]
+
+[dependency-groups]
+dev = [
+    "types-psutil==7.2.2.20260906",
+    "mypy==2.3.1",
+    "ruff==0.16.4",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "import-linter==2.14",
+    "build==1.5.0",
+    "twine==7.0.0",
+    "hypothesis>=6.168.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+files = ["mandri_core/src", "mandri_config/src", "mandri_database/src", "mandri_sessions/src", "mandri_providers/src", "mandri_gateway/src", "mandri_runtime/src", "mandri_api/src", "mandri_daemon/src", "mandri_cli/src"]
+mypy_path = ["mandri_core/src", "mandri_config/src", "mandri_database/src", "mandri_sessions/src", "mandri_providers/src", "mandri_gateway/src", "mandri_runtime/src", "mandri_api/src", "mandri_daemon/src", "mandri_cli/src"]
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+cache_dir = "../artifacts/cache/mandri/pytest"
+addopts = "--import-mode=importlib"
+testpaths = ["mandri_*/tests"]
+
+[[tool.mypy.overrides]]
+module = "codex_cli_bin"
+follow_untyped_imports = true
+
+[tool.importlinter]
+root_packages = ["mandri"]
+
+[[tool.importlinter.contracts]]
+name = "Core is independent of all other mandri components"
+type = "forbidden"
+source_modules = ["mandri.core"]
+forbidden_modules = [
+    "mandri.config",
+    "mandri.database",
+    "mandri.sessions",
+    "mandri.providers",
+    "mandri.gateway",
+    "mandri.runtime",
+    "mandri.api",
+    "mandri.daemon",
+]
+
+[[tool.importlinter.contracts]]
+name = "API must not import the daemon"
+type = "forbidden"
+source_modules = ["mandri.api"]
+forbidden_modules = ["mandri.daemon"]
+
+[[tool.importlinter.contracts]]
+name = "Daemon must not import the CLI"
+type = "forbidden"
+source_modules = ["mandri.daemon"]
+forbidden_modules = ["mandri.cli"]
+
+[[tool.importlinter.contracts]]
+name = "CLI must not import the API"
+type = "forbidden"
+source_modules = ["mandri.cli"]
+forbidden_modules = ["mandri.api"]
+
+[[tool.importlinter.contracts]]
+name = "CLI must not import the daemon"
+type = "forbidden"
+source_modules = ["mandri.cli"]
+forbidden_modules = ["mandri.daemon"]
+
+[[tool.importlinter.contracts]]
+name = "CLI must not import the gateway"
+type = "forbidden"
+source_modules = ["mandri.cli"]
+forbidden_modules = ["mandri.gateway"]
+
+[[tool.importlinter.contracts]]
+name = "CLI must not import the runtime"
+type = "forbidden"
+source_modules = ["mandri.cli"]
+forbidden_modules = ["mandri.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "Sessions must not import the gateway"
+type = "forbidden"
+source_modules = ["mandri.sessions"]
+forbidden_modules = ["mandri.gateway"]
+
+[[tool.importlinter.contracts]]
+name = "Providers must not import the gateway"
+type = "forbidden"
+source_modules = ["mandri.providers"]
+forbidden_modules = ["mandri.gateway"]
+
+[[tool.importlinter.contracts]]
+name = "Config must not import the database"
+type = "forbidden"
+source_modules = ["mandri.config"]
+forbidden_modules = ["mandri.database"]
+
+[[tool.importlinter.contracts]]
+name = "Database must not import config"
+type = "forbidden"
+source_modules = ["mandri.database"]
+forbidden_modules = ["mandri.config"]
+
+[[tool.importlinter.contracts]]
+name = "No import cycles across mandri components"
+type = "acyclic_siblings"
+ancestors = ["mandri"]

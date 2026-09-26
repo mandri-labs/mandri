@@ -1,0 +1,5152 @@
+{
+  "asyncapi": "3.1.0",
+  "channels": {
+    "ws": {
+      "address": "/v1/ws",
+      "bindings": {
+        "ws": {
+          "method": "GET"
+        }
+      },
+      "description": "Topic-based websocket feed carrying raw harness events.",
+      "messages": {
+        "agent": {
+          "$ref": "#/components/messages/agent"
+        },
+        "agent.create": {
+          "$ref": "#/components/messages/agent.create"
+        },
+        "agent.create.response": {
+          "$ref": "#/components/messages/agent.create.response"
+        },
+        "agent.history": {
+          "$ref": "#/components/messages/agent.history"
+        },
+        "agent.history.response": {
+          "$ref": "#/components/messages/agent.history.response"
+        },
+        "agent.list": {
+          "$ref": "#/components/messages/agent.list"
+        },
+        "agent.list.response": {
+          "$ref": "#/components/messages/agent.list.response"
+        },
+        "agent.message": {
+          "$ref": "#/components/messages/agent.message"
+        },
+        "agent.message.response": {
+          "$ref": "#/components/messages/agent.message.response"
+        },
+        "agent.stop": {
+          "$ref": "#/components/messages/agent.stop"
+        },
+        "agent.stop.response": {
+          "$ref": "#/components/messages/agent.stop.response"
+        },
+        "agentsAll": {
+          "$ref": "#/components/messages/agentsAll"
+        },
+        "approval.answer": {
+          "$ref": "#/components/messages/approval.answer"
+        },
+        "approval.cancel": {
+          "$ref": "#/components/messages/approval.cancel"
+        },
+        "approval.pending": {
+          "$ref": "#/components/messages/approval.pending"
+        },
+        "approval.resolved": {
+          "$ref": "#/components/messages/approval.resolved"
+        },
+        "command.cancel": {
+          "$ref": "#/components/messages/command.cancel"
+        },
+        "command.cancel.response": {
+          "$ref": "#/components/messages/command.cancel.response"
+        },
+        "command.catalog": {
+          "$ref": "#/components/messages/command.catalog"
+        },
+        "command.catalog.response": {
+          "$ref": "#/components/messages/command.catalog.response"
+        },
+        "command.catalogs": {
+          "$ref": "#/components/messages/command.catalogs"
+        },
+        "command.catalogs.response": {
+          "$ref": "#/components/messages/command.catalogs.response"
+        },
+        "command.get": {
+          "$ref": "#/components/messages/command.get"
+        },
+        "command.get.response": {
+          "$ref": "#/components/messages/command.get.response"
+        },
+        "command.invoke": {
+          "$ref": "#/components/messages/command.invoke"
+        },
+        "command.invoke.response": {
+          "$ref": "#/components/messages/command.invoke.response"
+        },
+        "command.list": {
+          "$ref": "#/components/messages/command.list"
+        },
+        "command.list.response": {
+          "$ref": "#/components/messages/command.list.response"
+        },
+        "control_lost": {
+          "$ref": "#/components/messages/control_lost"
+        },
+        "error": {
+          "$ref": "#/components/messages/error"
+        },
+        "event": {
+          "$ref": "#/components/messages/event"
+        },
+        "execution": {
+          "$ref": "#/components/messages/execution"
+        },
+        "executionsAll": {
+          "$ref": "#/components/messages/executionsAll"
+        },
+        "gap": {
+          "$ref": "#/components/messages/gap"
+        },
+        "gatewayEvents": {
+          "$ref": "#/components/messages/gatewayEvents"
+        },
+        "ping": {
+          "$ref": "#/components/messages/ping"
+        },
+        "pong": {
+          "$ref": "#/components/messages/pong"
+        },
+        "request": {
+          "$ref": "#/components/messages/request"
+        },
+        "response": {
+          "$ref": "#/components/messages/response"
+        },
+        "runtimes": {
+          "$ref": "#/components/messages/runtimes"
+        },
+        "session": {
+          "$ref": "#/components/messages/session"
+        },
+        "session.commands": {
+          "$ref": "#/components/messages/session.commands"
+        },
+        "session.commands.response": {
+          "$ref": "#/components/messages/session.commands.response"
+        },
+        "session.history": {
+          "$ref": "#/components/messages/session.history"
+        },
+        "session.interrupt": {
+          "$ref": "#/components/messages/session.interrupt"
+        },
+        "session.list": {
+          "$ref": "#/components/messages/session.list"
+        },
+        "session.mode": {
+          "$ref": "#/components/messages/session.mode"
+        },
+        "session.prompt": {
+          "$ref": "#/components/messages/session.prompt"
+        },
+        "session_stopped": {
+          "$ref": "#/components/messages/session_stopped"
+        },
+        "sessionsAll": {
+          "$ref": "#/components/messages/sessionsAll"
+        },
+        "snapshot": {
+          "$ref": "#/components/messages/snapshot"
+        },
+        "subscribe": {
+          "$ref": "#/components/messages/subscribe"
+        },
+        "subscribed": {
+          "$ref": "#/components/messages/subscribed"
+        },
+        "unsubscribe": {
+          "$ref": "#/components/messages/unsubscribe"
+        },
+        "unsubscribed": {
+          "$ref": "#/components/messages/unsubscribed"
+        },
+        "usageChanged": {
+          "$ref": "#/components/messages/usageChanged"
+        }
+      },
+      "title": "Live feed"
+    }
+  },
+  "components": {
+    "messages": {
+      "agent": {
+        "description": "Events and transcript updates for a delegated agent.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "approval_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Approval Id"
+            },
+            "deadline": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Deadline"
+            },
+            "decision": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalDecision"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "raw": {
+              "additionalProperties": true,
+              "title": "Raw",
+              "type": "object"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/HarnessKind"
+                },
+                {
+                  "const": "mandri",
+                  "type": "string"
+                }
+              ],
+              "title": "Source"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Type"
+            }
+          },
+          "required": [
+            "raw",
+            "seq",
+            "source",
+            "topic",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "agent.{id}"
+      },
+      "agent.create": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Create an agent when supported by the parent harness.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "agent.create",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/AgentCreateParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "agent.create",
+          "type": "object"
+        },
+        "title": "agent.create"
+      },
+      "agent.create.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AgentCreateResult"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "agent.history": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Read a delegated agent transcript.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "agent.history",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/AgentHistoryParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "agent.history",
+          "type": "object"
+        },
+        "title": "agent.history"
+      },
+      "agent.history.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AgentHistoryResult"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "agent.list": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "List delegated agents and their capabilities.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "agent.list",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/AgentListParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action"
+          ],
+          "title": "agent.list",
+          "type": "object"
+        },
+        "title": "agent.list"
+      },
+      "agent.list.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AgentListResult"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "agent.message": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Send input to an agent when its harness supports it.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "agent.message",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/AgentMessageParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "agent.message",
+          "type": "object"
+        },
+        "title": "agent.message"
+      },
+      "agent.message.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AgentMessageResult"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "agent.stop": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Stop a delegated agent using its native control channel.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "agent.stop",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/AgentStopParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "agent.stop",
+          "type": "object"
+        },
+        "title": "agent.stop"
+      },
+      "agent.stop.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AgentStopResult"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "agentsAll": {
+        "description": "Delegated agent discovery and status changes.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "approval_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Approval Id"
+            },
+            "deadline": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Deadline"
+            },
+            "decision": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalDecision"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "raw": {
+              "additionalProperties": true,
+              "title": "Raw",
+              "type": "object"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/HarnessKind"
+                },
+                {
+                  "const": "mandri",
+                  "type": "string"
+                }
+              ],
+              "title": "Source"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Type"
+            }
+          },
+          "required": [
+            "raw",
+            "seq",
+            "source",
+            "topic",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "agents.all"
+      },
+      "approval.answer": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Answer a pending approval with a harness-native decision.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "approval.answer",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/ApprovalAnswerParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "approval.answer",
+          "type": "object"
+        },
+        "title": "approval.answer"
+      },
+      "approval.cancel": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Cancel a pending approval; the timeout default applies.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "approval.cancel",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/ApprovalCancelParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "approval.cancel",
+          "type": "object"
+        },
+        "title": "approval.cancel"
+      },
+      "approval.pending": {
+        "payload": {
+          "$ref": "#/components/schemas/ApprovalPendingFrame"
+        },
+        "title": "ApprovalPendingFrame"
+      },
+      "approval.resolved": {
+        "payload": {
+          "$ref": "#/components/schemas/ApprovalResolvedFrame"
+        },
+        "title": "ApprovalResolvedFrame"
+      },
+      "command.cancel": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Interrupt a running native command when supported.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "command.cancel",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/CommandGetParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "command.cancel",
+          "type": "object"
+        },
+        "title": "command.cancel"
+      },
+      "command.cancel.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CommandInvocation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "command.catalog": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Read a cached native command catalog for an execution scope.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "command.catalog",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/CommandCatalogParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "command.catalog",
+          "type": "object"
+        },
+        "title": "command.catalog"
+      },
+      "command.catalog.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ScopedCommandCatalog"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "command.catalogs": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Read startup native command catalogs.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "command.catalogs",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/CommandCatalogsParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action"
+          ],
+          "title": "command.catalogs",
+          "type": "object"
+        },
+        "title": "command.catalogs"
+      },
+      "command.catalogs.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CommandCatalogsSnapshot"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "command.get": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Read authoritative command state without replaying it.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "command.get",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/CommandGetParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "command.get",
+          "type": "object"
+        },
+        "title": "command.get"
+      },
+      "command.get.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CommandInvocation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "command.invoke": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Start a native command with an idempotent invocation identity.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "command.invoke",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/CommandInvokeParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "command.invoke",
+          "type": "object"
+        },
+        "title": "command.invoke"
+      },
+      "command.invoke.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CommandInvocation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "command.list": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Recover command invocations for this daemon session.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "command.list",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/CommandSessionParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "command.list",
+          "type": "object"
+        },
+        "title": "command.list"
+      },
+      "command.list.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CommandSnapshot"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "control_lost": {
+        "payload": {
+          "$ref": "#/components/schemas/ControlLostFrame"
+        },
+        "title": "ControlLostFrame"
+      },
+      "error": {
+        "payload": {
+          "$ref": "#/components/schemas/ErrorFrame"
+        },
+        "title": "ErrorFrame"
+      },
+      "event": {
+        "payload": {
+          "$ref": "#/components/schemas/EventFrame"
+        },
+        "title": "EventFrame"
+      },
+      "execution": {
+        "description": "Execution generation and readiness for one session.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "raw": {
+              "$ref": "#/components/schemas/ExecutionEventPayload"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "topic",
+            "seq",
+            "source",
+            "raw",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "execution.{id}"
+      },
+      "executionsAll": {
+        "description": "Session execution preparation and lifecycle changes.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "raw": {
+              "$ref": "#/components/schemas/ExecutionEventPayload"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "topic",
+            "seq",
+            "source",
+            "raw",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "executions.all"
+      },
+      "gap": {
+        "payload": {
+          "$ref": "#/components/schemas/GapFrame"
+        },
+        "title": "GapFrame"
+      },
+      "gatewayEvents": {
+        "description": "Route lifecycle and model swap notifications.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "raw": {
+              "$ref": "#/components/schemas/GatewayEventPayload"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "topic",
+            "seq",
+            "source",
+            "raw",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "gateway.events"
+      },
+      "ping": {
+        "payload": {
+          "$ref": "#/components/schemas/PingFrame"
+        },
+        "title": "PingFrame"
+      },
+      "pong": {
+        "payload": {
+          "$ref": "#/components/schemas/PongFrame"
+        },
+        "title": "PongFrame"
+      },
+      "request": {
+        "payload": {
+          "$ref": "#/components/schemas/RequestFrame"
+        },
+        "title": "RequestFrame"
+      },
+      "response": {
+        "payload": {
+          "$ref": "#/components/schemas/ResponseFrame"
+        },
+        "title": "ResponseFrame"
+      },
+      "runtimes": {
+        "description": "Runtime availability changes (installed, degraded).",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "raw": {
+              "$ref": "#/components/schemas/RuntimePayload"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "topic",
+            "seq",
+            "source",
+            "raw",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "runtimes"
+      },
+      "session": {
+        "description": "Raw harness events for one daemon session id, verbatim.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "approval_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Approval Id"
+            },
+            "deadline": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Deadline"
+            },
+            "decision": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalDecision"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "raw": {
+              "additionalProperties": true,
+              "title": "Raw",
+              "type": "object"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/HarnessKind"
+                },
+                {
+                  "const": "mandri",
+                  "type": "string"
+                }
+              ],
+              "title": "Source"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApprovalStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Type"
+            }
+          },
+          "required": [
+            "raw",
+            "seq",
+            "source",
+            "topic",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "session.{id}"
+      },
+      "session.commands": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Discover native commands from the live harness.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "session.commands",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/CommandSessionParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "session.commands",
+          "type": "object"
+        },
+        "title": "session.commands"
+      },
+      "session.commands.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CommandCatalog"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "session.history": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Read recent stored transcript pages without resuming a session.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "session.history",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/SessionHistoryParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "session.history",
+          "type": "object"
+        },
+        "title": "session.history"
+      },
+      "session.interrupt": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Interrupt the active turn of a running session.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "session.interrupt",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/SessionInterruptParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "session.interrupt",
+          "type": "object"
+        },
+        "title": "session.interrupt"
+      },
+      "session.list": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Read session metadata without starting a harness.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "session.list",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/SessionListParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action"
+          ],
+          "title": "session.list",
+          "type": "object"
+        },
+        "title": "session.list"
+      },
+      "session.mode": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Change the interaction mode of a running session mid-flight.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "session.mode",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/SessionModeParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "session.mode",
+          "type": "object"
+        },
+        "title": "session.mode"
+      },
+      "session.prompt": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Deliver a prompt or steering input to a running session.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "session.prompt",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/SessionPromptParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "session.prompt",
+          "type": "object"
+        },
+        "title": "session.prompt"
+      },
+      "session_stopped": {
+        "payload": {
+          "$ref": "#/components/schemas/SessionStoppedFrame"
+        },
+        "title": "SessionStoppedFrame"
+      },
+      "sessionsAll": {
+        "description": "Session lifecycle snapshots (started, state changed, stopped).",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "raw": {
+              "$ref": "#/components/schemas/SessionLifecyclePayload"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "topic",
+            "seq",
+            "source",
+            "raw",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "sessions.all"
+      },
+      "snapshot": {
+        "payload": {
+          "$ref": "#/components/schemas/SnapshotFrame"
+        },
+        "title": "SnapshotFrame"
+      },
+      "subscribe": {
+        "payload": {
+          "$ref": "#/components/schemas/SubscribeFrame"
+        },
+        "title": "SubscribeFrame"
+      },
+      "subscribed": {
+        "payload": {
+          "$ref": "#/components/schemas/SubscribedAck"
+        },
+        "title": "SubscribedAck"
+      },
+      "unsubscribe": {
+        "payload": {
+          "$ref": "#/components/schemas/UnsubscribeFrame"
+        },
+        "title": "UnsubscribeFrame"
+      },
+      "unsubscribed": {
+        "payload": {
+          "$ref": "#/components/schemas/UnsubscribedAck"
+        },
+        "title": "UnsubscribedAck"
+      },
+      "usageChanged": {
+        "description": "Committed usage statistics invalidation.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "raw": {
+              "$ref": "#/components/schemas/UsageChangedPayload"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "topic",
+            "seq",
+            "source",
+            "raw",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "usage.changed"
+      }
+    },
+    "schemas": {
+      "ActivityState": {
+        "enum": [
+          "active",
+          "idle"
+        ],
+        "title": "ActivityState",
+        "type": "string"
+      },
+      "AgentCapabilities": {
+        "properties": {
+          "message": {
+            "default": false,
+            "title": "Message",
+            "type": "boolean"
+          },
+          "stop": {
+            "default": false,
+            "title": "Stop",
+            "type": "boolean"
+          }
+        },
+        "title": "AgentCapabilities",
+        "type": "object"
+      },
+      "AgentCreateParams": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session identifier (36-char lowercase uuid4)",
+            "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "session_id",
+          "content"
+        ],
+        "title": "AgentCreateParams",
+        "type": "object"
+      },
+      "AgentCreateResult": {
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentView"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "AgentCreateResult",
+        "type": "object"
+      },
+      "AgentHistoryParams": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "title": "AgentHistoryParams",
+        "type": "object"
+      },
+      "AgentHistoryResult": {
+        "properties": {
+          "entries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "entries",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "AgentHistoryResult",
+        "type": "object"
+      },
+      "AgentListParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "description": "Session identifier (36-char lowercase uuid4)",
+                "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          }
+        },
+        "title": "AgentListParams",
+        "type": "object"
+      },
+      "AgentListResult": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentView"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "classified_session_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Classified Session Ids",
+            "type": "array"
+          },
+          "parent_capabilities": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ParentAgentCapabilities"
+            },
+            "title": "Parent Capabilities",
+            "type": "object"
+          }
+        },
+        "required": [
+          "agents",
+          "parent_capabilities"
+        ],
+        "title": "AgentListResult",
+        "type": "object"
+      },
+      "AgentMessageParams": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "content"
+        ],
+        "title": "AgentMessageParams",
+        "type": "object"
+      },
+      "AgentMessageResult": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "accepted"
+        ],
+        "title": "AgentMessageResult",
+        "type": "object"
+      },
+      "AgentState": {
+        "enum": [
+          "running",
+          "waiting",
+          "completed",
+          "failed",
+          "stopped",
+          "unknown"
+        ],
+        "title": "AgentState",
+        "type": "string"
+      },
+      "AgentStopParams": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "title": "AgentStopParams",
+        "type": "object"
+      },
+      "AgentStopResult": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agent_id",
+          "stopped"
+        ],
+        "title": "AgentStopResult",
+        "type": "object"
+      },
+      "AgentView": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/AgentCapabilities"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "integer"
+          },
+          "delegation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delegation Id"
+          },
+          "harness": {
+            "$ref": "#/components/schemas/HarnessKind"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "native_id": {
+            "title": "Native Id",
+            "type": "string"
+          },
+          "parent_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Agent Id"
+          },
+          "parent_session_id": {
+            "title": "Parent Session Id",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AgentState"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Task Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "parent_session_id",
+          "parent_agent_id",
+          "session_id",
+          "native_id",
+          "harness",
+          "title",
+          "state",
+          "delegation_id",
+          "capabilities",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentView",
+        "type": "object"
+      },
+      "ApprovalAnswerParams": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Answers"
+          },
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "updated_input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Updated Input"
+          }
+        },
+        "required": [
+          "approval_id",
+          "decision"
+        ],
+        "title": "ApprovalAnswerParams",
+        "type": "object"
+      },
+      "ApprovalCancelParams": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approval_id"
+        ],
+        "title": "ApprovalCancelParams",
+        "type": "object"
+      },
+      "ApprovalDecision": {
+        "enum": [
+          "allow",
+          "deny",
+          "once",
+          "always",
+          "accept",
+          "acceptForSession",
+          "decline",
+          "cancel"
+        ],
+        "title": "ApprovalDecision",
+        "type": "string"
+      },
+      "ApprovalPendingFrame": {
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Agent Id"
+          },
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "deadline": {
+            "title": "Deadline",
+            "type": "integer"
+          },
+          "raw": {
+            "additionalProperties": true,
+            "title": "Raw",
+            "type": "object"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "integer"
+          },
+          "type": {
+            "const": "approval.pending",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "topic",
+          "seq",
+          "source",
+          "raw",
+          "ts",
+          "approval_id",
+          "deadline",
+          "status"
+        ],
+        "title": "ApprovalPendingFrame",
+        "type": "object"
+      },
+      "ApprovalResolvedFrame": {
+        "properties": {
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decision"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "raw": {
+            "additionalProperties": true,
+            "title": "Raw",
+            "type": "object"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "integer"
+          },
+          "type": {
+            "const": "approval.resolved",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "topic",
+          "seq",
+          "source",
+          "raw",
+          "ts",
+          "approval_id",
+          "outcome"
+        ],
+        "title": "ApprovalResolvedFrame",
+        "type": "object"
+      },
+      "ApprovalStatus": {
+        "enum": [
+          "pending",
+          "answered",
+          "expired",
+          "cancelled"
+        ],
+        "title": "ApprovalStatus",
+        "type": "string"
+      },
+      "CommandCatalog": {
+        "properties": {
+          "commands": {
+            "items": {
+              "$ref": "#/components/schemas/CommandDescriptor"
+            },
+            "title": "Commands",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "commands"
+        ],
+        "title": "CommandCatalog",
+        "type": "object"
+      },
+      "CommandCatalogParams": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
+          },
+          "execution_backend": {
+            "default": "host",
+            "enum": [
+              "host",
+              "docker"
+            ],
+            "title": "Execution Backend",
+            "type": "string"
+          },
+          "force_refresh": {
+            "default": false,
+            "title": "Force Refresh",
+            "type": "boolean"
+          },
+          "harness": {
+            "enum": [
+              "claude",
+              "codex",
+              "agy",
+              "opencode",
+              "pi"
+            ],
+            "title": "Harness",
+            "type": "string"
+          },
+          "privacy_mode": {
+            "default": "none",
+            "enum": [
+              "none",
+              "surrogate"
+            ],
+            "title": "Privacy Mode",
+            "type": "string"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile Id"
+          }
+        },
+        "required": [
+          "harness"
+        ],
+        "title": "CommandCatalogParams",
+        "type": "object"
+      },
+      "CommandCatalogsParams": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "CommandCatalogsParams",
+        "type": "object"
+      },
+      "CommandCatalogsSnapshot": {
+        "properties": {
+          "catalogs": {
+            "items": {
+              "$ref": "#/components/schemas/ScopedCommandCatalog"
+            },
+            "title": "Catalogs",
+            "type": "array"
+          },
+          "default_cwd": {
+            "title": "Default Cwd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default_cwd",
+          "catalogs"
+        ],
+        "title": "CommandCatalogsSnapshot",
+        "type": "object"
+      },
+      "CommandDescriptor": {
+        "properties": {
+          "accepts_arguments": {
+            "default": true,
+            "title": "Accepts Arguments",
+            "type": "boolean"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "argument_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Argument Hint"
+          },
+          "available": {
+            "default": true,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "default": "command",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "CommandDescriptor",
+        "type": "object"
+      },
+      "CommandField": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "CommandField",
+        "type": "object"
+      },
+      "CommandGetParams": {
+        "additionalProperties": false,
+        "properties": {
+          "invocation_id": {
+            "minLength": 1,
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "session_id": {
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "invocation_id"
+        ],
+        "title": "CommandGetParams",
+        "type": "object"
+      },
+      "CommandInvocation": {
+        "properties": {
+          "arguments": {
+            "default": "",
+            "title": "Arguments",
+            "type": "string"
+          },
+          "cancellable": {
+            "default": false,
+            "title": "Cancellable",
+            "type": "boolean"
+          },
+          "command": {
+            "$ref": "#/components/schemas/CommandDescriptor"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommandResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed",
+              "unknown",
+              "interrupted"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "session_id",
+          "command",
+          "state"
+        ],
+        "title": "CommandInvocation",
+        "type": "object"
+      },
+      "CommandInvokeParams": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Arguments",
+            "type": "string"
+          },
+          "command_id": {
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "invocation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "session_id": {
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "invocation_id",
+          "command_id"
+        ],
+        "title": "CommandInvokeParams",
+        "type": "object"
+      },
+      "CommandItem": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "CommandItem",
+        "type": "object"
+      },
+      "CommandResult": {
+        "properties": {
+          "empty_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Empty Message"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/CommandField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommandItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "list",
+              "fields",
+              "notice",
+              "transcript"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CommandResult",
+        "type": "object"
+      },
+      "CommandSessionParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "CommandSessionParams",
+        "type": "object"
+      },
+      "CommandSnapshot": {
+        "properties": {
+          "invocations": {
+            "items": {
+              "$ref": "#/components/schemas/CommandInvocation"
+            },
+            "title": "Invocations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "invocations"
+        ],
+        "title": "CommandSnapshot",
+        "type": "object"
+      },
+      "ControlLostFrame": {
+        "properties": {
+          "raw": {
+            "additionalProperties": true,
+            "title": "Raw",
+            "type": "object"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "integer"
+          },
+          "type": {
+            "const": "control_lost",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "topic",
+          "seq",
+          "source",
+          "raw",
+          "ts"
+        ],
+        "title": "ControlLostFrame",
+        "type": "object"
+      },
+      "ErrorFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "type": {
+            "const": "error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "detail"
+        ],
+        "title": "ErrorFrame",
+        "type": "object"
+      },
+      "EventEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Approval Id"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "raw": {
+            "additionalProperties": true,
+            "title": "Raw",
+            "type": "object"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HarnessKind"
+              },
+              {
+                "const": "mandri",
+                "type": "string"
+              }
+            ],
+            "title": "Source"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "integer"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Type"
+          }
+        },
+        "required": [
+          "source",
+          "raw",
+          "ts"
+        ],
+        "title": "EventEnvelope",
+        "type": "object"
+      },
+      "EventFrame": {
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Agent Id"
+          },
+          "raw": {
+            "additionalProperties": true,
+            "title": "Raw",
+            "type": "object"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "topic",
+          "seq",
+          "source",
+          "raw",
+          "ts"
+        ],
+        "title": "EventFrame",
+        "type": "object"
+      },
+      "ExecutionBackend": {
+        "enum": [
+          "host",
+          "docker"
+        ],
+        "title": "ExecutionBackend",
+        "type": "string"
+      },
+      "ExecutionEventPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Operation Id"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/ExecutionPhase"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Session identifier (36-char lowercase uuid4)",
+            "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "execution.updated",
+            "default": "execution.updated",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "generation",
+          "revision",
+          "phase"
+        ],
+        "title": "ExecutionEventPayload",
+        "type": "object"
+      },
+      "ExecutionPhase": {
+        "enum": [
+          "checking",
+          "preparing_image",
+          "preparing_state",
+          "starting",
+          "ready",
+          "blocked",
+          "failed",
+          "stopping",
+          "stopped"
+        ],
+        "title": "ExecutionPhase",
+        "type": "string"
+      },
+      "GapFrame": {
+        "properties": {
+          "from_seq": {
+            "title": "From Seq",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "type": {
+            "const": "gap",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "topic",
+          "from_seq",
+          "seq",
+          "reason"
+        ],
+        "title": "GapFrame",
+        "type": "object"
+      },
+      "GatewayEventPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "enum": [
+              "route_created",
+              "route_updated",
+              "route_deleted"
+            ],
+            "title": "Event",
+            "type": "string"
+          },
+          "provider_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Provider Name"
+          },
+          "route_id": {
+            "anyOf": [
+              {
+                "description": "Route identifier (36-char lowercase uuid4)",
+                "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Route Id"
+          }
+        },
+        "required": [
+          "event"
+        ],
+        "title": "GatewayEventPayload",
+        "type": "object"
+      },
+      "HarnessKind": {
+        "enum": [
+          "codex",
+          "claude",
+          "opencode",
+          "agy",
+          "pi"
+        ],
+        "title": "HarnessKind",
+        "type": "string"
+      },
+      "ParentAgentCapabilities": {
+        "properties": {
+          "create": {
+            "title": "Create",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "create"
+        ],
+        "title": "ParentAgentCapabilities",
+        "type": "object"
+      },
+      "PingFrame": {
+        "properties": {
+          "type": {
+            "const": "ping",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "PingFrame",
+        "type": "object"
+      },
+      "PongFrame": {
+        "properties": {
+          "type": {
+            "const": "pong",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "PongFrame",
+        "type": "object"
+      },
+      "PrivacyMode": {
+        "enum": [
+          "none",
+          "surrogate"
+        ],
+        "title": "PrivacyMode",
+        "type": "string"
+      },
+      "ProtocolErrorCode": {
+        "enum": [
+          "agent_unsupported",
+          "internal_error",
+          "session_conflict",
+          "harness_store_unavailable",
+          "unknown_action",
+          "session_not_running",
+          "approval_not_pending",
+          "approval_already_answered",
+          "approval_expired",
+          "steer_unsupported",
+          "steer_no_active_turn",
+          "mode_requires_restart",
+          "mode_rejected",
+          "prompt_delivery_failed",
+          "control_delivery_failed",
+          "invalid_params",
+          "duplicate_op_id"
+        ],
+        "title": "ProtocolErrorCode",
+        "type": "string"
+      },
+      "RequestFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "minLength": 1,
+            "title": "Action",
+            "type": "string"
+          },
+          "op_id": {
+            "title": "Op Id",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "type": {
+            "const": "request",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "op_id",
+          "action"
+        ],
+        "title": "RequestFrame",
+        "type": "object"
+      },
+      "ResponseError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtocolErrorCode"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ResponseError",
+        "type": "object"
+      },
+      "ResponseFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResponseError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "op_id": {
+            "title": "Op Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result"
+          },
+          "type": {
+            "const": "response",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "op_id",
+          "ok"
+        ],
+        "title": "ResponseFrame",
+        "type": "object"
+      },
+      "RuntimePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "degraded": {
+            "title": "Degraded",
+            "type": "boolean"
+          },
+          "harness": {
+            "$ref": "#/components/schemas/HarnessKind"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "harness",
+          "installed",
+          "degraded"
+        ],
+        "title": "RuntimePayload",
+        "type": "object"
+      },
+      "ScopedCommandCatalog": {
+        "properties": {
+          "commands": {
+            "items": {
+              "$ref": "#/components/schemas/CommandDescriptor"
+            },
+            "title": "Commands",
+            "type": "array"
+          },
+          "cwd": {
+            "title": "Cwd",
+            "type": "string"
+          },
+          "execution_backend": {
+            "default": "host",
+            "enum": [
+              "host",
+              "docker"
+            ],
+            "title": "Execution Backend",
+            "type": "string"
+          },
+          "harness": {
+            "enum": [
+              "claude",
+              "codex",
+              "agy",
+              "opencode",
+              "pi"
+            ],
+            "title": "Harness",
+            "type": "string"
+          },
+          "privacy_mode": {
+            "default": "none",
+            "enum": [
+              "none",
+              "surrogate"
+            ],
+            "title": "Privacy Mode",
+            "type": "string"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "commands",
+          "harness",
+          "cwd",
+          "state"
+        ],
+        "title": "ScopedCommandCatalog",
+        "type": "object"
+      },
+      "SessionHistoryParams": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Session identifier (36-char lowercase uuid4)",
+            "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "SessionHistoryParams",
+        "type": "object"
+      },
+      "SessionInterruptParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "description": "Session identifier (36-char lowercase uuid4)",
+            "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "SessionInterruptParams",
+        "type": "object"
+      },
+      "SessionLifecyclePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivityState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionStopCause"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "execution_backend": {
+            "$ref": "#/components/schemas/ExecutionBackend",
+            "default": "host"
+          },
+          "harness": {
+            "$ref": "#/components/schemas/HarnessKind"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Activity At"
+          },
+          "policy_revision": {
+            "default": 1,
+            "title": "Policy Revision",
+            "type": "integer"
+          },
+          "privacy_mode": {
+            "$ref": "#/components/schemas/PrivacyMode",
+            "default": "none"
+          },
+          "session_id": {
+            "description": "Session identifier (36-char lowercase uuid4)",
+            "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "type": {
+            "enum": [
+              "session_started",
+              "session_stopped",
+              "session_state",
+              "activity",
+              "control_lost"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "session_id",
+          "harness"
+        ],
+        "title": "SessionLifecyclePayload",
+        "type": "object"
+      },
+      "SessionListParams": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "SessionListParams",
+        "type": "object"
+      },
+      "SessionModeParams": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "minLength": 1,
+            "title": "Mode",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session identifier (36-char lowercase uuid4)",
+            "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "mode"
+        ],
+        "title": "SessionModeParams",
+        "type": "object"
+      },
+      "SessionPromptParams": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Agent"
+          },
+          "attachments": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Attachments",
+            "type": "array"
+          },
+          "content": {
+            "default": "",
+            "title": "Content",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "session_id": {
+            "description": "Session identifier (36-char lowercase uuid4)",
+            "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "SessionPromptParams",
+        "type": "object"
+      },
+      "SessionState": {
+        "enum": [
+          "discovered",
+          "live",
+          "stopped"
+        ],
+        "title": "SessionState",
+        "type": "string"
+      },
+      "SessionStopCause": {
+        "enum": [
+          "idle_timeout",
+          "viewer_stop",
+          "crash",
+          "daemon_stop"
+        ],
+        "title": "SessionStopCause",
+        "type": "string"
+      },
+      "SessionStoppedFrame": {
+        "properties": {
+          "raw": {
+            "additionalProperties": true,
+            "title": "Raw",
+            "type": "object"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "integer"
+          },
+          "type": {
+            "const": "session_stopped",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "topic",
+          "seq",
+          "source",
+          "raw",
+          "ts"
+        ],
+        "title": "SessionStoppedFrame",
+        "type": "object"
+      },
+      "SnapshotFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "runtimes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Runtimes",
+            "type": "array"
+          },
+          "sessions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "type": {
+            "const": "snapshot",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "topic",
+          "sessions",
+          "runtimes"
+        ],
+        "title": "SnapshotFrame",
+        "type": "object"
+      },
+      "SubscribeFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "subscribe",
+            "title": "Op",
+            "type": "string"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Since"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "topic"
+        ],
+        "title": "SubscribeFrame",
+        "type": "object"
+      },
+      "SubscribedAck": {
+        "properties": {
+          "from_seq": {
+            "title": "From Seq",
+            "type": "integer"
+          },
+          "op": {
+            "const": "subscribed",
+            "title": "Op",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "topic",
+          "from_seq"
+        ],
+        "title": "SubscribedAck",
+        "type": "object"
+      },
+      "UnsubscribeFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "unsubscribe",
+            "title": "Op",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "topic"
+        ],
+        "title": "UnsubscribeFrame",
+        "type": "object"
+      },
+      "UnsubscribedAck": {
+        "properties": {
+          "op": {
+            "const": "unsubscribed",
+            "title": "Op",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "topic"
+        ],
+        "title": "UnsubscribedAck",
+        "type": "object"
+      },
+      "UsageChangedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "minimum": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "UsageChangedPayload",
+        "type": "object"
+      }
+    }
+  },
+  "defaultContentType": "application/json",
+  "info": {
+    "description": "Local control-plane daemon unifying coding harnesses.",
+    "title": "Mandri Daemon",
+    "version": "0.1.0b0"
+  },
+  "operations": {
+    "agent.create": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Create an agent when supported by the parent harness.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/agent.create"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/agent.create.response"
+          }
+        ]
+      },
+      "title": "agent.create"
+    },
+    "agent.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/agent"
+        }
+      ],
+      "title": "agent.{id} events"
+    },
+    "agent.history": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Read a delegated agent transcript.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/agent.history"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/agent.history.response"
+          }
+        ]
+      },
+      "title": "agent.history"
+    },
+    "agent.list": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "List delegated agents and their capabilities.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/agent.list"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/agent.list.response"
+          }
+        ]
+      },
+      "title": "agent.list"
+    },
+    "agent.message": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Send input to an agent when its harness supports it.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/agent.message"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/agent.message.response"
+          }
+        ]
+      },
+      "title": "agent.message"
+    },
+    "agent.stop": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Stop a delegated agent using its native control channel.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/agent.stop"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/agent.stop.response"
+          }
+        ]
+      },
+      "title": "agent.stop"
+    },
+    "agent.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to agent.{id}"
+    },
+    "agentsAll.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/agentsAll"
+        }
+      ],
+      "title": "agents.all events"
+    },
+    "agentsAll.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to agents.all"
+    },
+    "approval.answer": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Answer a pending approval with a harness-native decision.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/approval.answer"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/response"
+          }
+        ]
+      },
+      "title": "approval.answer"
+    },
+    "approval.cancel": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Cancel a pending approval; the timeout default applies.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/approval.cancel"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/response"
+          }
+        ]
+      },
+      "title": "approval.cancel"
+    },
+    "command.cancel": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Interrupt a running native command when supported.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/command.cancel"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/command.cancel.response"
+          }
+        ]
+      },
+      "title": "command.cancel"
+    },
+    "command.catalog": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Read a cached native command catalog for an execution scope.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/command.catalog"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/command.catalog.response"
+          }
+        ]
+      },
+      "title": "command.catalog"
+    },
+    "command.catalogs": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Read startup native command catalogs.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/command.catalogs"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/command.catalogs.response"
+          }
+        ]
+      },
+      "title": "command.catalogs"
+    },
+    "command.get": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Read authoritative command state without replaying it.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/command.get"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/command.get.response"
+          }
+        ]
+      },
+      "title": "command.get"
+    },
+    "command.invoke": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Start a native command with an idempotent invocation identity.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/command.invoke"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/command.invoke.response"
+          }
+        ]
+      },
+      "title": "command.invoke"
+    },
+    "command.list": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Recover command invocations for this daemon session.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/command.list"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/command.list.response"
+          }
+        ]
+      },
+      "title": "command.list"
+    },
+    "execution.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/execution"
+        }
+      ],
+      "title": "execution.{id} events"
+    },
+    "execution.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to execution.{id}"
+    },
+    "executionsAll.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/executionsAll"
+        }
+      ],
+      "title": "executions.all events"
+    },
+    "executionsAll.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to executions.all"
+    },
+    "gatewayEvents.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/gatewayEvents"
+        }
+      ],
+      "title": "gateway.events events"
+    },
+    "gatewayEvents.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to gateway.events"
+    },
+    "request": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/request"
+        }
+      ],
+      "title": "Correlated request"
+    },
+    "response": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/response"
+        }
+      ],
+      "title": "Correlated response"
+    },
+    "runtimes.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/runtimes"
+        }
+      ],
+      "title": "runtimes events"
+    },
+    "runtimes.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to runtimes"
+    },
+    "session.commands": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Discover native commands from the live harness.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/session.commands"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/session.commands.response"
+          }
+        ]
+      },
+      "title": "session.commands"
+    },
+    "session.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/session"
+        }
+      ],
+      "title": "session.{id} events"
+    },
+    "session.history": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Read recent stored transcript pages without resuming a session.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/session.history"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/response"
+          }
+        ]
+      },
+      "title": "session.history"
+    },
+    "session.interrupt": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Interrupt the active turn of a running session.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/session.interrupt"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/response"
+          }
+        ]
+      },
+      "title": "session.interrupt"
+    },
+    "session.list": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Read session metadata without starting a harness.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/session.list"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/response"
+          }
+        ]
+      },
+      "title": "session.list"
+    },
+    "session.mode": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Change the interaction mode of a running session mid-flight.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/session.mode"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/response"
+          }
+        ]
+      },
+      "title": "session.mode"
+    },
+    "session.prompt": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Deliver a prompt or steering input to a running session.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/session.prompt"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/response"
+          }
+        ]
+      },
+      "title": "session.prompt"
+    },
+    "session.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to session.{id}"
+    },
+    "sessionsAll.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/sessionsAll"
+        }
+      ],
+      "title": "sessions.all events"
+    },
+    "sessionsAll.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to sessions.all"
+    },
+    "usageChanged.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/usageChanged"
+        }
+      ],
+      "title": "usage.changed events"
+    },
+    "usageChanged.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to usage.changed"
+    }
+  }
+}

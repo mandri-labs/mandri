@@ -1,0 +1,45 @@
+import json
+from typing import Any
+
+from mandri.core.types.approvals import ApprovalRequest
+from mandri.runtime.control.errors import ControlTransportError
+from mandri.runtime.question_answers import valid_question_answers
+
+
+def question_answers(request: ApprovalRequest) -> list[list[str]]:
+    if not valid_question_answers(request.answers):
+        raise ControlTransportError("Native question requires non-empty answers")
+    raw = json.loads(request.native_request)
+    questions = raw.get("properties", {}).get("questions", [])
+    if not isinstance(questions, list) or len(questions) != len(request.answers or []):
+        raise ControlTransportError("Answer every native question before submitting")
+    result: list[list[str]] = []
+    for index, question in enumerate(questions):
+        matches = [
+            answer
+            for answer in request.answers or []
+            if answer["question"] in (str(index), question.get("question"))
+        ]
+        if len(matches) != 1:
+            raise ControlTransportError("Native question answer is ambiguous")
+        values = matches[0]["answers"]
+        if not question.get("multiple", False) and len(values) != 1:
+            raise ControlTransportError("This native question accepts one answer")
+        options = [item.get("label") for item in question.get("options", [])]
+        if question.get("custom") is False and any(value not in options for value in values):
+            raise ControlTransportError("Choose one of the native question options")
+        result.append(values)
+    return result
+
+
+def recovered_inputs(records: Any, event_type: str, session_id: str) -> list[dict[str, Any]]:
+    if not isinstance(records, list):
+        raise ControlTransportError("OpenCode returned invalid pending inputs")
+    events = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        properties = record.get("properties", record)
+        if isinstance(properties, dict) and properties.get("sessionID") == session_id:
+            events.append({"type": event_type, "properties": properties})
+    return events

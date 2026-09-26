@@ -1,0 +1,74 @@
+from pathlib import Path
+from unittest.mock import Mock
+
+import httpx
+import pytest
+from mandri.cli import session_continuation
+from mandri.cli.main import build_parser
+from mandri.cli.run import RunCommand
+from mandri.cli.run_errors import RunError
+from mandri.cli.session_continuation import ForkSessionCommand, ResumeSessionCommand
+from mandri.cli.sessions import StartSessionCommand
+from mandri.cli.types import RunSpec
+from mandri.core.ids import HarnessKind
+
+
+def test_cli_protection_and_permission_fields_are_independent():
+    args = build_parser().parse_args(
+        [
+            "sessions",
+            "start",
+            "--harness",
+            "codex",
+            "--model",
+            "p/model",
+            "--cwd",
+            "/work",
+            "--execution-backend",
+            "docker",
+            "--privacy-mode",
+            "surrogate",
+            "--mode",
+            "full-access",
+        ]
+    )
+    assert StartSessionCommand(args)._body == {
+        "harness": "codex",
+        "model": "p/model",
+        "cwd": "/work",
+        "execution_backend": "docker",
+        "privacy_mode": "surrogate",
+        "mode": "full-access",
+    }
+
+
+def test_cli_resume_does_not_accept_policy_changes():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["sessions", "resume", "session-one", "--privacy-mode", "none"])
+
+
+@pytest.mark.parametrize("action", ["resume", "fork"])
+def test_continuation_uses_daemon_native_session_operation(monkeypatch, action, tmp_path):
+    argv = ["sessions", action, "session-one", "--base-dir", str(tmp_path)]
+    if action == "fork":
+        argv.extend(["--execution-backend", "host", "--privacy-mode", "surrogate"])
+    args = build_parser().parse_args(argv)
+    request = Mock(return_value=httpx.Response(200, json={"id": "session-two"}))
+    monkeypatch.setattr(session_continuation, "request", request)
+    monkeypatch.setattr(session_continuation, "resolve_base_url", lambda base: "http://daemon")
+    command = ForkSessionCommand(args) if action == "fork" else ResumeSessionCommand(args)
+    assert command.run() == 0
+    assert request.call_args.args == ("POST", f"http://daemon/v1/sessions/session-one/{action}")
+    assert request.call_args.kwargs["body"] == (
+        {"execution_backend": "host", "privacy_mode": "surrogate"} if action == "fork" else {}
+    )
+
+
+def test_foreground_run_cannot_silently_ignore_protected_defaults(monkeypatch, tmp_path: Path):
+    (tmp_path / "config.toml").write_text('[defaults]\nprivacy_mode = "surrogate"\n')
+    command = RunCommand(RunSpec(HarnessKind.CODEX, "provider/model", tmp_path))
+    launch = Mock(side_effect=AssertionError("No real harness may run in this test"))
+    monkeypatch.setattr(command, "_resolve_binary", launch)
+    with pytest.raises(RunError, match="managed execution"):
+        command.run()
+    launch.assert_not_called()

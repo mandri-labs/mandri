@@ -128,4 +128,6 @@ jobs:
         with:
           version: 0.11.24
           python-version: '3.13'
+      - name: Wait for PyPI index propagation
+        run: sleep 300
       - run: uv run --no-project --python 3.13 python scripts/install_distribution.py pypi

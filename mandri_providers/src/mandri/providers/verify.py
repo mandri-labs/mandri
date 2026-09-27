@@ -56,7 +56,17 @@ def _redact(api_key: str, reason: str) -> str:
 
 def models_endpoint(kind: ProviderKind, api_base: Url | None) -> str:
     base = (api_base if api_base is not None else DEFAULT_PROVIDER_BASES[kind]).rstrip("/")
+    if kind is ProviderKind.LM_STUDIO:
+        return lm_studio_base(base) + "/api/v1/models"
     return base + _MODELS_PATHS[kind]
+
+
+def lm_studio_base(base: str) -> str:
+    base = base.rstrip("/")
+    for suffix in ("/api/v1", "/api/v0", "/v1"):
+        if base.endswith(suffix):
+            return base[: -len(suffix)]
+    return base
 
 
 def models_headers(kind: ProviderKind, api_key: str) -> dict[str, str]:

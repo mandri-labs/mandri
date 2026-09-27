@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from mandri.api.deps import GatewayWiring, gateway_wiring, http_client, providers_registry
 from mandri.core.ids import ProviderKind, SecretRef, Url
 from mandri.gateway.reasoning_catalog import ReasoningCatalog, ReasoningInfo
@@ -13,6 +14,13 @@ PAYLOAD = {"data": [{"id": "gpt-5"}, {"id": "gpt-mini"}]}
 CATALOG = ReasoningCatalog(
     {(PROVIDER_NAME, "gpt-5"): ReasoningInfo(efforts=["low", "high"], default_effort="low")}
 )
+UNKNOWN = {
+    "display_name": None,
+    "image_input": None,
+    "tool_call": None,
+    "reasoning_supported": None,
+    "input_modalities": None,
+}
 
 
 class StubHttp:
@@ -54,8 +62,14 @@ def test_provider_models_include_catalog_reasoning(make_client) -> None:
     response = client.get(f"/v1/providers/{PROVIDER_NAME}/models")
     assert response.status_code == 200
     assert response.json() == [
-        {"id": "gpt-5", "reasoning_efforts": ["low", "high"], "default_effort": "low"},
-        {"id": "gpt-mini", "reasoning_efforts": [], "default_effort": None},
+        {
+            **UNKNOWN,
+            "id": "gpt-5",
+            "reasoning_efforts": ["low", "high"],
+            "default_effort": "low",
+            "reasoning_supported": True,
+        },
+        {**UNKNOWN, "id": "gpt-mini", "reasoning_efforts": [], "default_effort": None},
     ]
 
 
@@ -65,6 +79,81 @@ def test_provider_models_without_catalog_has_empty_reasoning(make_client) -> Non
     response = client.get(f"/v1/providers/{PROVIDER_NAME}/models")
     assert response.status_code == 200
     assert response.json() == [
-        {"id": "gpt-5", "reasoning_efforts": [], "default_effort": None},
-        {"id": "gpt-mini", "reasoning_efforts": [], "default_effort": None},
+        {**UNKNOWN, "id": "gpt-5", "reasoning_efforts": [], "default_effort": None},
+        {**UNKNOWN, "id": "gpt-mini", "reasoning_efforts": [], "default_effort": None},
     ]
+
+
+@pytest.mark.parametrize("suffix", ["", "/", "/v1", "/api/v1", "/api/v0/"])
+def test_lm_studio_native_catalog_exposes_models_and_capabilities(make_client, suffix):
+    class LocalProviders:
+        def get(self, name):
+            return Provider(
+                name,
+                ProviderKind.LM_STUDIO,
+                Url(f"http://localhost:1234{suffix}"),
+                SecretRef(""),
+                ProviderState.VERIFIED,
+            )
+
+    class LocalHttp:
+        async def get(self, url, **kwargs):
+            assert url == "http://localhost:1234/api/v1/models"
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "models": [
+                        {
+                            "key": "org/local-model",
+                            "type": "llm",
+                            "display_name": "Local Model",
+                            "capabilities": {
+                                "vision": True,
+                                "trained_for_tool_use": True,
+                                "reasoning": {"allowed_options": ["off", "on"], "default": "on"},
+                            },
+                        },
+                        {"key": "embed", "type": "embedding"},
+                    ]
+                },
+            )
+
+    client = make_client(
+        {
+            gateway_wiring: lambda: GatewayWiring(
+                registry=object(), openai=object(), anthropic=object()
+            ),
+            providers_registry: LocalProviders,
+            http_client: LocalHttp,
+        }
+    )
+    response = client.get("/v1/providers/local/models")
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": "org/local-model",
+            "display_name": "Local Model",
+            "image_input": True,
+            "tool_call": True,
+            "reasoning_supported": True,
+            "input_modalities": None,
+            "reasoning_efforts": ["off", "on"],
+            "default_effort": "on",
+        }
+    ]
+
+
+@pytest.mark.parametrize("payload", [{"error": "Unexpected endpoint"}, {}, [], {"data": None}])
+def test_invalid_catalog_is_not_reported_as_empty(make_client, payload):
+    client = make_client(
+        {
+            gateway_wiring: lambda: GatewayWiring(
+                registry=object(), openai=object(), anthropic=object()
+            ),
+            providers_registry: StubProviders,
+            http_client: lambda: StubHttp(payload),
+        }
+    )
+    response = client.get("/v1/providers/acme/models")
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "provider_models_failed"

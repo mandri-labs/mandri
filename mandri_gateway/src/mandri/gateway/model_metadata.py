@@ -5,27 +5,13 @@ from typing import Any
 import httpx
 from mandri.core.ids import ProviderKind, Url
 from mandri.core.model_metadata import ModelMetadata as ModelMetadata
+from mandri.gateway.catalog_enrichment import enrich_entries
 from mandri.gateway.model_capabilities import metadata_capabilities
+from mandri.providers.catalog import model_entries
+from mandri.providers.refs import MODEL_REF_PREFIXES
+from mandri.providers.verify import models_endpoint, models_headers
 
 _TIMEOUT_SECONDS = 10.0
-_DEFAULT_BASES: dict[ProviderKind, str] = {
-    ProviderKind.OPENROUTER: "https://openrouter.ai/api",
-    ProviderKind.OPENCODE: "https://opencode.ai/zen/v1",
-    ProviderKind.OPENCODE_GO: "https://opencode.ai/zen/go/v1",
-    ProviderKind.OPENAI: "https://api.openai.com/v1",
-}
-_MODELS_PATHS: dict[ProviderKind, str] = {
-    ProviderKind.OPENROUTER: "/v1/models",
-    ProviderKind.OPENCODE: "/models",
-    ProviderKind.OPENCODE_GO: "/models",
-    ProviderKind.OPENAI: "/models",
-}
-_MODEL_REF_PREFIXES: dict[ProviderKind, str] = {
-    ProviderKind.OPENROUTER: "openrouter/",
-    ProviderKind.OPENCODE: "custom_openai/",
-    ProviderKind.OPENCODE_GO: "custom_openai/",
-    ProviderKind.OPENAI: "openai/",
-}
 
 
 def openrouter_reasoning_efforts(entry: dict[str, Any]) -> tuple[str, ...]:
@@ -58,7 +44,8 @@ def _openai_compatible_entry(entry: dict[str, Any]) -> ModelMetadata:
     limits = limits if isinstance(limits, dict) else {}
     return ModelMetadata(
         context_window=_limit(
-            entry.get("context_length", limits.get("context")), ModelMetadata().context_window
+            entry.get("context_length", entry.get("max_context_length", limits.get("context"))),
+            ModelMetadata().context_window,
         ),
         output_tokens=_limit(
             entry.get("max_output_tokens", limits.get("output")), ModelMetadata().output_tokens
@@ -82,10 +69,12 @@ def _hosted_web_search(entry: dict[str, Any]) -> bool:
 
 
 def _parse(kind: ProviderKind, payload: Any, model_id: str) -> ModelMetadata | None:
-    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+    try:
+        entries = model_entries(kind, payload)
+    except ValueError:
         return None
-    for entry in payload["data"]:
-        if not isinstance(entry, dict) or entry.get("id") != model_id:
+    for entry in entries:
+        if entry["id"] != model_id:
             continue
         if kind is ProviderKind.OPENROUTER:
             return _openrouter_entry(entry)
@@ -93,26 +82,33 @@ def _parse(kind: ProviderKind, payload: Any, model_id: str) -> ModelMetadata | N
     return None
 
 
-def _bare_id(model_ref: str) -> str:
-    for prefix in _MODEL_REF_PREFIXES.values():
-        if model_ref.startswith(prefix):
-            return model_ref[len(prefix) :]
-    return model_ref
+def _bare_id(kind: ProviderKind, model_ref: str) -> str:
+    return model_ref.removeprefix(MODEL_REF_PREFIXES[kind])
 
 
 async def fetch(
     kind: ProviderKind, model_ref: str, api_base: Url | None, api_key: str
 ) -> ModelMetadata | None:
-    path = _MODELS_PATHS.get(kind)
-    if path is None:
+    if api_base is None and kind in (
+        ProviderKind.LM_STUDIO,
+        ProviderKind.OLLAMA,
+        ProviderKind.CUSTOM,
+    ):
         return None
-    base = str(api_base) if api_base is not None else _DEFAULT_BASES[kind]
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    headers = models_headers(kind, api_key)
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            response = await client.get(base.rstrip("/") + path, headers=headers)
+            response = await client.get(models_endpoint(kind, api_base), headers=headers)
             response.raise_for_status()
             payload = response.json()
+            entries = await enrich_entries(kind, model_entries(kind, payload), client)
     except (httpx.HTTPError, ValueError):
         return None
-    return _parse(kind, payload, _bare_id(model_ref))
+    for entry in entries:
+        if entry["id"] == _bare_id(kind, model_ref):
+            return (
+                _openrouter_entry(entry)
+                if kind is ProviderKind.OPENROUTER
+                else _openai_compatible_entry(entry)
+            )
+    return None

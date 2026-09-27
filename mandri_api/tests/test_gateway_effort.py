@@ -121,6 +121,25 @@ def test_model_metadata_includes_governed_reasoning(make_client, monkeypatch) ->
     }
 
 
+def test_model_metadata_resolves_a_named_provider(make_client, monkeypatch) -> None:
+    async def fake_fetch(kind: Any, model_ref: str, api_base: Any, api_key: str) -> ModelMetadata:
+        assert model_ref == "openrouter/anthropic/claude-4"
+        return ModelMetadata(image_input=True)
+
+    monkeypatch.setattr(gateway_router, "fetch_model_metadata", fake_fetch)
+    client = make_client(
+        {
+            gateway_wiring: lambda: make_wiring(StubRegistry(), None),
+            providers_registry: StubProviders,
+        }
+    )
+    response = client.get(
+        "/v1/gateway/model-metadata", params={"model": "my-provider/anthropic/claude-4"}
+    )
+    assert response.status_code == 200
+    assert response.json()["image_input"] is True
+
+
 def test_model_metadata_without_catalog_has_null_reasoning(make_client, monkeypatch) -> None:
     wiring = make_wiring(StubRegistry(), None)
 

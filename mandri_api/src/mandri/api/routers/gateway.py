@@ -42,7 +42,7 @@ from mandri.gateway.usage import UsageCollector, UsageStream, collect_call
 from mandri.gateway.usage_attribution import UsageAttribution
 from mandri.gateway.usage_context import request_modality
 from mandri.providers.errors import ProviderInvalidError, ProviderNotFoundError
-from mandri.providers.service import Provider, parse_model_arg, split_model_ref
+from mandri.providers.service import Provider, parse_model_arg, provider_model_ref, split_model_ref
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
@@ -379,7 +379,10 @@ async def _serve_model_metadata(
     except ProviderNotFoundError as error:
         raise ApiError(code="provider_not_found", message=str(error), status=404) from None
     metadata = await fetch_model_metadata(
-        provider.kind, f"{provider_name}/{model_id}", provider.api_base, str(provider.api_key)
+        provider.kind,
+        provider_model_ref(provider.kind, model_id),
+        provider.api_base,
+        str(provider.api_key),
     )
     if metadata is None:
         raise ApiError(

@@ -24,20 +24,22 @@ _SLOW_CONSUMER_REASON = "slow_consumer"
 class ClaudeLivenessAdapter:
     """Feeds the liveness port from an internal subscription to one session topic."""
 
-    def __init__(self, hub: Hub, topic: Topic, port: LivenessPort, session_id: SessionId) -> None:
+    def __init__(
+        self, hub: Hub, topic: Topic, port: LivenessPort, session_id: SessionId, *, since: int = 0
+    ) -> None:
         self._hub = hub
         self._topic = topic
         self._port = port
         self._session_id = session_id
         self._handle: SubscriberHandle | None = None
         self._task: asyncio.Task[None] | None = None
-        self._last_seq = 0
+        self._last_seq = since
         self._turn_active = False
         self._stopped = False
 
     def start(self) -> None:
         self._stopped = False
-        self._handle = self._hub.subscribe(self._topic, since=0, internal=True)
+        self._handle = self._hub.subscribe(self._topic, since=self._last_seq, internal=True)
         self._task = asyncio.get_running_loop().create_task(
             self._consume(), name=f"liveness-claude:{self._session_id}"
         )

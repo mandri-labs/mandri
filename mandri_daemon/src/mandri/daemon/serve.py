@@ -191,8 +191,10 @@ def _opencode_adapters(context: AdapterContext) -> HarnessAdapters | None:
 def _stdio_adapters(context: AdapterContext) -> HarnessAdapters | None:
     if context.process is None or context.hub is None or context.topic is None:
         return None
-    lines = HubEventLines(context.hub, context.topic, context.kind.value)
-    stdout_pump = LinePump(lines.chunks)
+    lines = HubEventLines(
+        context.hub, context.topic, context.kind.value, since=context.feed_start_seq
+    )
+    stdout_pump = LinePump(lines.chunks, limit=None, on_close=lines.close)
     stdin = ProcessStdinSink(context.process)
     control: HarnessControl
     delivery: ApprovalDelivery

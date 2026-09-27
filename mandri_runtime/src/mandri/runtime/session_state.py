@@ -44,6 +44,7 @@ class SessionRuntimeState:
     control: HarnessControl | None = None
     delivery: ApprovalDelivery | None = None
     feed: SessionFeed | None = None
+    feed_start_seq: int = 0
     watcher: ApprovalWatcher | None = None
     liveness_adapter: LivenessAdapter | None = None
     identity_task: asyncio.Task[HarnessSessionId | None] | None = None

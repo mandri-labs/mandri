@@ -43,6 +43,8 @@ class CodexLivenessAdapter:
         port: LivenessPort,
         session_id: SessionId,
         native_identity: Callable[[], str | None] | None = None,
+        *,
+        since: int = 0,
     ) -> None:
         self._hub = hub
         self._topic = topic
@@ -51,7 +53,7 @@ class CodexLivenessAdapter:
         self._native_identity = native_identity
         self._task: asyncio.Task[None] | None = None
         self._handle: SubscriberHandle | None = None
-        self._last_seq = 0
+        self._last_seq = since
         self._turn_open = False
         self._status_turn_open = False
         self._queue_open = False

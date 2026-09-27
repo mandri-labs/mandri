@@ -1,5 +1,7 @@
 import base64
+import errno
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -67,6 +69,9 @@ async def test_upload_prepare_and_reopen_in_execution_context(tmp_path, backend,
     stream, name, size = open_session_file(record, store, prepared.attachments[0].path)
     with stream:
         assert stream.read() == PNG
+
+    with pytest.raises(AttachmentError, match="unavailable"):
+        open_session_file(record, store, "missing.txt")
     assert (name, size) == ("a capture.png", len(PNG))
     reopened = AttachmentStore(tmp_path / "uploads")
     assert reopened.prepare(record, "", [attachment.id]) == prepared
@@ -217,3 +222,61 @@ async def test_invalid_images_are_rejected_and_cleaned_up(tmp_path, name, data):
     with pytest.raises(AttachmentError):
         await store.upload(record, name, chunks(data))
     assert not list(store.directory(str(record.id)).iterdir())
+
+
+async def test_repeated_image_preparation_reuses_files_open_on_windows(tmp_path, monkeypatch):
+    record = session(tmp_path, harness=HarnessKind.CODEX)
+    store = AttachmentStore(tmp_path / "uploads")
+    items = [
+        await store.upload(record, f"Capture écran {index}.png", chunks(PNG)) for index in range(3)
+    ]
+    identities = [item.id for item in items]
+    prepared = store.prepare(record, "Three images", identities)
+    paths = [Path(item.path) for item in prepared.attachments]
+    streams = [path.open("rb") for path in paths]
+    replace = os.replace
+
+    def windows_replace(source, destination):
+        if Path(destination) in paths:
+            error = PermissionError(errno.EACCES, "The file is open by another process")
+            error.winerror = 32
+            raise error
+        return replace(source, destination)
+
+    monkeypatch.setattr("mandri.runtime.attachments.sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr("mandri.runtime.attachments.os.replace", windows_replace)
+    try:
+        assert store.prepare(record, "Three images", identities) == prepared
+        assert [stream.read() for stream in streams] == [PNG, PNG, PNG]
+    finally:
+        for stream in streams:
+            stream.close()
+
+
+async def test_host_attachment_storage_does_not_require_mounted_project(tmp_path):
+    record = session(tmp_path)
+    Path(record.project_path).rmdir()
+    store = AttachmentStore(tmp_path / "uploads")
+    item = await store.upload(record, "image.png", chunks(PNG))
+    prepared = store.prepare(record, "", [item.id])
+    stream, _, _ = open_session_file(record, store, prepared.attachments[0].path)
+    with stream:
+        assert stream.read() == PNG
+
+
+async def test_prepare_repairs_modified_materialized_bytes_and_rejects_symlink(tmp_path):
+    record = session(tmp_path)
+    store = AttachmentStore(tmp_path / "uploads")
+    item = await store.upload(record, "notes.txt", chunks(b"original"))
+    original = store.prepare(record, "", [item.id])
+    path = Path(original.attachments[0].path)
+    path.chmod(0o644)
+    path.write_bytes(b"modified")
+    assert store.prepare(record, "", [item.id]) == original
+    assert path.read_bytes() == b"original"
+    path.unlink()
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"original")
+    path.symlink_to(outside)
+    with pytest.raises(AttachmentError, match="symbolic link"):
+        store.prepare(record, "", [item.id])

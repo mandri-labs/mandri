@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -21,10 +22,28 @@ MAX_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_PROMPT_IMAGE_BYTES = 4 * 1024 * 1024
 MAX_ATTACHMENTS = 4
 MAX_SESSION_BYTES = 128 * 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 class AttachmentError(ValueError):
     pass
+
+
+class AttachmentStorageError(AttachmentError):
+    pass
+
+
+def _same_content(source: Path, destination: Path) -> bool:
+    try:
+        if source.stat().st_size != destination.stat().st_size:
+            return False
+        with source.open("rb") as original, destination.open("rb") as existing:
+            while chunk := original.read(65536):
+                if chunk != existing.read(len(chunk)):
+                    return False
+            return existing.read(1) == b""
+    except FileNotFoundError:
+        return False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -81,6 +100,20 @@ class AttachmentStore:
     async def upload(self, session: Session, name: str, chunks: AsyncIterator[bytes]) -> Attachment:
         check_support(session)
         name = safe_name(name)
+        try:
+            return await self._upload(session, name, chunks)
+        except OSError as error:
+            logger.warning(
+                "Attachment upload storage unavailable session=%s errno=%s winerror=%s",
+                session.id,
+                error.errno,
+                getattr(error, "winerror", None),
+            )
+            raise AttachmentStorageError("Session file storage is unavailable") from error
+
+    async def _upload(
+        self, session: Session, name: str, chunks: AsyncIterator[bytes]
+    ) -> Attachment:
         async with self._locks.setdefault(str(session.id), asyncio.Lock()):
             directory = self.directory(str(session.id))
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -142,17 +175,20 @@ class AttachmentStore:
         for item, source in selected:
             try:
                 path = self.materialize(session, item, source)
+                data = source.read_bytes() if item.media_type.startswith("image/") else b""
             except OSError as error:
-                raise AttachmentError("Session file storage is unavailable") from error
+                logger.warning(
+                    "Attachment materialization unavailable "
+                    "session=%s attachment=%s errno=%s winerror=%s",
+                    session.id,
+                    item.id,
+                    error.errno,
+                    getattr(error, "winerror", None),
+                )
+                raise AttachmentStorageError("Session file storage is unavailable") from error
             label = item.name.replace("[", "\\[").replace("]", "\\]")
             links.append(f"[{label}]({quote(Path(path).as_posix(), safe='/@:')})")
-            parts.append(
-                PromptAttachment(
-                    path,
-                    item.media_type,
-                    source.read_bytes() if item.media_type.startswith("image/") else b"",
-                )
-            )
+            parts.append(PromptAttachment(path, item.media_type, data))
         return UserPrompt(
             "\n\n".join(part for part in [text, "\n".join(links)] if part), tuple(parts)
         )
@@ -166,6 +202,8 @@ class AttachmentStore:
             if path.is_relative_to(context.attachments)
         ):
             raise AttachmentError("Session file storage contains a symbolic link")
+        if _same_content(source, destination):
+            return runtime_path
         destination.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
         temporary = destination.with_name(f".{uuid.uuid4().hex}")
         try:

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from collections.abc import Callable
@@ -18,6 +19,7 @@ from mandri.sessions.pi_paths import (
 from mandri.sessions.pi_records import read_pi_entry_fields
 
 MAX_METADATA_RECORD_BYTES = 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 def default_pi_agent_dir() -> Path:
@@ -112,40 +114,56 @@ class PiSessionStore:
             rows: dict[str, PiSessionInfo] = {}
             for path in inventory:
                 self._checked(path)
-                try:
-                    stat = path.stat()
-                    signature = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
-                    cached = self._cache.get(path)
-                    if cached is None or cached.signature != signature:
-                        modified = int(stat.st_mtime * 1000)
-                        with path.open("rb") as handle:
-                            info, offset = None, 0
-                            if cached is not None and self._can_extend(handle, cached, signature):
-                                info, offset = cached.info, cached.signature[2]
-                            handle.seek(offset)
-                            info = self._read(handle, path, modified, info)
-                            handle.seek(max(0, stat.st_size - 256))
-                            anchor = handle.read(256)
-                        cached = _CachedSession(signature, info, anchor)
-                        self._cache[path] = cached
-                    row = cached.info
-                    if row is not None and path in registered and row.native_id != registered[path]:
-                        continue
-                    if row is not None:
-                        row = self._selected(row, signature)
-                        previous = rows.get(row.native_id)
-                        if previous is None or row.updated_at > previous.updated_at:
-                            rows[row.native_id] = row
-                except OSError:
-                    self._cache.pop(path, None)
+                row = self._fetch_path(path)
+                if row is None or (path in registered and row.native_id != registered[path]):
+                    continue
+                previous = rows.get(row.native_id)
+                if previous is None or row.updated_at > previous.updated_at:
+                    rows[row.native_id] = row
             self._paths = {row.native_id: row.path for row in rows.values()}
             return sorted(
                 rows.values(), key=lambda row: (row.updated_at, row.native_id), reverse=True
             )
 
+    def _fetch_path(self, path: Path) -> PiSessionInfo | None:
+        cached = self._cache.get(path)
+        try:
+            stat = path.stat()
+            signature = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+            if cached is None or cached.signature != signature:
+                with path.open("rb") as handle:
+                    info, offset = None, 0
+                    if cached is not None and self._can_extend(handle, cached, signature):
+                        info, offset = cached.info, cached.signature[2]
+                    handle.seek(offset)
+                    info = self._read(handle, path, int(stat.st_mtime * 1000), info)
+                    handle.seek(max(0, stat.st_size - 256))
+                    anchor = handle.read(256)
+                if info is None and cached is not None and cached.info is not None:
+                    logger.debug(
+                        "Retaining Pi session %s during native rewrite", cached.info.native_id
+                    )
+                    return self._known(path, cached)
+                cached = _CachedSession(signature, info, anchor)
+                self._cache[path] = cached
+            return self._selected(cached.info, signature) if cached.info is not None else None
+        except FileNotFoundError:
+            self._cache.pop(path, None)
+            return None
+        except OSError:
+            logger.debug("Pi session inventory read deferred for %s", path, exc_info=True)
+            return self._known(path, cached)
+
+    def _known(self, path: Path, cached: _CachedSession | None) -> PiSessionInfo | None:
+        if cached is None:
+            return None
+        selected = self._leaf_cache.get(path)
+        return selected[2] if selected and selected[0] == cached.signature else cached.info
+
     def _selected(self, info: PiSessionInfo, signature: tuple[int, int, int]) -> PiSessionInfo:
         selected = read_pi_leaf(info.path, info.native_id, signature)
         if selected is None or selected.leaf_id == info.leaf_id:
+            self._leaf_cache[info.path] = (signature, info.leaf_id, info)
             return info
         cached = self._leaf_cache.get(info.path)
         if cached is not None and cached[:2] == (signature, selected.leaf_id):

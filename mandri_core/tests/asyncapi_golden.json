@@ -3803,6 +3803,7 @@
           "prompt_delivery_failed",
           "control_delivery_failed",
           "invalid_params",
+          "attachment_storage_unavailable",
           "duplicate_op_id"
         ],
         "title": "ProtocolErrorCode",

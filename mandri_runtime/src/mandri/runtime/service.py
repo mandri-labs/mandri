@@ -1319,7 +1319,6 @@ class RuntimeService:
         state.launched_model = None
         state.idle_since = None
         state.stopping = False
-        self._events.collect_session_topic(session_id)
 
     async def _rollback_process(self, process: ManagedProcess) -> None:
         try:
@@ -1392,7 +1391,7 @@ class RuntimeService:
                 await control.interrupt()
                 if state.stop_revision != stop_revision:
                     raise SessionNotRunningError(f"session {session_id} was stopped")
-                await self.stop_session(session_id, restore_native=False, preserve_topic=True)
+                await self.stop_session(session_id, restore_native=False)
                 if state.stop_revision != stop_revision:
                     raise SessionNotRunningError(f"session {session_id} was stopped")
                 await self._resume_session(session_id, mode=mode)
@@ -1509,9 +1508,7 @@ class RuntimeService:
             await control.interrupt()
             if state.stop_revision != stop_revision:
                 raise SessionNotRunningError(f"session {session_id} was stopped")
-            await self.stop_session(
-                session_id, grace=1.0, restore_native=False, preserve_topic=True
-            )
+            await self.stop_session(session_id, grace=1.0, restore_native=False)
             if state.stop_revision != stop_revision:
                 raise SessionNotRunningError(f"session {session_id} was stopped")
             await self._resume_session(session_id)
@@ -1525,9 +1522,12 @@ class RuntimeService:
         cause: SessionStopCause = SessionStopCause.VIEWER_STOP,
         *,
         restore_native: bool = True,
-        preserve_topic: bool = False,
         force: bool = False,
     ) -> int:
+        state = self._session_state(session_id)
+        automatic = cause is SessionStopCause.IDLE_TIMEOUT
+        if automatic and (state.stopping or self._lifetime.release_blocked(session_id)):
+            return 0
         if force:
             self._session_state(session_id).stop_revision += 1
         self._session_state(session_id).stopping = True
@@ -1542,6 +1542,10 @@ class RuntimeService:
                 await self._persist_execution_exit(session_id, ExecutionPhase.STOPPING)
             else:
                 await self._persist_execution_exit(session_id, ExecutionPhase.STOPPING)
+                if automatic and self._lifetime.release_blocked(session_id):
+                    await self._executions.phase(session_id, ExecutionPhase.READY)
+                    _logger.info("session %s idle release cancelled by activity", session_id)
+                    return 0
                 code = await process.stop(grace)
             checkpoint = self._session_state(session_id).pi_checkpoint
             if checkpoint is not None:
@@ -1554,8 +1558,6 @@ class RuntimeService:
             await self._events.detach_feed(session_id)
             self._registry.mark_stopped(session_id)
             await self._mark_db_state(session_id, SessionState.STOPPED)
-            if not preserve_topic:
-                self._events.collect_session_topic(session_id)
             if restore_native:
                 await self._restore_after_release(session_id)
             self._events.publish_stopped(session_id, cause)
@@ -1575,7 +1577,6 @@ class RuntimeService:
             await self._close_control(session_id)
             await self._events.forget_liveness(session_id)
             await self._events.detach_feed(session_id)
-            self._events.collect_session_topic(session_id)
             self._events.publish_stopped(session_id, SessionStopCause.CRASH)
         return stopped
 
@@ -1592,7 +1593,6 @@ class RuntimeService:
             await self._close_control(session_id)
             await self._events.forget_liveness(session_id)
             await self._events.detach_feed(session_id)
-            self._events.collect_session_topic(session_id)
             await self._mark_db_state(session_id, SessionState.STOPPED)
             self._events.publish_stopped(session_id, SessionStopCause.CRASH)
         stopped.extend(await self._reconcile_stopped_docker_sessions())
@@ -1700,6 +1700,9 @@ class RuntimeService:
             await self._events.publish_event(topic, payload)
 
         feed = SessionFeed(self._hub, session_id, kind, process.process, publisher=publish)
+        self._session_state(session_id).feed_start_seq = self._hub.sequence(
+            session_topic(session_id)
+        )
         feed.start()
         self._session_state(session_id).feed = feed
         self._attach_approvals(session_id, kind, launch_mode)
@@ -1791,6 +1794,7 @@ class RuntimeService:
                 process=process,
                 hub=hub,
                 topic=session_topic(session_id),
+                feed_start_seq=self._session_state(session_id).feed_start_seq,
                 launch_mode=launch_mode,
                 resume_thread_id=resume_thread_id,
                 on_identity=None
@@ -2392,7 +2396,7 @@ class RuntimeService:
                 raise SessionRunningError(f"session {session_id} is already changing state")
             state.resuming = True
             try:
-                await self.stop_session(session_id, restore_native=False, preserve_topic=True)
+                await self.stop_session(session_id, restore_native=False)
                 if state.stop_revision != stop_revision:
                     raise SessionNotRunningError(f"session {session_id} was stopped")
                 await self._resume_session(session_id)

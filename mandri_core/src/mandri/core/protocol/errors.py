@@ -20,6 +20,7 @@ class ProtocolErrorCode(enum.StrEnum):
     PROMPT_DELIVERY_FAILED = "prompt_delivery_failed"
     CONTROL_DELIVERY_FAILED = "control_delivery_failed"
     INVALID_PARAMS = "invalid_params"
+    ATTACHMENT_STORAGE_UNAVAILABLE = "attachment_storage_unavailable"
     DUPLICATE_OP_ID = "duplicate_op_id"
 
 

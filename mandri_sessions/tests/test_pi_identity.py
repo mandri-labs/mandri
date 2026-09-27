@@ -15,7 +15,8 @@ from .substitutes import FakeBackend, insert_session_row, make_session
 
 
 @pytest.fixture
-async def identities(tmp_path):
+async def identities(tmp_path, monkeypatch):
+    monkeypatch.setattr(processes.psutil, "process_iter", lambda *args, **kwargs: [])
     database = AiosqliteDatabase()
     await database.connect(tmp_path / "sessions.db")
     await database.migrate()

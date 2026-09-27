@@ -41,34 +41,45 @@ class LinePump:
     def __init__(
         self,
         stream_factory: Callable[[], AsyncIterator[bytes]],
-        limit: int = DEFAULT_LINE_LIMIT,
+        limit: int | None = DEFAULT_LINE_LIMIT,
+        *,
+        on_close: Callable[[], None] | None = None,
     ) -> None:
         self._stream_factory = stream_factory
         self._limit = limit
+        self._on_close = on_close
+
+    def close(self) -> None:
+        callback, self._on_close = self._on_close, None
+        if callback is not None:
+            callback()
 
     async def lines(self) -> AsyncIterator[LineEvent]:
         buffer = bytearray()
         oversized = False
+        scan_start = 0
         async for chunk in self._stream_factory():
             buffer.extend(chunk)
             while True:
-                index = buffer.find(b"\n")
+                index = buffer.find(b"\n", scan_start)
                 if index < 0:
-                    if not oversized and len(buffer) > self._limit:
+                    scan_start = len(buffer)
+                    if not oversized and self._limit is not None and len(buffer) > self._limit:
                         yield LineEvent(LineEventKind.OVERSIZE, "", len(buffer))
                         oversized = True
                     break
                 raw = bytes(buffer[:index])
                 del buffer[: index + 1]
+                scan_start = 0
                 if oversized:
                     oversized = False
                     continue
-                if len(raw) > self._limit:
+                if self._limit is not None and len(raw) > self._limit:
                     yield LineEvent(LineEventKind.OVERSIZE, "", len(raw))
                     continue
                 yield _line_event(raw, LineEventKind.LINE)
         if buffer:
-            if len(buffer) > self._limit:
+            if self._limit is not None and len(buffer) > self._limit:
                 yield LineEvent(LineEventKind.OVERSIZE, "", len(buffer))
             else:
                 yield _line_event(bytes(buffer), LineEventKind.INCOMPLETE)
@@ -82,10 +93,16 @@ async def stream_reader_bytes(reader: asyncio.StreamReader | None) -> AsyncItera
 
 
 def pump_process_streams(
-    process: ProcessStreams, limit: int = DEFAULT_LINE_LIMIT
+    process: ProcessStreams,
+    limit: int | None = DEFAULT_LINE_LIMIT,
+    *,
+    stderr_limit: int | None = None,
 ) -> tuple[LinePump, LinePump]:
     stdout = LinePump(partial(stream_reader_bytes, process.stdout), limit)
-    stderr = LinePump(partial(stream_reader_bytes, process.stderr), limit)
+    stderr = LinePump(
+        partial(stream_reader_bytes, process.stderr),
+        stderr_limit if stderr_limit is not None else limit,
+    )
     return stdout, stderr
 
 

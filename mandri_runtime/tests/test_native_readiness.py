@@ -5,9 +5,11 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mandri.core.ids import HarnessSessionId
 from mandri.core.types.execution import PrivacyMode, ProtectionError
+from mandri.runtime.control.codex import CodexControlAdapter
 from mandri.runtime.control.errors import ControlTransportError
 from mandri.runtime.launch_preparation import PreparedLaunch
 from mandri.runtime.native_readiness import require_native_identity
+from mandri.runtime.pump import LinePump
 from mandri.runtime.service import RuntimeService
 
 
@@ -34,6 +36,43 @@ async def test_native_initialization_timeout_cancels_pending_request():
             SimpleNamespace(capture_identity=pending), timeout_seconds=0.01
         )
     assert failure.value.code == "native_initialization_timeout"
+    assert cancelled.is_set()
+
+
+async def test_native_control_response_deadline_still_releases_pending_request(monkeypatch):
+    monkeypatch.setattr("mandri.runtime.control.codex.RPC_RESPONSE_TIMEOUT_SECONDS", 0.01)
+
+    async def chunks():
+        await asyncio.Future()
+        yield b""
+
+    control = CodexControlAdapter(
+        LinePump(chunks), SimpleNamespace(write=Mock(), drain=AsyncMock())
+    )
+    try:
+        with pytest.raises(ProtectionError) as failure:
+            await require_native_identity(control)
+        assert failure.value.code == "native_initialization_timeout"
+        assert control._pending == {}
+    finally:
+        await control.aclose()
+
+
+async def test_native_readiness_caller_can_cancel_initialization():
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def pending():
+        entered.set()
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+
+    task = asyncio.create_task(require_native_identity(SimpleNamespace(capture_identity=pending)))
+    await asyncio.wait_for(entered.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
     assert cancelled.is_set()
 
 

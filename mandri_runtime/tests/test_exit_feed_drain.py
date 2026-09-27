@@ -10,7 +10,7 @@ from mandri.runtime.session_feed import SessionFeed, session_topic
 
 
 @pytest.mark.parametrize("persist", [False, True])
-async def test_reconciliation_delivers_buffered_result_before_closing_topic(persist):
+async def test_reconciliation_delivers_buffered_result_before_stopped_event(persist):
     hub = Hub()
     runtime = RuntimeService({}, hub=hub)
     runtime.registry.mark_live(
@@ -49,7 +49,9 @@ async def test_reconciliation_delivers_buffered_result_before_closing_topic(pers
             frames.append(handle.queue.get_nowait())
         assert frames[0] is not None, frames
         assert frames[0]["payload"]["raw"]["result"]["status"] == "ERROR"
-        assert frames[-1] is None
+        assert frames[-1]["payload"]["type"] == "session_stopped"
+        assert frames[-1]["seq"] == frames[0]["seq"] + 1
+        assert not handle.closed
     finally:
         release.set()
         await feed.stop()

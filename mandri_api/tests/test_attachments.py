@@ -1,12 +1,16 @@
 import base64
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from mandri.api.actions import build_action_registry
 from mandri.api.deps import runtime_service, sessions_service
 from mandri.core.ids import HarnessKind, ProjectPath, SessionId
+from mandri.core.protocol.errors import ProtocolErrorCode
+from mandri.core.protocol.frames import RequestFrame
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode
-from mandri.runtime.attachments import AttachmentStore
+from mandri.runtime.attachments import AttachmentStorageError, AttachmentStore
+from mandri.runtime.commands import CommandService
 
 SESSION_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 
@@ -61,3 +65,54 @@ def test_upload_and_session_file_route_contract(make_client, tmp_path, privacy, 
     outside.write_text("private")
     response = client.get(f"/v1/sessions/{SESSION_ID}/files", params={"path": str(outside)})
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("stage", ["upload", "materialize"])
+def test_storage_io_failure_has_specific_retryable_error(
+    make_client, tmp_path, monkeypatch, caplog, stage
+):
+    record = SimpleNamespace(
+        id=SessionId(SESSION_ID),
+        harness=HarnessKind.CODEX,
+        project_path=ProjectPath(str(tmp_path)),
+        execution_backend=ExecutionBackend.HOST,
+        privacy_mode=PrivacyMode.NONE,
+        execution_context=None,
+    )
+    store = AttachmentStore(tmp_path / "uploads")
+    if stage == "upload":
+        store.root.write_text("unavailable directory")
+    else:
+        monkeypatch.setattr(store, "materialize", Mock(side_effect=PermissionError(13, "locked")))
+    runtime = SimpleNamespace(attachments=store)
+    sessions = SimpleNamespace(get_session=AsyncMock(return_value=record))
+    client = make_client({runtime_service: lambda: runtime, sessions_service: lambda: sessions})
+    response = client.post(
+        f"/v1/sessions/{SESSION_ID}/attachments",
+        params={"name": "notes.txt"},
+        content=b"notes",
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "attachment_storage_unavailable"
+    assert SESSION_ID in caplog.text
+    assert "errno=" in caplog.text
+
+
+async def test_prompt_storage_failure_preserves_operation_identity_and_specific_error():
+    runtime = SimpleNamespace(
+        commands=Mock(spec=CommandService),
+        send_session_prompt=AsyncMock(
+            side_effect=AttachmentStorageError("Session file storage is unavailable")
+        ),
+    )
+    response = await build_action_registry(runtime).handle(
+        RequestFrame(
+            type="request",
+            op_id="attachment-operation",
+            action="session.prompt",
+            params={"session_id": SESSION_ID, "content": "image", "attachments": ["a" * 32]},
+        )
+    )
+    assert response.op_id == "attachment-operation"
+    assert not response.ok
+    assert response.error.code is ProtocolErrorCode.ATTACHMENT_STORAGE_UNAVAILABLE

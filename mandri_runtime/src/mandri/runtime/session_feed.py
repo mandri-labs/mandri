@@ -12,6 +12,7 @@ from mandri.core.clock import system_now_ms
 from mandri.core.hub import Hub, Topic
 from mandri.core.ids import HarnessKind
 from mandri.runtime.errors import ProcessIOError
+from mandri.runtime.process import DEFAULT_LINE_LIMIT
 from mandri.runtime.pump import (
     LineEvent,
     LineEventKind,
@@ -60,7 +61,7 @@ class SessionFeed:
     ) -> None:
         self._session_id = session_id
         self._hub = hub
-        stdout, stderr = pump_process_streams(streams)
+        stdout, stderr = pump_process_streams(streams, limit=None, stderr_limit=DEFAULT_LINE_LIMIT)
         pipe: EventPipe | None = None
         if kind is not None:
             source_iter = self._stdout_events(stdout, kind)

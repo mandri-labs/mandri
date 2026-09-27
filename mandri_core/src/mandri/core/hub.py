@@ -87,7 +87,7 @@ class Hub:
         handle = SubscriberHandle(
             SubscriberId(self._next_subscriber_id),
             topic,
-            asyncio.Queue(maxsize=self._queue_size),
+            asyncio.Queue(maxsize=0 if internal else self._queue_size),
             internal=internal,
         )
         state.subscribers[handle.id] = handle
@@ -99,6 +99,10 @@ class Hub:
         if state is not None:
             state.subscribers.pop(handle.id, None)
         self._disconnect(handle)
+
+    def sequence(self, topic: Topic) -> int:
+        state = self._topics.get(topic)
+        return state.seq if state is not None else 0
 
     def collect_topic(self, topic: Topic) -> None:
         state = self._topics.pop(topic, None)
@@ -177,6 +181,9 @@ class Hub:
     def _offer(self, handle: SubscriberHandle, frame: Frame) -> None:
         if handle.closed:
             return
+        if handle.internal:
+            handle.queue.put_nowait(frame)
+            return
         slots = 2 if handle.pending_gap is not None else 1
         while handle.queue.qsize() + slots > handle.queue.maxsize:
             if handle.queue.empty():
@@ -193,13 +200,19 @@ class Hub:
 
     def _drop_oldest(self, handle: SubscriberHandle) -> None:
         dropped = handle.queue.get_nowait()
-        if dropped is not None and "payload" in dropped:
-            seq = dropped["seq"]
-            if handle.pending_gap is None:
-                handle.pending_gap = (seq, seq + 1)
-            else:
-                start, end = handle.pending_gap
-                handle.pending_gap = (min(start, seq), max(end, seq + 1))
+        if dropped is None:
+            return
+        if "payload" in dropped:
+            missing = (dropped["seq"], dropped["seq"] + 1)
+        elif dropped.get("type") == "gap":
+            missing = (dropped["from_seq"], dropped["seq"])
+        else:
+            return
+        if handle.pending_gap is None:
+            handle.pending_gap = missing
+        else:
+            start, end = handle.pending_gap
+            handle.pending_gap = (min(start, missing[0]), max(end, missing[1]))
 
     def _disconnect(self, handle: SubscriberHandle) -> None:
         if handle.closed:

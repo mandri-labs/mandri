@@ -9,7 +9,7 @@ from mandri.api.deps import Runtime, Sessions
 from mandri.api.errors import ApiError
 from mandri.core.ids import SessionId
 from mandri.core.protocol.types import SessionId as ApiSessionId
-from mandri.runtime.attachments import MAX_FILE_BYTES, AttachmentError
+from mandri.runtime.attachments import MAX_FILE_BYTES, AttachmentError, AttachmentStorageError
 from mandri.runtime.session_files import open_session_file
 from mandri.sessions.errors import SessionNotFoundError
 from pydantic import BaseModel
@@ -89,6 +89,10 @@ async def upload_attachment(
         )
     except SessionNotFoundError as error:
         raise ApiError(code="not_found", message="Session not found", status=404) from error
+    except AttachmentStorageError as error:
+        raise ApiError(
+            code="attachment_storage_unavailable", message=str(error), status=503
+        ) from error
     except ValueError as error:
         raise ApiError(code="invalid_params", message=str(error), status=400) from error
 

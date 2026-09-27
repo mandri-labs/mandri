@@ -9,18 +9,20 @@ from mandri.runtime.liveness.port import LivenessPort
 
 
 class PiLivenessAdapter:
-    def __init__(self, hub: Hub, topic: Topic, port: LivenessPort, session_id: SessionId) -> None:
+    def __init__(
+        self, hub: Hub, topic: Topic, port: LivenessPort, session_id: SessionId, *, since: int = 0
+    ) -> None:
         self._hub, self._topic, self._port, self._session = hub, topic, port, session_id
         self._handle: SubscriberHandle | None = None
         self._task: asyncio.Task[None] | None = None
-        self._seq = 0
+        self._seq = since
         self._closed = False
         self._running = False
         self._dialogs: set[str] = set()
         self._approval_refs: dict[str, str] = {}
 
     def start(self) -> None:
-        self._handle = self._hub.subscribe(self._topic, since=0, internal=True)
+        self._handle = self._hub.subscribe(self._topic, since=self._seq, internal=True)
         self._task = asyncio.create_task(self._consume(), name=f"liveness-pi:{self._session}")
 
     async def stop(self) -> None:

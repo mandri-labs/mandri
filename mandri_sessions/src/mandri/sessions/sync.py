@@ -99,6 +99,7 @@ class SyncEngine:
                 await self._reconcile(kind, rows)
                 await self._tombstone_missing(rows, candidates)
             except Exception as error:
+                logger.warning("Session inventory unavailable for %s: %s", kind.value, error)
                 self._states[kind] = HarnessState(
                     degraded=True, last_sync_error=error, last_sync_at=system_now_ms()
                 )
@@ -312,6 +313,13 @@ class SyncEngine:
                 ),
             )
             changed |= deleted is not None
+            if deleted is not None:
+                logger.debug(
+                    "Session %s missing from native inventory; native_id=%s state=%s",
+                    record["id"],
+                    record["native_id"],
+                    record["state"],
+                )
         if changed:
             self._publish_sessions_changed()
 

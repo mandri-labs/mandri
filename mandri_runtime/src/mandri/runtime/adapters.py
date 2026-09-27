@@ -19,6 +19,7 @@ class AdapterContext:
     process: ManagedProcess | None = None
     hub: Hub | None = None
     topic: Topic | None = None
+    feed_start_seq: int = 0
     launch_mode: LaunchMode | None = None
     listen_port: int | None = None
     native_session_id: str | None = None

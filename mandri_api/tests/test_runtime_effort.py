@@ -142,6 +142,23 @@ def test_start_session_without_catalog_accepts_any_effort(make_client) -> None:
     assert runtime.start_calls[0]["effort"] == "ultra"
 
 
+def test_start_session_rejects_effort_when_model_explicitly_disables_thinking(
+    make_client, monkeypatch
+):
+    monkeypatch.setattr(
+        "mandri_api.tests.test_runtime_effort.CATALOG",
+        ReasoningCatalog({("openrouter", "anthropic/claude-4"): ReasoningInfo([])}),
+    )
+    client, runtime = make_client_factory(make_client, None)
+    response = client.post(
+        "/v1/runtime/sessions",
+        json={"harness": "opencode", "model": MODEL_ARG, "cwd": "D:/tmp", "effort": "on"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["detail"]["allowed"] == []
+    assert runtime.start_calls == []
+
+
 def test_patch_effort_updates_session(make_client) -> None:
     record = make_record()
     client, runtime = make_client_factory(make_client, record)

@@ -16,8 +16,6 @@ _TIMEOUT_SECONDS = 10.0
 _MODELS_DEV_URL = "https://models.dev/api.json"
 _LM_STUDIO_MODELS_PATH = "/api/v1/models"
 _OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api"
-_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-_LOCAL_KINDS = frozenset({ProviderKind.OLLAMA, ProviderKind.LM_STUDIO, ProviderKind.CUSTOM})
 _MODELS_DEV_IDS: dict[ProviderKind, str] = {
     ProviderKind.OPENROUTER: "openrouter",
     ProviderKind.OPENAI: "openai",
@@ -92,10 +90,14 @@ def _auth_headers(api_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
-async def _fetch_json(url: str, headers: dict[str, str]) -> Any:
+async def _fetch_json(url: str, headers: dict[str, str], body: dict[str, str] | None = None) -> Any:
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            response = await client.get(url, headers=headers)
+            response = (
+                await client.get(url, headers=headers)
+                if body is None
+                else await client.post(url, headers=headers, json=body)
+            )
             response.raise_for_status()
             return response.json()
     except (httpx.HTTPError, ValueError) as error:
@@ -158,13 +160,44 @@ async def _lm_studio_probe(base: str, api_key: str) -> dict[str, ReasoningInfo]:
     return catalog
 
 
-def _is_local_base(base: str) -> bool:
-    if not base:
-        return False
-    try:
-        return httpx.URL(base).host in _LOCAL_HOSTS
-    except ValueError:
-        return False
+def parse_ollama_entry(entry: Any) -> ReasoningInfo | None:
+    thinking = entry.get("thinking") if isinstance(entry, dict) else None
+    if not isinstance(thinking, dict) or not isinstance(thinking.get("values"), list):
+        return None
+    values = thinking["values"]
+    if values == [False]:
+        return ReasoningInfo([])
+    efforts = [
+        ("on" if value else "off") if isinstance(value, bool) else value
+        for value in values
+        if isinstance(value, (str, bool))
+    ]
+    info = _normalize(efforts)
+    if info is None:
+        return None
+    default = thinking.get("default")
+    if isinstance(default, bool):
+        default = "on" if default else "off"
+    return ReasoningInfo(info.efforts, default if default in info.efforts else None)
+
+
+async def _ollama_probe(base: str, api_key: str) -> dict[str, ReasoningInfo]:
+    base = base.rstrip("/").removesuffix("/v1")
+    headers = _auth_headers(api_key)
+    payload = await _fetch_json(base + "/api/tags", headers)
+    models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(models, list):
+        return {}
+    catalog = {}
+    for model in models:
+        name = model.get("name") if isinstance(model, dict) else None
+        if not isinstance(name, str):
+            continue
+        entry = await _fetch_json(base + "/api/show", headers, {"model": name})
+        info = parse_ollama_entry(entry)
+        if info is not None:
+            catalog[name] = info
+    return catalog
 
 
 def _models_dev_provider(
@@ -180,8 +213,7 @@ def _merge(
     catalog: dict[str, ReasoningInfo],
 ) -> None:
     for model_id, info in catalog.items():
-        if info.efforts:
-            entries[(provider_name, model_id)] = info
+        entries[(provider_name, model_id)] = info
 
 
 class ReasoningCatalog:
@@ -214,9 +246,11 @@ async def _merge_provider(
     models_dev: dict[str, dict[str, ReasoningInfo]],
 ) -> None:
     base = str(provider.api_base) if provider.api_base else ""
-    if provider.kind in _LOCAL_KINDS and _is_local_base(base):
-        _merge(entries, provider.name, await _lm_studio_probe(base, str(provider.api_key)))
     _merge(entries, provider.name, _models_dev_provider(provider, models_dev))
+    if provider.kind is ProviderKind.LM_STUDIO and base:
+        _merge(entries, provider.name, await _lm_studio_probe(base, str(provider.api_key)))
+    if provider.kind is ProviderKind.OLLAMA and base:
+        _merge(entries, provider.name, await _ollama_probe(base, str(provider.api_key)))
     if provider.kind is ProviderKind.OPENROUTER:
         openrouter_base = base or _OPENROUTER_DEFAULT_BASE
         _merge(

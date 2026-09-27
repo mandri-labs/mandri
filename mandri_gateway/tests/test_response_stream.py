@@ -456,3 +456,35 @@ async def test_mislabeled_completed_event_never_hides_failure_or_empty_output(st
         "Service temporarily overloaded" if error else "Provider completed without any output"
     )
     assert not any(event["type"] == "response.completed" for event in events)
+
+
+@pytest.mark.parametrize(
+    "output,expected",
+    [
+        ([item("message", "msg")], "response.failed"),
+        ([item("reasoning", "rs")], "response.failed"),
+        ([item("message", "msg", "Answer")], "response.completed"),
+        ([item("reasoning", "rs", "Thinking")], "response.completed"),
+        (
+            [{"type": "function_call", "id": "call", "name": "test", "arguments": "{}"}],
+            "response.completed",
+        ),
+        (
+            [
+                {
+                    "type": "message",
+                    "id": "msg",
+                    "content": [{"type": "refusal", "refusal": "Denied"}],
+                }
+            ],
+            "response.completed",
+        ),
+        ([{"type": "reasoning", "id": "rs", "encrypted_content": "opaque"}], "response.completed"),
+    ],
+)
+async def test_empty_messages_fail_without_rejecting_other_output(output, expected):
+    events = await normalize(
+        [added(value, index) for index, value in enumerate(output)]
+        + [{"type": "response.completed", "response": {"output": output}}]
+    )
+    assert events[-1]["type"] == expected

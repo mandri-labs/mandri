@@ -39,6 +39,17 @@ class FakeConfig:
         self.save_calls += 1
 
 
+@pytest.mark.parametrize("suffix", ["", "/", "/v1", "/v1/", "/api/v0", "/api/v1/"])
+async def test_lm_studio_normalizes_existing_and_new_provider_bases(suffix: str) -> None:
+    base = "http://localhost:1234" + suffix
+    config = FakeConfig(DaemonConfig(providers=[ProviderConfig("local", "lm_studio", base)]))
+    registry = ProvidersRegistry(config, FakeRoutes(), FakeVerifier())
+    assert registry.get("local").api_base == "http://localhost:1234/v1"
+    assert config.save_calls == 0
+    added = await registry.add("new", ProviderKind.LM_STUDIO, base, "", verify=False)
+    assert added.api_base == "http://localhost:1234/v1"
+
+
 class FakeRoutes:
     def __init__(self, route_ids: list[RouteId] | None = None) -> None:
         self.route_ids = route_ids if route_ids is not None else []

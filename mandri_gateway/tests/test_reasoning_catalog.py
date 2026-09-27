@@ -8,6 +8,7 @@ from mandri.gateway.reasoning_catalog import (
     ReasoningInfo,
     parse_lm_studio_entry,
     parse_models_dev_entry,
+    parse_ollama_entry,
 )
 from mandri.providers.service import Provider, ProviderState
 
@@ -98,9 +99,10 @@ def fetch_recorder(monkeypatch: pytest.MonkeyPatch):
     calls: list[tuple[str, dict[str, str]]] = []
 
     def install(payload_by_url: dict[str, object]) -> list[tuple[str, dict[str, str]]]:
-        async def fake_fetch(url: str, headers: dict[str, str]) -> object:
+        async def fake_fetch(url: str, headers: dict[str, str], body=None) -> object:
             calls.append((url, dict(headers)))
-            return payload_by_url.get(url)
+            key = url + "/" + body["model"] if body else url
+            return payload_by_url.get(key)
 
         monkeypatch.setattr(catalog_module, "_fetch_json", fake_fetch)
         return calls
@@ -225,3 +227,63 @@ async def test_named_opencode_go_provider_preserves_namespaced_models(fetch_reco
     )
     catalog = await ReasoningCatalog.build(lambda: [_provider("my-go", ProviderKind.OPENCODE_GO)])
     assert catalog.lookup("my-go", "my-go/vendor/model") == ReasoningInfo(["low", "high"])
+
+
+@pytest.mark.parametrize(
+    "thinking,expected",
+    [
+        ({"values": [False, True], "default": True}, ReasoningInfo(["off", "on"], "on")),
+        ({"values": ["low", "high"], "default": "high"}, ReasoningInfo(["low", "high"], "high")),
+        ({"values": [False], "default": False}, ReasoningInfo([])),
+        ({"values": [1, None]}, None),
+        (None, None),
+    ],
+)
+def test_ollama_native_thinking_options(thinking, expected):
+    assert parse_ollama_entry({"thinking": thinking}) == expected
+
+
+async def test_live_capabilities_are_provider_scoped_and_override_static_catalog(fetch_recorder):
+    base = "http://localhost:9999"
+    calls = fetch_recorder(
+        {
+            "https://models.dev/api.json": {
+                "lmstudio": {
+                    "models": {
+                        "same-model": {"reasoning_options": {"type": "effort", "values": ["high"]}}
+                    }
+                },
+                "ollama-cloud": {
+                    "models": {
+                        "same-model": {"reasoning_options": {"type": "effort", "values": ["high"]}}
+                    }
+                },
+            },
+            base + "/api/v1/models": {
+                "models": [
+                    {
+                        "key": "same-model",
+                        "capabilities": {
+                            "reasoning": {"allowed_options": ["off", "on"], "default": "off"}
+                        },
+                    }
+                ]
+            },
+            base + "/api/tags": {"models": [{"name": "same-model"}, {"name": "plain"}]},
+            base + "/api/show/same-model": {
+                "thinking": {"values": ["low", "high"], "default": "low"}
+            },
+            base + "/api/show/plain": {"thinking": {"values": [False]}},
+        }
+    )
+    catalog = await ReasoningCatalog.build(
+        lambda: [
+            _provider("studio", ProviderKind.LM_STUDIO, base),
+            _provider("ollama", ProviderKind.OLLAMA, base + "/v1"),
+        ]
+    )
+    assert catalog.lookup("studio", "same-model") == ReasoningInfo(["off", "on"], "off")
+    assert catalog.lookup("ollama", "same-model") == ReasoningInfo(["low", "high"], "low")
+    assert catalog.lookup("ollama", "plain") == ReasoningInfo([])
+    assert sum(url.endswith("/api/v1/models") for url, _ in calls) == 1
+    assert sum(url.endswith("/api/show") for url, _ in calls) == 2

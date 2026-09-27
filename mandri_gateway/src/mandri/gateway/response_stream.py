@@ -2,11 +2,27 @@
 
 import copy
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+def _has_output(value: dict[str, Any]) -> bool:
+    kind = value.get("type")
+    if kind not in {"message", "reasoning"}:
+        return True
+    parts = value.get("content" if kind == "message" else "summary") or []
+    return any(
+        part.get("text")
+        or part.get("refusal")
+        or part.get("type") not in {"output_text", "summary_text", "reasoning_text", "refusal"}
+        for part in parts
+    ) or bool(value.get("encrypted_content"))
 
 
 @dataclass
@@ -136,7 +152,10 @@ class _Normalizer:
                         "response": {**response, "status": status},
                     }
                 ]
-            if not response.get("output") and not self.items:
+            if not any(_has_output(value) for value in response.get("output") or []) and not any(
+                any(item.text.values()) or _has_output(item.value) for item in self.items.values()
+            ):
+                logger.warning("Provider completed a Responses stream without any output")
                 return [
                     {
                         **payload,

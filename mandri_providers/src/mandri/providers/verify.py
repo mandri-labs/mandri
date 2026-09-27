@@ -42,7 +42,9 @@ _BASES_REQUIRED: frozenset[ProviderKind] = frozenset(
 
 
 def resolve_api_base(kind: ProviderKind, api_base: Url | None) -> Url | None:
-    """Fill in the hosted default base when litellm has none for the kind."""
+    """Resolve the inference API base for a provider."""
+    if kind is ProviderKind.LM_STUDIO and api_base is not None:
+        return Url(lm_studio_base(str(api_base)) + "/v1")
     if api_base is not None or kind not in _BASES_REQUIRED:
         return api_base
     return Url(DEFAULT_PROVIDER_BASES[kind])

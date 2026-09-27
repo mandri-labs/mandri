@@ -28,7 +28,7 @@ def validate_effort(wiring: GatewayWiring, model_arg: str, effort: str | None) -
     if normalized is None:
         return
     info = lookup_efforts(wiring, model_arg)
-    if info is None or not info.efforts or normalized in info.efforts:
+    if info is None or normalized in info.efforts:
         return
     raise ApiError(
         code="invalid_effort",

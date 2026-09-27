@@ -16,6 +16,7 @@ from mandri.gateway.privacy_call import guarded_call
 from mandri.gateway.privacy_count import protected_count_tokens
 from mandri.gateway.privacy_egress import EgressGuard, provider_base
 from mandri.gateway.ratelimit_headers import from_exception
+from mandri.gateway.reasoning_transport import apply_reasoning_transport
 from mandri.gateway.responses_input import normalize_tool_results
 from mandri.gateway.route_registry import ResolvedRoute
 from mandri.gateway.types.model import Model
@@ -88,6 +89,7 @@ class OpenAIHandler:
                 key: value for key, value in payload.items() if key not in _OPENAI_REASONING_KEYS
             }
             payload["reasoning_effort"] = route.reasoning_effort
+        apply_reasoning_transport(str(route.model.model_ref), payload, responses=False)
         stream = bool(payload.pop("stream", False))
         call_kwargs: dict[str, Any] = {
             "model": str(route.model.model_ref),
@@ -95,6 +97,7 @@ class OpenAIHandler:
             "num_retries": 0,
             "timeout": _STREAM_TIMEOUT if stream else _CALL_TIMEOUT_SECONDS,
             "stream": stream,
+            "allowed_openai_params": ["reasoning_effort"],
             **payload,
             **_credentials(route, guard),
             "additional_drop_params": ["web_search_options"],
@@ -156,6 +159,12 @@ class ResponsesHandler:
                 payload["reasoning"] = {"effort": effort}
             else:
                 payload.pop("reasoning", None)
+        apply_reasoning_transport(
+            str(route.model.model_ref),
+            payload,
+            responses=True,
+            native_responses=not use_chat_completions,
+        )
         call_kwargs: dict[str, Any] = {
             "model": str(route.model.model_ref),
             "input": input_value,

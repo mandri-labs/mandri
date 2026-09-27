@@ -53,7 +53,7 @@ async def test_gateway_alias_never_selects_the_upstream_model(monkeypatch, targe
         },
     )
     assert call.kwargs["model"] == target
-    assert call.kwargs["reasoning_effort"] == "high"
+    assert call.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
 
 
 @pytest.fixture()
@@ -74,7 +74,7 @@ async def test_chat_override_strips_and_sets_effort(
     }
     await OpenAIHandler().chat_completions(_resolved("high"), body)
     assert capture.kwargs is not None
-    assert capture.kwargs["reasoning_effort"] == "high"
+    assert capture.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
     assert "reasoning" not in capture.kwargs
     assert capture.kwargs["temperature"] == 0.5
 

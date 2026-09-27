@@ -10,6 +10,7 @@ from mandri.core.ids import ProviderKind
 from mandri.gateway.model_metadata import openrouter_reasoning_efforts
 from mandri.providers.refs import MODEL_REF_PREFIXES
 from mandri.providers.service import Provider, ProvidersRegistry
+from mandri.providers.verify import lm_studio_base
 
 _TIMEOUT_SECONDS = 10.0
 _MODELS_DEV_URL = "https://models.dev/api.json"
@@ -139,16 +140,21 @@ async def _models_dev_catalog() -> dict[str, dict[str, ReasoningInfo]]:
 
 
 async def _lm_studio_probe(base: str, api_key: str) -> dict[str, ReasoningInfo]:
-    payload = await _fetch_json(base.rstrip("/") + _LM_STUDIO_MODELS_PATH, _auth_headers(api_key))
+    payload = await _fetch_json(
+        lm_studio_base(base) + _LM_STUDIO_MODELS_PATH, _auth_headers(api_key)
+    )
     if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
         return {}
     catalog: dict[str, ReasoningInfo] = {}
     for entry in payload["models"]:
-        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+        if not isinstance(entry, dict):
+            continue
+        model_id = entry.get("key", entry.get("id"))
+        if not isinstance(model_id, str):
             continue
         info = parse_lm_studio_entry(entry)
         if info is not None:
-            catalog[entry["id"]] = info
+            catalog[model_id] = info
     return catalog
 
 

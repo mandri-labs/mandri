@@ -7,6 +7,10 @@ from fastapi import APIRouter, Response
 from mandri.api.deps import Gateway, GatewayWiring, Http, Providers
 from mandri.api.errors import ERROR_RESPONSES, NOT_FOUND, NOT_FOUND_CONFLICT, ApiError
 from mandri.core.ids import ProviderKind
+from mandri.gateway.catalog_enrichment import enrich_entries
+from mandri.gateway.model_capabilities import metadata_capabilities
+from mandri.gateway.reasoning_catalog import parse_lm_studio_entry
+from mandri.providers.catalog import model_entries
 from mandri.providers.errors import (
     ProviderExistsError,
     ProviderInUseError,
@@ -52,6 +56,11 @@ class ModelOut(BaseModel):
     id: str
     reasoning_efforts: list[str]
     default_effort: str | None
+    display_name: str | None = None
+    image_input: bool | None = None
+    tool_call: bool | None = None
+    reasoning_supported: bool | None = None
+    input_modalities: list[str] | None = None
 
 
 def _to_out(provider: Provider) -> ProviderOut:
@@ -89,7 +98,7 @@ def _verification_failed(error: ProviderVerificationError) -> ApiError:
         code="provider_verification_failed",
         message=str(error),
         status=400,
-        detail={"kind": error.kind.value},
+        detail={"kind": error.kind.value, "reason": error.reason},
     )
 
 
@@ -106,18 +115,6 @@ def _require_api_base(provider: Provider) -> None:
             message=f"api_base is required for provider {provider.kind.value}",
             status=400,
         )
-
-
-def _model_ids(kind: ProviderKind, payload: Any) -> list[str]:
-    if kind is ProviderKind.GEMINI:
-        models = payload.get("models", []) if isinstance(payload, dict) else []
-        return [
-            str(entry["name"]).removeprefix("models/")
-            for entry in models
-            if isinstance(entry, dict) and entry.get("name")
-        ]
-    data = payload.get("data", []) if isinstance(payload, dict) else []
-    return [str(entry["id"]) for entry in data if isinstance(entry, dict) and entry.get("id")]
 
 
 @router.get("", operation_id="list_providers")
@@ -193,13 +190,26 @@ async def verify_provider(name: str, service: Providers) -> ProviderOut:
     return _to_out(provider)
 
 
-def _model_out(wiring: GatewayWiring, provider_name: str, model_id: str) -> ModelOut:
+def _model_out(wiring: GatewayWiring, provider: Provider, entry: dict[str, Any]) -> ModelOut:
+    model_id = entry["id"]
+    provider_name = provider.name
     catalog = wiring.reasoning_catalog
     info = None if catalog is None else catalog.lookup(provider_name, f"{provider_name}/{model_id}")
-    if info is None:
-        return ModelOut(id=model_id, reasoning_efforts=[], default_effort=None)
+    if provider.kind is ProviderKind.LM_STUDIO:
+        info = parse_lm_studio_entry(entry) or info
+    capabilities = metadata_capabilities(entry)
+    reasoning = capabilities["reasoning_supported"]
+    if reasoning is None and info is not None:
+        reasoning = any(effort != "off" for effort in info.efforts)
     return ModelOut(
-        id=model_id, reasoning_efforts=list(info.efforts), default_effort=info.default_effort
+        id=model_id,
+        reasoning_efforts=list(info.efforts) if info else [],
+        default_effort=info.default_effort if info else None,
+        display_name=entry.get("display_name", entry.get("name")),
+        image_input=capabilities["image_input"],
+        tool_call=capabilities["tool_call"],
+        reasoning_supported=reasoning,
+        input_modalities=capabilities["input_modalities"],
     )
 
 
@@ -230,11 +240,12 @@ async def list_provider_models(
             status=502,
         )
     try:
-        payload: Any = response.json()
+        entries = model_entries(provider.kind, response.json())
     except ValueError:
         raise ApiError(
             code="provider_models_failed",
-            message="provider returned invalid JSON",
+            message="provider returned an invalid model catalog",
             status=502,
         ) from None
-    return [_model_out(wiring, name, model_id) for model_id in _model_ids(provider.kind, payload)]
+    entries = await enrich_entries(provider.kind, entries, client)
+    return [_model_out(wiring, provider, entry) for entry in entries]

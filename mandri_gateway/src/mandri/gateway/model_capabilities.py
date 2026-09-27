@@ -32,14 +32,22 @@ def metadata_capabilities(entry: dict[str, Any]) -> dict[str, Any]:
     if attachment is None and inputs is not None:
         attachment = any(item != "text" for item in inputs)
     vision = capability(entry, "vision")
+    tools = capability(entry, "tool_call", "tools", "tool_choice")
+    if tools is None:
+        tools = capability(entry, "trained_for_tool_use")
+    reasoning = capability(entry, "reasoning", "reasoning", "reasoning_effort", "thinking")
+    capabilities = entry.get("capabilities")
+    reasoning_options = capabilities.get("reasoning") if isinstance(capabilities, dict) else None
+    if reasoning is None and isinstance(reasoning_options, dict):
+        options = optional_strings(reasoning_options.get("allowed_options"))
+        if options is not None:
+            reasoning = any(option != "off" for option in options)
     return {
         "input_modalities": inputs,
         "output_modalities": modalities(entry, "output"),
         "image_input": "image" in inputs if inputs is not None else vision,
-        "reasoning_supported": capability(
-            entry, "reasoning", "reasoning", "reasoning_effort", "thinking"
-        ),
-        "tool_call": capability(entry, "tool_call", "tools", "tool_choice"),
+        "reasoning_supported": reasoning,
+        "tool_call": tools,
         "attachment": attachment,
         "temperature": capability(entry, "temperature", "temperature"),
     }

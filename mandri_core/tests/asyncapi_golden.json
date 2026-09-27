@@ -4469,7 +4469,7 @@
   "info": {
     "description": "Local control-plane daemon unifying coding harnesses.",
     "title": "Mandri Daemon",
-    "version": "0.1.0b0"
+    "version": "0.1.1b0"
   },
   "operations": {
     "agent.create": {

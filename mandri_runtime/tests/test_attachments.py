@@ -274,6 +274,7 @@ async def test_prepare_repairs_modified_materialized_bytes_and_rejects_symlink(t
     path.write_bytes(b"modified")
     assert store.prepare(record, "", [item.id]) == original
     assert path.read_bytes() == b"original"
+    path.chmod(0o644)
     path.unlink()
     outside = tmp_path / "outside.txt"
     outside.write_bytes(b"original")

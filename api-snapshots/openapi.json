@@ -2586,7 +2586,7 @@
   },
   "info": {
     "title": "Mandri Daemon",
-    "version": "0.1.0b0"
+    "version": "0.1.1b0"
   },
   "openapi": "3.1.0",
   "paths": {

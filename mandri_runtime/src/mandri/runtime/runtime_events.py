@@ -77,14 +77,15 @@ class RuntimeEvents:
         if port is None or hub is None or kind is None:
             return
         native_session_id = SessionId(session_id)
+        since = self._session_state(session_id).feed_start_seq
         topic = session_topic(session_id)
         adapter: LivenessAdapter
         if kind is HarnessKind.PI:
-            adapter = PiLivenessAdapter(hub, topic, port, native_session_id)
+            adapter = PiLivenessAdapter(hub, topic, port, native_session_id, since=since)
         elif kind is HarnessKind.AGY:
-            adapter = AgyLivenessAdapter(hub, topic, port, native_session_id)
+            adapter = AgyLivenessAdapter(hub, topic, port, native_session_id, since=since)
         elif kind is HarnessKind.CLAUDE:
-            adapter = ClaudeLivenessAdapter(hub, topic, port, native_session_id)
+            adapter = ClaudeLivenessAdapter(hub, topic, port, native_session_id, since=since)
         elif kind is HarnessKind.CODEX:
             adapter = CodexLivenessAdapter(
                 hub,
@@ -92,9 +93,10 @@ class RuntimeEvents:
                 port,
                 native_session_id,
                 native_identity=lambda: self._session_state(session_id).native_id,
+                since=since,
             )
         else:
-            adapter = OpencodeLivenessAdapter(hub, topic, port, native_session_id)
+            adapter = OpencodeLivenessAdapter(hub, topic, port, native_session_id, since=since)
         port.register(native_session_id)
         adapter.start()
         self._session_state(session_id).liveness_adapter = adapter
@@ -142,10 +144,6 @@ class RuntimeEvents:
                 await self.publish_event(session_topic(session_id), _opencode_event_payload(event))
         except ControlError:
             return
-
-    def collect_session_topic(self, session_id: str) -> None:
-        if self._hub is not None:
-            self._hub.collect_topic(session_topic(session_id))
 
     def publish(self, payload: dict[str, Any]) -> None:
         if self._hub is not None:

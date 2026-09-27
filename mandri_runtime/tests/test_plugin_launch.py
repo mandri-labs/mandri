@@ -81,7 +81,7 @@ async def test_pseudonymized_launch_keeps_native_extensions(kind, backend, tmp_p
 async def test_codex_starts_and_sends_with_native_plugins_without_qualification(resume):
     params = {"modelProvider": "mandri", "config": {"plugins.custom.enabled": True}}
     control = CodexControlAdapter(
-        None,
+        Mock(),
         None,
         params,
         resume_thread_id=HarnessSessionId("thread") if resume else None,

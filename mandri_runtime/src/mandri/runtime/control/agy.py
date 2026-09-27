@@ -117,6 +117,7 @@ class AgyControlAdapter:
         return await self._interrupt()
 
     async def aclose(self) -> None:
+        self._stdout.close()
         await self._bridge.aclose()
         if self._task is not None:
             self._task.cancel()

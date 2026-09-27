@@ -178,6 +178,8 @@ class ClaudeControlAdapter:
         return True
 
     async def aclose(self) -> None:
+        self._stdout_pump.close()
+        self._stderr_pump.close()
         self._commands.fail("Claude control stream closed; command outcome is unknown")
         tasks = [task for task in (self._pump_task, self._stderr_task) if task is not None]
         for task in tasks:

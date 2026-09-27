@@ -24,6 +24,7 @@ from mandri.runtime.control.pi_rpc import response_data
 from mandri.runtime.pump import LineEventKind, LinePump
 
 DIALOG_METHODS = frozenset({"select", "confirm", "input", "editor"})
+RPC_RESPONSE_TIMEOUT_SECONDS = 60.0
 ALLOW_DECISIONS = frozenset(
     {
         ApprovalDecision.ALLOW,
@@ -211,6 +212,7 @@ class PiControlAdapter:
         return True
 
     async def aclose(self) -> None:
+        self._stdout_pump.close()
         self._closed = True
         if self._refresh is not None:
             self._refresh.cancel()
@@ -299,10 +301,11 @@ class PiControlAdapter:
         identifier = str(self._request_id)
         future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
         self._pending[identifier] = future
+        timeout = None if command in {"prompt", "compact", "bash"} else RPC_RESPONSE_TIMEOUT_SECONDS
         try:
-            await self._send({**params, "type": command, "id": identifier})
-            timeout = None if command in {"prompt", "compact", "bash"} else 60
-            record = await asyncio.wait_for(future, timeout=timeout)
+            async with asyncio.timeout(timeout):
+                await self._send({**params, "type": command, "id": identifier})
+                record = await future
             return response_data(record, command)
         finally:
             self._pending.pop(identifier, None)

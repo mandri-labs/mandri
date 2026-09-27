@@ -34,6 +34,8 @@ class OpencodeLivenessAdapter:
         topic: Topic,
         port: LivenessPort,
         session_id: SessionId,
+        *,
+        since: int = 0,
     ) -> None:
         self._hub = hub
         self._topic = topic
@@ -41,14 +43,14 @@ class OpencodeLivenessAdapter:
         self._session_id = session_id
         self._handle: SubscriberHandle | None = None
         self._task: asyncio.Task[None] | None = None
-        self._last_seq = 0
+        self._last_seq = since
         self._closed = False
         self._root: str | None = None
         self._root_turn_active = False
         self._children: set[str] = set()
 
     def start(self) -> None:
-        self._handle = self._hub.subscribe(self._topic, since=0, internal=True)
+        self._handle = self._hub.subscribe(self._topic, since=self._last_seq, internal=True)
         self._task = asyncio.get_running_loop().create_task(
             self._consume(), name=f"opencode-liveness:{self._session_id}"
         )

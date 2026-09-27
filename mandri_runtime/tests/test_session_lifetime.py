@@ -1,7 +1,10 @@
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from mandri.core.ids import SessionStopCause
+from mandri.core.types.execution import ExecutionPhase
 from mandri.runtime.service import RuntimeService
 from mandri.sessions.errors import SessionRunningError
 
@@ -56,3 +59,65 @@ async def test_resume_timer_is_not_armed_with_existing_viewer() -> None:
     service.viewer_joined("session")
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+async def test_zero_viewer_release_uses_configured_continuous_idle_period(monkeypatch):
+    runtime = RuntimeService({}, idle_release_seconds=60)
+    runtime.registry.mark_live("session", SimpleNamespace(returncode=None))
+    now = 0.0
+    busy = False
+    runtime.is_busy = lambda _: busy
+    monkeypatch.setattr("mandri.runtime.session_lifetime.time.monotonic", lambda: now)
+    stop = AsyncMock()
+    runtime.stop_session = stop
+    runtime._lifetime.arm_zero_viewer_decision("session")
+    try:
+        now = 4.0
+        await runtime._lifetime.release_idle_processes()
+        stop.assert_not_awaited()
+        busy = True
+        now = 59.0
+        await runtime._lifetime.release_idle_processes()
+        busy = False
+        now = 60.0
+        await runtime._lifetime.release_idle_processes()
+        now = 119.0
+        await runtime._lifetime.release_idle_processes()
+        stop.assert_not_awaited()
+        now = 120.0
+        await runtime._lifetime.release_idle_processes()
+        stop.assert_awaited_once_with("session", cause=SessionStopCause.IDLE_TIMEOUT)
+    finally:
+        runtime.viewer_joined("session")
+
+
+@pytest.mark.parametrize("activity", ["viewer", "resuming", "prompt"])
+async def test_idle_release_rechecks_activity_after_persisting_stop(activity):
+    runtime = RuntimeService({})
+    process = SimpleNamespace(returncode=None, stop=AsyncMock(return_value=0))
+    runtime.registry.mark_live("session", process)
+    entered = asyncio.Event()
+    proceed = asyncio.Event()
+    busy = False
+    runtime.is_busy = lambda _: busy
+
+    async def persist(*args, **kwargs):
+        entered.set()
+        await proceed.wait()
+
+    runtime._persist_execution_exit = AsyncMock(side_effect=persist)
+    runtime._executions.phase = AsyncMock()
+    task = asyncio.create_task(runtime.stop_session("session", cause=SessionStopCause.IDLE_TIMEOUT))
+    await asyncio.wait_for(entered.wait(), 1)
+    if activity == "viewer":
+        runtime.viewer_joined("session")
+    elif activity == "resuming":
+        runtime._session_state("session").resuming = True
+    else:
+        busy = True
+    proceed.set()
+    assert await task == 0
+    process.stop.assert_not_awaited()
+    assert runtime.registry.status("session") == "live"
+    assert not runtime._session_state("session").stopping
+    runtime._executions.phase.assert_awaited_once_with("session", ExecutionPhase.READY)

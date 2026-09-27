@@ -27,7 +27,7 @@ from mandri.core.types.approvals import (
 )
 from mandri.core.types.sessions import SessionError
 from mandri.runtime.agents import AgentService
-from mandri.runtime.attachments import AttachmentError
+from mandri.runtime.attachments import AttachmentError, AttachmentStorageError
 from mandri.runtime.control import PromptState
 from mandri.runtime.control.errors import (
     ControlError,
@@ -215,6 +215,10 @@ def _make_prompt_handler(
                 if params.attachments
                 else await runtime.send_session_prompt(str(params.session_id), params.content)
             )
+        except AttachmentStorageError as exc:
+            raise ProtocolError(
+                ProtocolErrorCode.ATTACHMENT_STORAGE_UNAVAILABLE, str(exc)
+            ) from exc
         except AttachmentError as exc:
             raise ProtocolError(ProtocolErrorCode.INVALID_PARAMS, str(exc)) from exc
         except SteerNoActiveTurnError as exc:

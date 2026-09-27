@@ -10,12 +10,12 @@ from mandri.core.hub import Hub, SubscriberHandle, Topic
 class HubEventLines:
     """Streams harness-sourced frames of one session topic as JSON byte lines."""
 
-    def __init__(self, hub: Hub, topic: Topic, source: str) -> None:
+    def __init__(self, hub: Hub, topic: Topic, source: str, *, since: int = 0) -> None:
         self._hub = hub
         self._topic = topic
         self._source = source
-        self._handle: SubscriberHandle | None = hub.subscribe(topic, since=0, internal=True)
-        self._last_seq = 0
+        self._handle: SubscriberHandle | None = hub.subscribe(topic, since=since, internal=True)
+        self._last_seq = since
         self._closed = False
 
     async def chunks(self) -> AsyncIterator[bytes]:

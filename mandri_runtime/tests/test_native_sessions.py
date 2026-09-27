@@ -138,9 +138,7 @@ async def test_pending_native_change_reuses_session_only_once():
     runtime._resume_session = AsyncMock(side_effect=resume)
     await runtime._apply_pending_model("session-1")
     await runtime._apply_pending_model("session-1")
-    runtime.stop_session.assert_awaited_once_with(
-        "session-1", restore_native=False, preserve_topic=True
-    )
+    runtime.stop_session.assert_awaited_once_with("session-1", restore_native=False)
     runtime._resume_session.assert_awaited_once_with("session-1")
     assert runtime._routes.mock_calls == []
 

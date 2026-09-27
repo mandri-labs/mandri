@@ -16,7 +16,7 @@ class SessionFileContext:
 
     @classmethod
     def from_session(cls, session: Session, storage: Path) -> "SessionFileContext":
-        cwd = Path(session.project_path).expanduser().resolve(strict=True)
+        cwd = Path(session.project_path).expanduser().resolve()
         if session.execution_backend is ExecutionBackend.DOCKER:
             context = DockerSessionContext.from_session(session)
             return cls(

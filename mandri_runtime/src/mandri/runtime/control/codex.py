@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import dataclasses
 import json
+import logging
 from typing import Any, final
 
 from mandri.core.ids import ApprovalDecision, ApprovalKind, HarnessSessionId, ModeApplication
@@ -28,6 +29,8 @@ from mandri.runtime.pump import LineEventKind, LinePump
 JSONRPC_VERSION = "2.0"
 CLIENT_NAME = "mandri"
 CLIENT_VERSION = "0.1.0"
+RPC_RESPONSE_TIMEOUT_SECONDS = 60.0
+logger = logging.getLogger(__name__)
 
 INITIALIZE_METHOD = "initialize"
 INITIALIZED_NOTIFICATION = "initialized"
@@ -262,6 +265,7 @@ class CodexControlAdapter:
         return self._result_or_failure(message, ControlTransportError)
 
     async def aclose(self) -> None:
+        self._stdout_pump.close()
         if self._reader_task is not None:
             self._reader_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -311,7 +315,8 @@ class CodexControlAdapter:
             },
         )
         result = self._result_or_failure(message, ControlTransportError)
-        await self._send({"jsonrpc": JSONRPC_VERSION, "method": INITIALIZED_NOTIFICATION})
+        async with asyncio.timeout(RPC_RESPONSE_TIMEOUT_SECONDS):
+            await self._send({"jsonrpc": JSONRPC_VERSION, "method": INITIALIZED_NOTIFICATION})
         return result
 
     async def _start_turn(self, thread_id: str, content: str | UserPrompt) -> PromptOutcome:
@@ -357,17 +362,32 @@ class CodexControlAdapter:
         request_id = self._next_request_id
         future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
         self._pending[request_id] = future
+        started = asyncio.get_running_loop().time()
+        logger.debug(
+            "codex request started: method=%s id=%s thread=%s", method, request_id, self._thread_id
+        )
         try:
-            await self._send(
-                {"jsonrpc": JSONRPC_VERSION, "id": request_id, "method": method, "params": params}
-            )
-        except BaseException:
-            self._pending.pop(request_id, None)
+            async with asyncio.timeout(RPC_RESPONSE_TIMEOUT_SECONDS):
+                await self._send(
+                    {
+                        "jsonrpc": JSONRPC_VERSION,
+                        "id": request_id,
+                        "method": method,
+                        "params": params,
+                    }
+                )
+                return await future
+        except TimeoutError:
+            logger.warning("codex request timed out: method=%s id=%s", method, request_id)
             raise
-        try:
-            return await asyncio.wait_for(future, timeout=60)
         finally:
             self._pending.pop(request_id, None)
+            logger.debug(
+                "codex request finished: method=%s id=%s elapsed=%.3fs",
+                method,
+                request_id,
+                asyncio.get_running_loop().time() - started,
+            )
 
     async def _send(self, message: dict[str, Any]) -> None:
         line = json.dumps(message, separators=(",", ":"))

@@ -377,10 +377,12 @@ def build_server(
     port: int,
     cors_origins: Sequence[CorsOrigin] | None = None,
     desktop_token: str | None = None,
+    *,
+    log_level: str = "info",
 ) -> tuple[uvicorn.Server, RuntimeResources]:
     resources = RuntimeResources()
     app = build_app(resources, cors_origins)
-    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    config = uvicorn.Config(app, host=host, port=port, log_level=log_level)
     server = DaemonServer(config)
     if host in {"127.0.0.1", "localhost"}:
         app.add_middleware(

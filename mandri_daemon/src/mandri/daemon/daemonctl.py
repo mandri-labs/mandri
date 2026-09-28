@@ -166,8 +166,13 @@ def _log_file_path(base_dir: Path | str) -> Path:
     return Path(base_dir) / DAEMON_LOG_NAME
 
 
-def _spawn_argv(base_dir: Path, address: Address) -> list[str]:
-    return [
+def _spawn_argv(
+    base_dir: Path,
+    address: Address,
+    log_level: str = "info",
+    enable_litellm_debug: bool = False,
+) -> list[str]:
+    argv = [
         sys.executable,
         "-m",
         "mandri.daemon",
@@ -178,7 +183,12 @@ def _spawn_argv(base_dir: Path, address: Address) -> list[str]:
         address.host,
         "--port",
         str(address.port),
+        "--log-level",
+        log_level,
     ]
+    if enable_litellm_debug:
+        argv.append("--enable-litellm-debug")
+    return argv
 
 
 def _spawn_platform_kwargs() -> dict[str, Any]:
@@ -190,13 +200,20 @@ def _spawn_platform_kwargs() -> dict[str, Any]:
     return kwargs
 
 
-def spawn_daemon(base_dir: Path, address: Address) -> None:
+def spawn_daemon(
+    base_dir: Path,
+    address: Address,
+    log_level: str = "info",
+    enable_litellm_debug: bool = False,
+) -> None:
     Path(base_dir).mkdir(parents=True, exist_ok=True)
     with open(_log_file_path(base_dir), "ab") as log_file:
         kwargs = _spawn_platform_kwargs()
         kwargs["stdout"] = log_file
         kwargs["stderr"] = log_file
-        subprocess.Popen(_spawn_argv(base_dir, address), **kwargs)
+        subprocess.Popen(
+            _spawn_argv(base_dir, address, log_level, enable_litellm_debug), **kwargs
+        )
 
 
 def await_ready(address: Address, deadline_s: float = 10.0, log_path: Path | None = None) -> None:
@@ -215,7 +232,11 @@ def _probe_is_running(address: Address) -> bool:
     return probe(address) is ProbeStatus.RUNNING
 
 
-def ensure_running(base_dir: Path) -> Address:
+def ensure_running(
+    base_dir: Path,
+    log_level: str = "info",
+    enable_litellm_debug: bool = False,
+) -> Address:
     address = resolve_address(base_dir)
     status = probe(address)
     if status is ProbeStatus.RUNNING:
@@ -224,7 +245,7 @@ def ensure_running(base_dir: Path) -> Address:
         raise ForeignServiceError(f"port {address.port} is occupied by a foreign service")
     if pid_file_is_stale(base_dir, partial(_probe_is_running, address)):
         remove_pid_file(base_dir)
-    spawn_daemon(base_dir, address)
+    spawn_daemon(base_dir, address, log_level, enable_litellm_debug)
     try:
         await_ready(
             address,

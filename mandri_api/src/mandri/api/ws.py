@@ -154,7 +154,19 @@ def _background_done(task: asyncio.Task[None]) -> None:
 def _close_after_relay(websocket: WebSocket, task: asyncio.Task[None]) -> None:
     if task.cancelled() or task.exception() is not None:
         return
-    _track(asyncio.create_task(websocket.close()))
+    _track(asyncio.create_task(_close(websocket)))
+
+
+async def _close(websocket: WebSocket) -> None:
+    if _disconnected(websocket):
+        return
+    try:
+        await websocket.close()
+    except WebSocketDisconnect:
+        return
+    except RuntimeError:
+        if not _disconnected(websocket):
+            raise
 
 
 async def _snapshot(state: LifespanState) -> dict[str, Any]:
@@ -340,7 +352,7 @@ async def _cleanup(
         if session_id is not None:
             await _viewer_lost(state, session_id)
     with contextlib.suppress(Exception):
-        await websocket.close()
+        await _close(websocket)
 
 
 @router.websocket("/ws")

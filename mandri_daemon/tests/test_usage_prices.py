@@ -12,6 +12,7 @@ from mandri.daemon.usage_price_catalog import MODELS_DEV_URL, OPENROUTER_URL
 from mandri.daemon.usage_prices import CACHE_SECONDS, RETRY_SECONDS, PriceCatalogSync
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 
 PAYLOADS = {
     MODELS_DEV_URL: {
@@ -163,6 +164,7 @@ async def test_sync_persists_prices_and_freshness_in_real_repository(tmp_path):
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "catalog.db")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
     requests = []
 

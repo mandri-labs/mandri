@@ -151,7 +151,7 @@ async def test_coordinator_refreshes_at_startup_every_five_minutes_and_on_reques
     now = 0.0
     monkeypatch.setattr("mandri.daemon.usage.time", SimpleNamespace(monotonic=lambda: now))
     repository = AsyncMock()
-    repository.revalue_unpriced.return_value = {"next_key": None}
+    repository.revalue_pending.return_value = {"next_key": None}
     repository.revision.return_value = 0
     coordinator = UsageCoordinator(repository, Hub())
     collected = []

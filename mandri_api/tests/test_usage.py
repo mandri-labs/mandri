@@ -10,6 +10,7 @@ from mandri.api.deps import LifespanState, database, usage_repository
 from mandri.core.types.usage import UsageAccount, UsageObservation, UsagePrice
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 
 
 @pytest.fixture
@@ -19,6 +20,7 @@ async def usage_client() -> AsyncIterator[
     db = AiosqliteDatabase()
     await db.connect(":memory:")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repo = UsageRepository(db)
     app = create_app()
     app.dependency_overrides[usage_repository] = lambda: repo

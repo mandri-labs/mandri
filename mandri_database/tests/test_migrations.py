@@ -178,3 +178,26 @@ async def test_parent_lineage_migration_preserves_protected_sessions(tmp_path, m
         assert await _version(connection) == LATEST_VERSION
     finally:
         await connection.close()
+
+
+async def test_split_migration_drops_usage_and_preserves_sessions(tmp_path, monkeypatch):
+    connection = await aiosqlite.connect(tmp_path / "legacy.db", isolation_level=None)
+    try:
+        monkeypatch.setattr(migrations_module, "MIGRATIONS", MIGRATIONS[:15])
+        await apply_migrations(connection)
+        await connection.execute(
+            "INSERT INTO session"
+            "(id,harness,project_path,created_at,updated_at,state,last_synced_at)"
+            " VALUES('kept','claude','/workspace',1,1,'stopped',1)"
+        )
+        await connection.execute("INSERT INTO usage_account VALUES('old',1,'{}')")
+        monkeypatch.setattr(migrations_module, "MIGRATIONS", MIGRATIONS)
+        await apply_migrations(connection)
+        async with connection.execute("SELECT id FROM session") as cursor:
+            assert await cursor.fetchall() == [("kept",)]
+        async with connection.execute(
+            "SELECT name FROM sqlite_master WHERE name LIKE 'usage_%'"
+        ) as cursor:
+            assert await cursor.fetchall() == []
+    finally:
+        await connection.close()

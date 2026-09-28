@@ -197,6 +197,8 @@ async def test_wire_runtime_wires_all_adapters(tmp_path: Path) -> None:
     resources, _engine, hub, http, db = await _wire(tmp_path)
     try:
         assert resources.db is db
+        assert resources.usage_db is not None
+        assert resources.usage_db is not db
         assert resources.http is http
         assert resources.hub is hub
         assert resources.sessions is not None
@@ -217,6 +219,8 @@ async def test_wire_runtime_wires_all_adapters(tmp_path: Path) -> None:
             await resources.runtime.commands.catalogs.aclose()
         await hub.close_all()
         await http.aclose()
+        if resources.usage_db is not None:
+            await resources.usage_db.close()
         await db.close()
 
 
@@ -238,6 +242,8 @@ async def test_build_app_lifespan_carries_resources(tmp_path: Path) -> None:
             await resources.runtime.commands.catalogs.aclose()
         await hub.close_all()
         await http.aclose()
+        if resources.usage_db is not None:
+            await resources.usage_db.close()
         await db.close()
 
 

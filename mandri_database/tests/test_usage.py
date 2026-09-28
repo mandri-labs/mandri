@@ -7,6 +7,7 @@ import pytest
 from mandri.core.types.usage import UsageAccount, UsageFilters, UsageObservation, UsagePrice
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 from mandri.database.usage_serialization import encode
 
 
@@ -15,6 +16,7 @@ async def store(tmp_path):
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "usage.sqlite")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     yield db
     await db.close()
 
@@ -374,6 +376,7 @@ async def test_reopen_persists_replay_and_baseline(tmp_path):
     db = AiosqliteDatabase()
     await db.connect(path)
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
     value = usage(kind="cumulative", epoch="epoch", baseline=True, input_tokens=100, sequence=1)
     await repository.record(value)
@@ -402,6 +405,7 @@ async def test_memory_connection_transaction_support():
     await db.connect(":memory:")
     try:
         await db.migrate()
+        await migrate_usage(db._require_connection())
         repository = UsageRepository(db)
         await repository.record(usage(input_tokens=3))
         assert (await repository.overview())["summary"]["input_tokens"] == 3
@@ -489,6 +493,7 @@ async def test_separate_connections_share_atomic_revision(tmp_path):
     db1, db2 = AiosqliteDatabase(), AiosqliteDatabase()
     await db1.connect(tmp_path / "shared.sqlite")
     await db1.migrate()
+    await migrate_usage(db1._require_connection())
     await db2.connect(tmp_path / "shared.sqlite")
     try:
         first, second = UsageRepository(db1), UsageRepository(db2)

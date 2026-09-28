@@ -18,13 +18,14 @@ def backup_profile(base_dir: Path) -> None:
     base_dir.mkdir(parents=True, exist_ok=True)
     destination = base_dir / "backups" / f"before-{__version__}"
     destination.mkdir(parents=True, exist_ok=True)
-    database = base_dir / "mandri.db"
-    if database.is_file() and not (destination / "mandri.db").exists():
-        with (
-            sqlite3.connect(database) as source,
-            sqlite3.connect(destination / "mandri.db") as target,
-        ):
-            source.backup(target)
+    for name in ("mandri.db", "usage.db"):
+        database = base_dir / name
+        if database.is_file() and not (destination / name).exists():
+            with (
+                sqlite3.connect(database) as source,
+                sqlite3.connect(destination / name) as target,
+            ):
+                source.backup(target)
     config = base_dir / "config.toml"
     if config.is_file() and not (destination / config.name).exists():
         shutil.copy2(config, destination / config.name)

@@ -16,8 +16,7 @@ def shared_scope(left: UsageObservation, right: UsageObservation) -> bool:
 
 def gateway_facts(db: sqlite3.Connection, value: UsageObservation) -> list[UsageObservation]:
     rows = db.execute(
-        "SELECT f.payload FROM usage_observation o JOIN usage_fact f"
-        " ON f.fact_key=json_extract(o.payload,'$.fact_key') WHERE o.source='gateway'"
+        "SELECT f.payload FROM usage_fact f WHERE f.source='gateway'"
         " AND (f.session_id IN (?,?) OR f.root_session_id IN (?,?))",
         (value.session_id, value.root_session_id, value.session_id, value.root_session_id),
     ).fetchall()
@@ -35,13 +34,13 @@ def scoped_facts(db: sqlite3.Connection, value: UsageObservation) -> list[UsageO
         rows = db.execute(
             "SELECT payload FROM usage_observation WHERE"
             f" (session_id IN ({placeholders})"
-            f" OR json_extract(payload,'$.root_session_id') IN ({placeholders}))"
+            f" OR root_session_id IN ({placeholders}))"
             " AND json_extract(payload,'$.kind')='delta'"
             " AND json_extract(payload,'$.authoritative')=1"
-            " AND json_extract(payload,'$.source') LIKE 'native%'"
+            " AND source LIKE 'native%'"
             " UNION ALL SELECT payload FROM usage_fact WHERE"
             f" (session_id IN ({placeholders}) OR root_session_id IN ({placeholders}))"
-            " AND json_extract(payload,'$.source') LIKE 'native%'",
+            " AND source LIKE 'native%'",
             (*ids, *ids, *ids, *ids),
         ).fetchall()
     else:
@@ -139,14 +138,21 @@ def select_coverage(db: sqlite3.Connection, fact: UsageObservation) -> bool:
         natives = scoped_facts(db, fact)
     else:
         return True
+    scopes: dict[tuple[str | None, str | None], dict[str, UsageObservation]] = {}
     keep = True
     for native in natives:
-        gateways = {value.fact_key: value for value in gateway_facts(db, native)}
-        if fact.source == "gateway":
-            gateways[fact.fact_key] = fact
-        decisions = [coverage(native, gateway) for gateway in gateways.values()]
-        suppress = any(item[0] for item in decisions)
-        ambiguous = any(item[1] for item in decisions)
+        scope = native.session_id, native.root_session_id
+        if scope not in scopes:
+            scopes[scope] = {value.fact_key: value for value in gateway_facts(db, native)}
+            if fact.source == "gateway":
+                scopes[scope][fact.fact_key] = fact
+        suppress = ambiguous = False
+        for gateway in scopes[scope].values():
+            duplicate, uncertain = coverage(native, gateway)
+            suppress |= duplicate
+            ambiguous |= uncertain
+            if suppress and ambiguous:
+                break
         if (
             fact.source == "gateway"
             and not suppress

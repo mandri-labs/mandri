@@ -7,6 +7,7 @@ from mandri.core.types.usage import UsageFilters, UsagePrice
 from mandri.core.usage_pricing import value_usage
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 from mandri.sessions.usage.adapter import to_usage_observation
 from mandri.sessions.usage.history import UsageCursor, read_usage_batch
 from mandri.sessions.usage.history_headers import irrelevant_codex_record
@@ -343,6 +344,7 @@ async def test_claude_history_message_upserts_and_result_totals_never_overlap(tm
     database = AiosqliteDatabase()
     await database.connect(tmp_path / "usage.sqlite")
     await database.migrate()
+    await migrate_usage(database._require_connection())
     try:
         repository = UsageRepository(database)
         for value in values:

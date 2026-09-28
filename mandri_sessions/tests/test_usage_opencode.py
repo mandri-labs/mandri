@@ -10,6 +10,7 @@ from mandri.core.types.usage import UsageFilters
 from mandri.core.usage_pricing import REVIEWED_AT, bundled_prices, value_usage
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 from mandri.sessions.usage_opencode import OpencodeUsageReader, opencode_usage_observation
 
 
@@ -203,6 +204,7 @@ async def test_completion_update_keeps_identity_and_replaces_incomplete_usage(st
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "usage.sqlite")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     try:
         repository = UsageRepository(db)
         await repository.record(before)
@@ -241,6 +243,7 @@ async def test_replaying_and_updating_history_replaces_fact(store, tmp_path):
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "mandri.sqlite")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
     try:
         for price in bundled_prices():
@@ -261,6 +264,7 @@ async def test_failed_native_request_without_output_is_absent_from_usage(tmp_pat
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "usage.db")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repo = UsageRepository(db)
     value = observation(
         message(

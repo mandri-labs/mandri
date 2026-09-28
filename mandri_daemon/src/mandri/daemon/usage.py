@@ -24,8 +24,6 @@ class UsageCoordinator:
         self._revision = 0
         self._published = 0
         self._notification: asyncio.TimerHandle | None = None
-        self._valuation_cursor: str | None = None
-        self._revalue_all = True
         self.reconcile: Callable[[], Awaitable[bool | None]] | None = None
         self.refresh_accounts: Callable[[], Awaitable[None]] | None = None
         self.refresh_prices: Callable[[], Awaitable[dict[str, Any]]] | None = None
@@ -69,10 +67,7 @@ class UsageCoordinator:
             busy = False
             if self.refresh_prices is not None:
                 try:
-                    catalog = await self.refresh_prices()
-                    if not catalog.get("cached", False) and catalog.get("price_count", 0):
-                        self._revalue_all = True
-                        self._valuation_cursor = None
+                    await self.refresh_prices()
                 except Exception:
                     logger.exception("Usage price refresh failed; stored tariffs retained")
             if self.refresh_accounts is not None and time.monotonic() >= self._next_accounts:
@@ -88,13 +83,8 @@ class UsageCoordinator:
                         "Usage reconciliation failed; retained metrics remain available"
                     )
             try:
-                valuation = await self.repository.revalue_unpriced(
-                    limit=500, after_key=self._valuation_cursor, all_facts=self._revalue_all
-                )
-                self._valuation_cursor = valuation["next_key"]
-                busy = busy or self._valuation_cursor is not None
-                if self._valuation_cursor is None:
-                    self._revalue_all = False
+                valuation = await self.repository.revalue_pending()
+                busy = busy or valuation["next_key"] is not None
                 self._changed(await self.repository.revision())
             except Exception:
                 logger.warning("Usage valuation failed; unpriced quantities remain available")

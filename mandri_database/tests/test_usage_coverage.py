@@ -5,6 +5,7 @@ import pytest
 from mandri.core.types.usage import UsageObservation
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 
 
 @pytest.fixture
@@ -12,6 +13,7 @@ async def repository(tmp_path):
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "coverage.db")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     yield UsageRepository(db)
     await db.close()
 
@@ -280,6 +282,7 @@ async def test_restart_and_replay_preserve_quarantine_and_revision(tmp_path):
     db = AiosqliteDatabase()
     await db.connect(path)
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
     await repository.record(native())
     await repository.record(gateway())

@@ -3,9 +3,10 @@ from typing import NamedTuple
 
 import aiosqlite
 from mandri.database.errors import MigrationError
+from mandri.database.usage_migrations import USAGE_TABLES
 from mandri.database.usage_schema import USAGE_STATEMENTS
 
-LATEST_VERSION = 15
+LATEST_VERSION = 16
 
 
 class Migration(NamedTuple):
@@ -310,6 +311,17 @@ MIGRATIONS: tuple[Migration, ...] = (
         ),
     ),
     Migration(version=15, statements=("ALTER TABLE session ADD COLUMN worktree TEXT",)),
+    Migration(
+        version=16,
+        statements=(
+            *(f"DROP TABLE IF EXISTS {table}" for table in USAGE_TABLES),
+            "CREATE INDEX ix_session_updated ON session(updated_at DESC) WHERE deleted=0",
+            "CREATE INDEX ix_session_project_updated ON session(project_path,updated_at DESC)"
+            " WHERE deleted=0",
+            "CREATE INDEX ix_session_sync ON session(harness,id)"
+            " WHERE native_id IS NOT NULL AND execution_backend='host'",
+        ),
+    ),
 )
 
 

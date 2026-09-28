@@ -55,6 +55,7 @@ from mandri.database.executions import ExecutionRepository
 from mandri.database.native_sessions import NativePiSessionIdentities
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_database import UsageDatabase
 from mandri.gateway.adapters.hub_event_sink import HubGatewayEventSink
 from mandri.gateway.litellm_adapter import AnthropicHandler, GeminiHandler, OpenAIHandler
 from mandri.gateway.reasoning_catalog import build_reasoning_catalog
@@ -288,6 +289,7 @@ class _DeferredRoutes:
 class RuntimeResources:
     def __init__(self) -> None:
         self.db: AiosqliteDatabase | None = None
+        self.usage_db: UsageDatabase | None = None
         self.http: httpx.AsyncClient | None = None
         self.hub: Hub | None = None
         self.sessions: SessionsService | None = None
@@ -452,9 +454,11 @@ async def wire_runtime(
     resources.db = db
     resources.http = http
     resources.hub = hub
-    resources.usage = UsageCoordinator(UsageRepository(db), hub)
-    for price in bundled_prices():
-        await resources.usage.repository.add_price(price)
+    resources.usage_db = UsageDatabase(base_dir / "mandri.db")
+    await resources.usage_db.connect(base_dir / "usage.db")
+    await resources.usage_db.migrate()
+    resources.usage = UsageCoordinator(UsageRepository(resources.usage_db), hub)
+    await resources.usage.repository.add_prices(bundled_prices())
     usage_history = UsageHistorySync(
         db,
         resources.usage.repository,
@@ -635,6 +639,8 @@ async def stop_background_tasks(
         resources.usage.close()
     await hub.close_all()
     await http.aclose()
+    if resources.usage_db is not None:
+        await resources.usage_db.close()
     await db.close()
 
 

@@ -11,6 +11,7 @@ from mandri.daemon.usage import UsageCoordinator
 from mandri.daemon.usage_history import UsageHistorySync
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 
 
 def token_event(timestamp: str, count: int) -> str:
@@ -53,6 +54,7 @@ async def test_history_sync_is_bounded_durable_and_retains_deleted_session(tmp_p
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "mandri.db")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repo = UsageRepository(db)
     await db.execute(
         "INSERT INTO session(id,harness,native_id,project_path,created_at,updated_at,state,"
@@ -86,6 +88,7 @@ async def test_coordinator_publishes_committed_revision_and_coalesces_refresh():
     db = AiosqliteDatabase()
     await db.connect(":memory:")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     hub = Hub()
     subscription = hub.subscribe(Topic("usage.changed"))
     coordinator = UsageCoordinator(UsageRepository(db), hub)
@@ -120,6 +123,7 @@ async def test_history_append_spans_batches_without_stopping_at_unchanged_revisi
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "db")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     try:
         await db.execute(
             "INSERT INTO session(id,harness,native_id,project_path,created_at,updated_at,state,"
@@ -152,6 +156,7 @@ async def test_partial_trailing_record_does_not_hold_completed_history_forever(t
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "db")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     try:
         await db.execute(
             "INSERT INTO session(id,harness,native_id,project_path,created_at,updated_at,state,"
@@ -171,11 +176,21 @@ async def test_partial_trailing_record_does_not_hold_completed_history_forever(t
         await db.close()
 
 
-async def test_restart_revalues_existing_facts_even_when_catalog_is_cached(monkeypatch):
+async def test_restart_resumes_pending_valuation_even_when_catalog_is_cached(monkeypatch):
     db = AiosqliteDatabase()
     await db.connect(":memory:")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
+    await repository.add_price(
+        UsagePrice(
+            price_id="pending",
+            provider="test",
+            model="model",
+            effective_from=0,
+            rates={"input_tokens": Decimal("1")},
+        )
+    )
     coordinator = UsageCoordinator(repository, Hub())
     observed = asyncio.Event()
     calls = []
@@ -228,6 +243,7 @@ async def test_claude_native_history_is_priced_per_message_model(tmp_path):
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "db")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     try:
         await db.execute(
             "INSERT INTO session(id,harness,native_id,project_path,created_at,updated_at,state,"
@@ -264,6 +280,7 @@ async def test_opencode_history_never_promotes_gateway_harness_models(tmp_path, 
     db = AiosqliteDatabase()
     await db.connect(":memory:")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
     sync = UsageHistorySync(db, repository, tmp_path)
     value = UsageObservation(

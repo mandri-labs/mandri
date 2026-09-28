@@ -1,13 +1,12 @@
 import json
 import sqlite3
-from collections import Counter, defaultdict
-from datetime import UTC, datetime
+from collections import Counter
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from mandri.core.clock import system_now_ms
 from mandri.core.types.usage import UsageFilters
-from mandri.database.usage_serialization import metrics
+from mandri.database.usage_overview import aggregate
 
 
 def revision(connection: sqlite3.Connection) -> int:
@@ -35,120 +34,7 @@ def overview(connection: sqlite3.Connection, filters: UsageFilters) -> dict[str,
     current_revision = revision(connection)
     if filters.expected_revision is not None and filters.expected_revision != current_revision:
         raise ValueError("Usage revision is stale")
-    clauses: list[str] = []
-    params: list[object] = []
-    for name in ("root_session_id", "project_path", "model"):
-        value = getattr(filters, name)
-        if value is not None:
-            clauses.append(f"f.{name}=?")
-            params.append(value)
-    if filters.session_id is not None:
-        if filters.include_descendants:
-            clauses.append("(f.session_id=? OR f.root_session_id=?)")
-            params.extend((filters.session_id, filters.session_id))
-        else:
-            clauses.append("f.session_id=?")
-            params.append(filters.session_id)
-    if not filters.include_deleted:
-        clauses.append("COALESCE(s.deleted,0)=0")
-    if filters.from_ms is not None:
-        clauses.append("(f.occurred_at IS NULL OR f.occurred_at>=?)")
-        params.append(filters.from_ms)
-    if filters.to_ms is not None:
-        clauses.append(
-            "(f.occurred_at IS NULL OR COALESCE("
-            "json_extract(f.payload,'$.interval_start'),f.occurred_at)<?)"
-        )
-        params.append(filters.to_ms)
-    for name in ("harness", "provider", "billing_mode"):
-        value = getattr(filters, name)
-        if value is not None:
-            clauses.append(f"json_extract(f.payload,'$.{name}')=?")
-            params.append(value)
-    where = " WHERE " + " AND ".join(clauses) if clauses else ""
-    records = connection.execute(
-        "SELECT f.payload,f.usd_equivalent,p.payload AS price_payload,"
-        "COALESCE(s.deleted,0) AS deleted"
-        " FROM usage_fact f LEFT JOIN session s ON s.id=COALESCE(f.session_id,f.root_session_id)"
-        " LEFT JOIN usage_price p ON p.price_id=f.price_id" + where + " LIMIT 100001",
-        params,
-    ).fetchall()
-    if len(records) > 100000:
-        raise ValueError("Usage overview exceeds 100000 facts; narrow the filters")
-    selected: list[dict[str, Any]] = []
-    undated: list[dict[str, Any]] = []
-    unallocated: list[dict[str, Any]] = []
-    days: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    groups: dict[str | None, list[dict[str, Any]]] = defaultdict(list)
-    sources: dict[str, list[dict[str, Any]]] = {
-        key: [] for key in ("gateway", "codex", "claude", "agy", "other")
-    }
-    last_observed_at: int | None = None
-    grouping = {
-        "session": "session_id",
-        "project": "project_path",
-        "model": "model",
-        "harness": "harness",
-        "billing_mode": "billing_mode",
-    }
-    if filters.group_by not in grouping:
-        raise ValueError("Invalid usage breakdown dimension")
-    for record in records:
-        row = json.loads(record["payload"])
-        row["usd_equivalent"] = record["usd_equivalent"]
-        row["deleted"] = bool(record["deleted"])
-        row["valuation_basis"] = (
-            json.loads(record["price_payload"]).get("valuation_basis", "historical_tariff")
-            if record["price_payload"]
-            else None
-        )
-        observed = row.get("observed_at")
-        if observed is not None and (last_observed_at is None or observed > last_observed_at):
-            last_observed_at = observed
-        if any(
-            getattr(filters, key) is not None and getattr(filters, key) != row[key]
-            for key in ("harness", "provider", "billing_mode")
-        ):
-            continue
-        end = row["occurred_at"]
-        start = row["interval_start"] if row["interval_start"] is not None else end
-        if end is None:
-            undated.append(row)
-            if filters.from_ms is not None or filters.to_ms is not None:
-                continue
-        else:
-            if (filters.from_ms is not None and end < filters.from_ms) or (
-                filters.to_ms is not None and start >= filters.to_ms
-            ):
-                continue
-            if (filters.from_ms is not None and start < filters.from_ms) or (
-                filters.to_ms is not None and end >= filters.to_ms
-            ):
-                unallocated.append(row)
-                continue
-            date = datetime.fromtimestamp(end / 1000, UTC).astimezone(zone).date().isoformat()
-            start_date = (
-                datetime.fromtimestamp(start / 1000, UTC).astimezone(zone).date().isoformat()
-            )
-            if date == start_date:
-                days[date].append(row)
-            else:
-                unallocated.append(row)
-        selected.append(row)
-        source = {
-            "gateway": "gateway",
-            "native:codex": "codex",
-            "native:claude": "claude",
-            "native:agy": "agy",
-        }.get(row["source"], "other")
-        sources[source].append(row)
-        group_key = row[grouping[filters.group_by]]
-        if filters.group_by == "session" and group_key is None:
-            group_key = row["root_session_id"]
-        groups[group_key].append(row)
-    if len(days) > 3660:
-        raise ValueError("Usage timeseries exceeds 3660 buckets")
-    keys = sorted(groups, key=lambda key: (key is None, key or ""))
+    result = aggregate(connection, filters, zone)
     status_counts = {
         str(row[0] or "unknown"): int(row[1])
         for row in connection.execute(
@@ -171,27 +57,9 @@ def overview(connection: sqlite3.Connection, filters: UsageFilters) -> dict[str,
     return {
         "revision": current_revision,
         "as_of": system_now_ms(),
-        "last_observed_at": last_observed_at,
+        **result,
         "history_status": status_counts,
         "timezone": filters.timezone,
-        "summary": metrics(selected),
-        "source_breakdown": {key: metrics(rows) for key, rows in sources.items()},
-        "timeseries": [{"date": day, **metrics(rows)} for day, rows in sorted(days.items())],
-        "breakdown": [
-            {
-                "key": key,
-                **metrics(groups[key]),
-                **(
-                    {"deleted": any(row["deleted"] for row in groups[key])}
-                    if filters.group_by == "session"
-                    else {}
-                ),
-            }
-            for key in keys[filters.offset : filters.offset + filters.limit]
-        ],
-        "breakdown_total": len(keys),
-        "undated": metrics(undated),
-        "unallocated": metrics(unallocated),
         "sync_state": {
             "discarded_event_count": sum(discarded.values()),
             "discard_reasons": dict(discarded),

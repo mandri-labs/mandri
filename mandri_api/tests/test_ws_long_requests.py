@@ -7,7 +7,7 @@ from mandri.api import ws as ws_module
 from mandri.api.ws import _handle_text, _send
 from mandri.core.hub import Hub, Topic
 from mandri.core.protocol.frames import ResponseFrame
-from starlette.websockets import WebSocketState
+from starlette.websockets import WebSocket, WebSocketState
 
 
 async def test_feed_does_not_read_again_after_send_disconnect(monkeypatch):
@@ -105,3 +105,20 @@ async def test_late_response_after_disconnect_is_not_sent():
     )
     await _send(websocket, {"type": "response", "op_id": "late", "ok": True, "result": {}})
     websocket.send_json.assert_not_awaited()
+
+
+async def test_completed_relays_close_the_shared_socket_once(caplog):
+    send = AsyncMock()
+    websocket = WebSocket(
+        {"type": "websocket"}, AsyncMock(return_value={"type": "websocket.connect"}), send
+    )
+    await websocket.accept()
+    task = asyncio.create_task(asyncio.sleep(0))
+    await task
+    for _ in range(3):
+        ws_module._close_after_relay(websocket, task)
+    await asyncio.gather(*ws_module._background_tasks)
+    await asyncio.sleep(0)
+    closes = [call for call in send.call_args_list if call.args[0]["type"] == "websocket.close"]
+    assert len(closes) == 1
+    assert not caplog.records

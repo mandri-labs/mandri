@@ -11,6 +11,7 @@ from mandri.core.types.model_selection import ModelSource
 from mandri.core.types.usage import UsageFilters, UsageObservation
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 from mandri.runtime.service import RuntimeService
 from mandri.runtime.usage import NativeUsageCollector, observe_usage
 from mandri.runtime.usage_accounts import NativeAccountReader
@@ -23,6 +24,7 @@ async def repository(tmp_path):
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "synthetic.sqlite")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     yield UsageRepository(db)
     await db.close()
 

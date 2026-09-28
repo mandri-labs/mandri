@@ -5,7 +5,7 @@ import pytest
 from mandri.core.types.usage import UsageObservation, UsagePrice
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
-from mandri.database.usage_serialization import encode
+from mandri.database.usage_migrations import migrate_usage
 
 
 @pytest.fixture
@@ -13,6 +13,7 @@ async def repository(tmp_path):
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "usage.db")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     yield UsageRepository(db)
     await db.close()
 
@@ -173,7 +174,7 @@ async def test_mandri_harness_alias_is_never_counted(repository, gateway_first):
     assert result["breakdown"][0]["key"] == "glm-5.3"
 
 
-async def test_revaluation_repairs_legacy_route_and_harness_facts_idempotently(repository):
+async def test_ingestion_normalizes_route_and_harness_facts_before_valuation(repository):
     harness = replace(
         request("harness", 999, model="mandri_gateway", provider="mandri"), source="native:opencode"
     )
@@ -190,24 +191,7 @@ async def test_revaluation_repairs_legacy_route_and_harness_facts_idempotently(r
         },
     )
     for value in (harness, gateway):
-        await repository._database.execute(
-            "INSERT INTO usage_fact VALUES (?,?,?,?,?,?,?,?,?)",
-            (
-                value.fact_key,
-                value.session_id,
-                None,
-                None,
-                value.model,
-                value.occurred_at,
-                encode(value),
-                None,
-                None,
-            ),
-        )
-        await repository._database.execute(
-            "INSERT INTO usage_observation VALUES (?,?,?,?)",
-            (value.source, value.source_key, value.session_id, encode(value)),
-        )
+        await repository.record(value)
     await repository.add_price(
         UsagePrice(
             price_id="glm",
@@ -218,7 +202,7 @@ async def test_revaluation_repairs_legacy_route_and_harness_facts_idempotently(r
         )
     )
     result = await repository.revalue_unpriced(all_facts=True)
-    assert result["updated"] == 2
+    assert result["updated"] == 1
     overview = await repository.overview()
     assert overview["summary"]["fact_count"] == 1
     assert overview["summary"]["usd_equivalent"] == "0.00002"
@@ -230,10 +214,10 @@ async def test_revaluation_repairs_legacy_route_and_harness_facts_idempotently(r
     assert evidence is not None
 
 
-async def test_revaluation_removes_old_total_failures_including_previously_priced_free_calls(
+async def test_ingestion_excludes_total_failures_from_valuation(
     repository,
 ):
-    for key, amount in [("luna", None), ("free", "0")]:
+    for key in ("luna", "free"):
         value = replace(
             request(key, 0, model=key),
             source="gateway",
@@ -242,22 +226,9 @@ async def test_revaluation_removes_old_total_failures_including_previously_price
             complete=False,
             pricing_context={"status": "failed"},
         )
-        await repository._database.execute(
-            "INSERT INTO usage_fact VALUES (?,?,?,?,?,?,?,?,?)",
-            (
-                key,
-                value.session_id,
-                None,
-                None,
-                key,
-                value.occurred_at,
-                encode(value),
-                amount,
-                None,
-            ),
-        )
-    assert (await repository.overview())["summary"]["fact_count"] == 2
-    assert (await repository.revalue_unpriced(all_facts=True))["updated"] == 2
+        await repository.record(value)
+    assert (await repository.overview())["summary"]["fact_count"] == 0
+    assert (await repository.revalue_unpriced(all_facts=True))["updated"] == 0
     result = await repository.overview()
     assert result["summary"]["fact_count"] == 0
     assert result["summary"]["unpriced_fact_count"] == 0

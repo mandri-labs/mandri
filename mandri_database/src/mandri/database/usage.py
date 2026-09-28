@@ -12,10 +12,12 @@ from mandri.core.usage_pricing import validate_price, value_usage
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage_accounting import advances, contribution, validate
 from mandri.database.usage_coverage import select_coverage
+from mandri.database.usage_prices import PriceIndex, prices_for
 from mandri.database.usage_queries import advance, overview, revision
 from mandri.database.usage_reconcile import stage_history
 from mandri.database.usage_serialization import COUNTERS, encode, observation, price
 from mandri.database.usage_transactions import transaction
+from mandri.database.usage_valuation import revalue_batch
 
 
 class UsageRepository:
@@ -144,7 +146,7 @@ class UsageRepository:
         prices: Sequence[UsagePrice] | None = None,
     ) -> None:
         existing = db.execute(
-            "SELECT * FROM usage_fact WHERE fact_key=?", (fact.fact_key,)
+            "SELECT payload,price_id,model FROM usage_fact WHERE fact_key=?", (fact.fact_key,)
         ).fetchone()
         if existing:
             old = observation(existing["payload"])
@@ -179,7 +181,7 @@ class UsageRepository:
                 model=old.model or fact.model,
             )
         if prices is None:
-            prices = [price(row[0]) for row in db.execute("SELECT payload FROM usage_price")]
+            prices = prices_for(db, fact)
         fact = normalize_usage(fact)
         if existing and existing["price_id"] and existing["model"] == fact.model:
             prices = [item for item in prices if item.price_id == existing["price_id"]]
@@ -263,12 +265,12 @@ class UsageRepository:
                 return revision(db)
             rejected = False
             new_gap = False
-            prices = [price(row[0]) for row in db.execute("SELECT payload FROM usage_price")]
+            prices = PriceIndex()
             for value in observations:
                 db.execute("SAVEPOINT usage_event")
                 try:
                     validate(value)
-                    self._record(db, value, prices)
+                    self._record(db, value, prices.for_fact(db, normalize_usage(value)))
                 except ValueError as error:
                     db.execute("ROLLBACK TO usage_event")
                     if not skip_invalid:
@@ -322,42 +324,25 @@ class UsageRepository:
     async def revalue_unpriced(
         self, *, limit: int = 1000, after_key: str | None = None, all_facts: bool = False
     ) -> dict[str, Any]:
-        if not 1 <= limit <= 1000:
-            raise ValueError("Invalid valuation batch limit")
+        return await revalue_batch(self._database, limit, after_key, all_facts)
 
-        def revalue(db: sqlite3.Connection) -> dict[str, Any]:
-            prices = [price(row[0]) for row in db.execute("SELECT payload FROM usage_price")]
-            rows = db.execute(
-                "SELECT fact_key,payload,usd_equivalent,price_id FROM usage_fact WHERE "
-                + ("1=1" if all_facts else "price_id IS NULL")
-                + " AND fact_key>? ORDER BY fact_key LIMIT ?",
-                (after_key or "", limit),
-            ).fetchall()
-            changed = 0
-            changes_before = db.total_changes
-            for row in rows:
-                fact = normalize_usage(observation(row[1]))
-                if not fact.authoritative or not select_coverage(db, fact):
-                    db.execute("DELETE FROM usage_fact WHERE fact_key=?", (row[0],))
-                    changed += 1
-                    continue
-                amount, price_id = value_usage(fact, prices)
-                serialized = str(amount) if amount is not None else None
-                payload = encode(fact)
-                if (serialized, price_id, payload) != (row[2], row[3], row[1]):
-                    db.execute(
-                        "UPDATE usage_fact SET usd_equivalent=?,price_id=?,payload=?,model=?"
-                        " WHERE fact_key=?",
-                        (serialized, price_id, payload, fact.model, row[0]),
-                    )
-                    changed += 1
-            return {
-                "revision": advance(db) if db.total_changes > changes_before else revision(db),
-                "updated": changed,
-                "next_key": rows[-1][0] if len(rows) == limit else None,
-            }
-
-        return await transaction(self._database, revalue, write=True)
+    async def revalue_pending(self, *, limit: int = 100) -> dict[str, Any]:
+        state = await self._database.fetch_one(
+            "SELECT catalog_revision,completed_revision,after_key FROM usage_valuation WHERE id=1"
+        )
+        assert state is not None
+        if state["catalog_revision"] == state["completed_revision"]:
+            return {"next_key": None, "updated": 0}
+        result = await self.revalue_unpriced(
+            limit=limit, after_key=state["after_key"], all_facts=True
+        )
+        await self._database.execute(
+            "UPDATE usage_valuation SET after_key=?,"
+            " completed_revision=CASE WHEN ? IS NULL THEN catalog_revision"
+            " ELSE completed_revision END WHERE id=1 AND catalog_revision=?",
+            (result["next_key"], result["next_key"], state["catalog_revision"]),
+        )
+        return result
 
     async def account_snapshot(self) -> dict[str, Any]:
         def read(db: sqlite3.Connection) -> dict[str, Any]:
@@ -419,6 +404,11 @@ class UsageRepository:
                     continue
                 db.execute("INSERT INTO usage_price VALUES (?,?)", (value.price_id, payload))
                 changed = True
+            if changed:
+                db.execute(
+                    "UPDATE usage_valuation SET catalog_revision=catalog_revision+1,"
+                    " after_key=NULL WHERE id=1"
+                )
             return advance(db) if changed else revision(db)
 
         return await transaction(self._database, save, write=True)
@@ -529,7 +519,7 @@ def _has_gateway_usage(
     placeholders = ",".join("?" for _ in ids)
     return (
         db.execute(
-            "SELECT 1 FROM usage_fact WHERE json_extract(payload,'$.source')='gateway' AND "
+            "SELECT 1 FROM usage_fact WHERE source='gateway' AND "
             f"(session_id IN ({placeholders}) OR root_session_id IN ({placeholders})) LIMIT 1",
             (*ids, *ids),
         ).fetchone()

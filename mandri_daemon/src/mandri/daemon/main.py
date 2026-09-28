@@ -5,8 +5,9 @@ import asyncio
 import logging
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import cast
 
 import litellm
 import uvicorn
@@ -76,7 +77,7 @@ def _serve_command(args: argparse.Namespace) -> int:
     logging.basicConfig(level=log_level)
     logging.getLogger().setLevel(log_level)
     if args.enable_litellm_debug:
-        litellm._turn_on_debug()
+        cast(Callable[[], None], vars(litellm)["_turn_on_debug"])()
     base_dir = args.base_dir if args.base_dir is not None else DEFAULT_BASE_DIR
     token = os.environ.pop("MANDRI_DESKTOP_TOKEN", None) if args.desktop else None
     if args.desktop:

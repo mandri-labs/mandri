@@ -14,6 +14,7 @@ from mandri.core.ids import ModelRef, ProviderKind, RouteId, SecretRef, Url
 from mandri.core.usage_pricing import bundled_prices
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
+from mandri.database.usage_migrations import migrate_usage
 from mandri.gateway.complete_response import complete_sse
 from mandri.gateway.litellm_adapter import AnthropicHandler, GeminiHandler, OpenAIHandler
 from mandri.gateway.privacy_protocol import GatewayProtocol
@@ -437,6 +438,7 @@ async def test_raw_gateway_snapshots_replace_one_priced_repository_fact(route, t
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "usage.sqlite")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
     openai = replace(
         route,
@@ -486,6 +488,7 @@ async def test_total_failure_removes_pending_usage_for_every_provider(route, kin
     db = AiosqliteDatabase()
     await db.connect(":memory:")
     await db.migrate()
+    await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
 
     async def sink(record):

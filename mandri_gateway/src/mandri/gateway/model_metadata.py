@@ -9,7 +9,7 @@ from mandri.gateway.catalog_enrichment import enrich_entries
 from mandri.gateway.model_capabilities import metadata_capabilities
 from mandri.providers.catalog import model_entries
 from mandri.providers.refs import MODEL_REF_PREFIXES
-from mandri.providers.verify import models_endpoint, models_headers
+from mandri.providers.verify import models_endpoint, models_headers, models_params
 
 _TIMEOUT_SECONDS = 10.0
 
@@ -98,7 +98,11 @@ async def fetch(
     headers = models_headers(kind, api_key)
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            response = await client.get(models_endpoint(kind, api_base), headers=headers)
+            response = await client.get(
+                models_endpoint(kind, api_base),
+                headers=headers,
+                params=models_params(kind),
+            )
             response.raise_for_status()
             payload = response.json()
             entries = await enrich_entries(kind, model_entries(kind, payload), client)

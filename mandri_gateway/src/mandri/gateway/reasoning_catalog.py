@@ -8,9 +8,11 @@ from typing import Any
 import httpx
 from mandri.core.ids import ProviderKind
 from mandri.gateway.model_metadata import openrouter_reasoning_efforts
+from mandri.providers.chatgpt.codex_models import catalog_entry, models_url
+from mandri.providers.chatgpt.identity import request_headers as chatgpt_headers
 from mandri.providers.refs import MODEL_REF_PREFIXES
 from mandri.providers.service import Provider, ProvidersRegistry
-from mandri.providers.verify import lm_studio_base
+from mandri.providers.verify import lm_studio_base, models_params
 
 _TIMEOUT_SECONDS = 10.0
 _MODELS_DEV_URL = "https://models.dev/api.json"
@@ -64,6 +66,21 @@ def parse_lm_studio_entry(entry: Any) -> ReasoningInfo | None:
     if info is None:
         return None
     default = reasoning.get("default")
+    if isinstance(default, str) and default in info.efforts:
+        return ReasoningInfo(efforts=info.efforts, default_effort=default)
+    return info
+
+
+def parse_chatgpt_entry(entry: Any) -> ReasoningInfo | None:
+    if not isinstance(entry, dict):
+        return None
+    efforts = entry.get("reasoning_efforts")
+    if not isinstance(efforts, list):
+        return None
+    info = _normalize([effort for effort in efforts if isinstance(effort, str)])
+    if info is None:
+        return None
+    default = entry.get("default_effort")
     if isinstance(default, str) and default in info.efforts:
         return ReasoningInfo(efforts=info.efforts, default_effort=default)
     return info
@@ -181,6 +198,37 @@ def parse_ollama_entry(entry: Any) -> ReasoningInfo | None:
     return ReasoningInfo(info.efforts, default if default in info.efforts else None)
 
 
+async def _chatgpt_probe(base: str, api_key: str) -> dict[str, ReasoningInfo]:
+    payload = await _fetch_chatgpt_models(models_url(base or None), api_key)
+    models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(models, list):
+        return {}
+    catalog: dict[str, ReasoningInfo] = {}
+    for entry in models:
+        row = catalog_entry(entry) if isinstance(entry, dict) else None
+        if row is None:
+            continue
+        info = parse_chatgpt_entry(row)
+        if info is not None:
+            catalog[row["id"]] = info
+    return catalog
+
+
+async def _fetch_chatgpt_models(url: str, api_key: str) -> Any:
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                url,
+                headers=chatgpt_headers(api_key),
+                params=models_params(ProviderKind.CHATGPT),
+            )
+            response.raise_for_status()
+            return response.json()
+    except (httpx.HTTPError, ValueError) as error:
+        logger.warning("reasoning catalog fetch failed for %s: %s", url, error)
+        return None
+
+
 async def _ollama_probe(base: str, api_key: str) -> dict[str, ReasoningInfo]:
     base = base.rstrip("/").removesuffix("/v1")
     headers = _auth_headers(api_key)
@@ -246,6 +294,13 @@ async def _merge_provider(
     models_dev: dict[str, dict[str, ReasoningInfo]],
 ) -> None:
     base = str(provider.api_base) if provider.api_base else ""
+    if provider.kind is ProviderKind.CHATGPT:
+        _merge(
+            entries,
+            provider.name,
+            await _chatgpt_probe(base, str(provider.api_key)),
+        )
+        return
     _merge(entries, provider.name, _models_dev_provider(provider, models_dev))
     if provider.kind is ProviderKind.LM_STUDIO and base:
         _merge(entries, provider.name, await _lm_studio_probe(base, str(provider.api_key)))

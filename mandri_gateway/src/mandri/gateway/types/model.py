@@ -11,6 +11,7 @@ MODEL_REF_PREFIXES: dict[ProviderKind, str] = {
     ProviderKind.OLLAMA: "ollama_chat/",
     ProviderKind.LM_STUDIO: "lm_studio/",
     ProviderKind.OPENAI: "openai/",
+    ProviderKind.CHATGPT: "openai/",
     ProviderKind.ANTHROPIC: "anthropic/",
     ProviderKind.GEMINI: "gemini/",
     ProviderKind.CUSTOM: "openai/",

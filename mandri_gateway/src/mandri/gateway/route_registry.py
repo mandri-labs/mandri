@@ -183,6 +183,7 @@ class RouteRegistry:
     async def resolve(self, route_id: RouteId) -> ResolvedRoute:
         route = await self.get(route_id)
         conversation_id = await self._bound_conversation(route)
+        await self._providers.ensure_fresh(route.provider_name)
         provider = self._providers.get(route.provider_name)
         model = Model(
             provider=provider.kind,

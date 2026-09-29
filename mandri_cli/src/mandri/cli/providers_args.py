@@ -17,7 +17,11 @@ def add_providers_parser(
         help="provider kind (inferred from the name when it matches a known kind)",
     )
     add.add_argument("--base", default=None, help="provider API base URL")
-    add.add_argument("--key", default=None, help="provider API key (else interactive prompt)")
+    add.add_argument(
+        "--key",
+        default=None,
+        help="provider API key (interactive prompt; ignored for the chatgpt kind)",
+    )
     add.add_argument("--no-verify", dest="no_verify", action="store_true", help="skip verification")
     add.add_argument("--base-dir", type=Path, default=None, help="base directory")
     listing = provider_sub.add_parser("list", help="list configured providers")

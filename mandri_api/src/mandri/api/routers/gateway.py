@@ -675,7 +675,7 @@ async def _serve_gemini(
             prepared,
             GatewayProtocol.GEMINI,
         )
-    if prepared.guard is not None and stream:
+    if stream:
         prepared = replace(prepared, client_stream=True)
     return restore_response(
         JSONResponse(content=_as_json(result)), prepared, GatewayProtocol.GEMINI

@@ -5,6 +5,7 @@ import enum
 
 from mandri.core.ids import ModelRef, ProviderKind, SecretRef, Url
 from mandri.core.ports.config import ConfigPort
+from mandri.core.ports.provider_credentials import CredentialResolverPort
 from mandri.core.ports.provider_verifier import ProviderVerifierPort
 from mandri.core.ports.routes import RouteLookupPort
 from mandri.core.types.config import ProviderConfig
@@ -21,6 +22,8 @@ from mandri.providers.verify import ProviderVerifier, resolve_api_base
 _LOCAL_KINDS: frozenset[ProviderKind] = frozenset(
     {ProviderKind.OLLAMA, ProviderKind.LM_STUDIO, ProviderKind.CUSTOM}
 )
+
+_TOKEN_KINDS: frozenset[ProviderKind] = frozenset({ProviderKind.CHATGPT})
 
 
 class _Unset:
@@ -52,6 +55,7 @@ class ProviderState(enum.StrEnum):
     UNVERIFIED = "unverified"
     VERIFIED = "verified"
     DEGRADED = "degraded"
+    PENDING_AUTH = "pending_auth"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,21 +80,33 @@ class ProvidersRegistry:
         config: ConfigPort,
         routes: RouteLookupPort,
         verifier: ProviderVerifierPort | None = None,
+        token_resolver: CredentialResolverPort | None = None,
     ) -> None:
         self._config = config
         self._routes = routes
         if verifier is None:
             verifier = ProviderVerifier()
         self._verifier: ProviderVerifierPort = verifier
+        self._token_resolver = token_resolver
 
     def list(self) -> list[Provider]:
-        return [_provider_from_entry(entry) for entry in self._config.load().providers]
+        return [self._materialize(entry) for entry in self._config.load().providers]
 
     def get(self, name: str) -> Provider:
         for entry in self._config.load().providers:
             if entry.name == name:
-                return _provider_from_entry(entry)
+                return self._materialize(entry)
         raise ProviderNotFoundError(f"unknown provider {name!r}")
+
+    async def ensure_fresh(self, provider_name: str) -> None:
+        """Rotate stored credentials that are about to expire."""
+        if self._token_resolver is None:
+            return
+        entries = self._config.load().providers
+        entry = next((item for item in entries if item.name == provider_name), None)
+        if entry is None or ProviderKind(entry.kind) not in _TOKEN_KINDS:
+            return
+        await self._token_resolver.ensure_fresh(provider_name)
 
     async def add(
         self,
@@ -114,8 +130,9 @@ class ProvidersRegistry:
             if not result.ok:
                 raise ProviderVerificationError(resolved_kind, result.reason)
             state = ProviderState.VERIFIED
+        stored_key = "" if resolved_kind in _TOKEN_KINDS else api_key
         entry = ProviderConfig(
-            name=name, kind=resolved_kind.value, api_base=api_base or None, api_key=api_key
+            name=name, kind=resolved_kind.value, api_base=api_base or None, api_key=stored_key
         )
         self._persist_append(entry)
         return Provider(
@@ -153,7 +170,7 @@ class ProvidersRegistry:
                 name=name,
                 kind=current.kind.value,
                 api_base=str(base) if base is not None else None,
-                api_key=str(key),
+                api_key="" if current.kind in _TOKEN_KINDS else str(key),
             )
         )
         return Provider(name=name, kind=current.kind, api_base=base, api_key=key, state=state)
@@ -168,14 +185,29 @@ class ProvidersRegistry:
             config, providers=[entry for entry in config.providers if entry.name != name]
         )
         self._config.save(config)
+        if self._token_resolver is not None:
+            self._token_resolver.clear(name)
 
     async def verify(self, name: str) -> Provider:
-        provider = self.get(name)
+        await self.ensure_fresh(name)
+        provider: Provider = self.get(name)
         result = await self._verifier.verify_async(
             provider.kind, provider.api_base, str(provider.api_key)
         )
         state = ProviderState.VERIFIED if result.ok else ProviderState.DEGRADED
         return dataclasses.replace(provider, state=state)
+
+    def _materialize(self, entry: ProviderConfig) -> Provider:
+        provider = _provider_from_entry(entry)
+        if self._token_resolver is None or provider.kind not in _TOKEN_KINDS:
+            return provider
+        try:
+            api_key = SecretRef(self._token_resolver.access_token(entry.name))
+        except ProviderInvalidError:
+            return dataclasses.replace(
+                provider, api_key=SecretRef(""), state=ProviderState.PENDING_AUTH
+            )
+        return dataclasses.replace(provider, api_key=api_key)
 
     def _persist_append(self, entry: ProviderConfig) -> None:
         config = self._config.load()

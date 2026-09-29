@@ -33,7 +33,7 @@ class GatewayPrivacy:
         protected = route.privacy_mode is PrivacyMode.SURROGATE
         validate_request(body)
         if not protected:
-            return PreparedRequest(body)
+            return PreparedRequest(body, client_stream=bool(body.get("stream")))
         if not route.privacy_scope_id:
             raise ProtectionError(
                 "privacy_state_unavailable", "Protected route has no privacy scope"
@@ -85,4 +85,4 @@ async def prepare_request(
     if route.privacy_mode is PrivacyMode.SURROGATE:
         raise ProtectionError("privacy_unavailable", "Privacy service is unavailable")
     validate_request(body)
-    return PreparedRequest(body)
+    return PreparedRequest(body, client_stream=bool(body.get("stream")))

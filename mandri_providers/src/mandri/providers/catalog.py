@@ -1,15 +1,23 @@
 from typing import Any
 
 from mandri.core.ids import ProviderKind
+from mandri.providers.chatgpt.codex_models import catalog_entry
+
+_MODEL_LIST_KEYS: dict[ProviderKind, str] = {
+    ProviderKind.LM_STUDIO: "models",
+    ProviderKind.GEMINI: "models",
+    ProviderKind.CHATGPT: "models",
+}
 
 
 def model_entries(kind: ProviderKind, payload: Any) -> list[dict[str, Any]]:
     if not isinstance(payload, dict):
         raise ValueError("provider returned an invalid model catalog")
-    key = "models" if kind in (ProviderKind.LM_STUDIO, ProviderKind.GEMINI) else "data"
-    entries = payload.get(key)
+    entries = payload.get(_MODEL_LIST_KEYS.get(kind, "data"))
     if not isinstance(entries, list):
         raise ValueError("provider returned an invalid model catalog")
+    if kind is ProviderKind.CHATGPT:
+        return [entry for raw in entries if (entry := catalog_entry(raw)) is not None]
     result = []
     for entry in entries:
         if not isinstance(entry, dict):

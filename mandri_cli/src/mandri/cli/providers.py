@@ -7,9 +7,11 @@ from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 import httpx
+from mandri.cli.chatgpt_login import run_chatgpt_login
 from mandri.cli.command import Command
 from mandri.cli.local import build_providers_registry, resolve_base_dir
 from mandri.core.ids import ProviderKind
+from mandri.providers.catalog import model_entries
 from mandri.providers.errors import (
     ProviderExistsError,
     ProviderInUseError,
@@ -19,7 +21,7 @@ from mandri.providers.errors import (
 )
 from mandri.providers.refs import requires_api_base
 from mandri.providers.service import Provider, ProvidersRegistry
-from mandri.providers.verify import models_endpoint, models_headers
+from mandri.providers.verify import models_endpoint, models_headers, models_params
 
 MODELS_TIMEOUT_S = 10.0
 MAX_ERROR_BODY_CHARS = 500
@@ -63,6 +65,8 @@ class AddProviderCommand(ProvidersCommand):
         if kind is None:
             print(f"cannot infer provider kind from {self._name!r} (pass --kind)")
             return 2
+        if ProviderKind(kind) is ProviderKind.CHATGPT:
+            return run_chatgpt_login(self._name, self._base_dir, self._api_base)
         key = self._resolve_key()
         if not key:
             print("no api key provided (pass --key)")
@@ -139,7 +143,7 @@ class VerifyProviderCommand(ProvidersCommand):
 
         try:
             provider = asyncio.run(self._with_registry(verify))
-        except (ProviderNotFoundError, ProviderVerificationError) as error:
+        except (ProviderNotFoundError, ProviderVerificationError, ProviderInvalidError) as error:
             print(str(error))
             return 1
         self._print_provider(provider)
@@ -153,11 +157,12 @@ class ProviderModelsCommand(ProvidersCommand):
 
     def run(self) -> int:
         async def fetch(registry: ProvidersRegistry) -> Provider:
+            await registry.ensure_fresh(self._name)
             return registry.get(self._name)
 
         try:
             provider = asyncio.run(self._with_registry(fetch))
-        except ProviderNotFoundError as error:
+        except (ProviderNotFoundError, ProviderInvalidError) as error:
             print(str(error))
             return 1
         if requires_api_base(provider.kind) and provider.api_base is None:
@@ -166,7 +171,9 @@ class ProviderModelsCommand(ProvidersCommand):
         url = models_endpoint(provider.kind, provider.api_base)
         headers = models_headers(provider.kind, str(provider.api_key))
         try:
-            response = httpx.get(url, headers=headers, timeout=MODELS_TIMEOUT_S)
+            response = httpx.get(
+                url, headers=headers, params=models_params(provider.kind), timeout=MODELS_TIMEOUT_S
+            )
         except httpx.HTTPError:
             print("provider unreachable")
             return 1
@@ -202,6 +209,8 @@ def _redact(secret: str, text: str) -> str:
 
 
 def _model_ids(kind: ProviderKind, payload: Any) -> list[str]:
+    if kind is ProviderKind.CHATGPT:
+        return [str(entry["id"]) for entry in model_entries(kind, payload)]
     if kind is ProviderKind.GEMINI:
         models = payload.get("models", []) if isinstance(payload, dict) else []
         return [

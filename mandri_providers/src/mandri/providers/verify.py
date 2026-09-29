@@ -9,6 +9,8 @@ from mandri.core.ports.provider_verifier import (
     VerificationResult,
 )
 from mandri.core.provider_headers import conversation_headers
+from mandri.providers.chatgpt.codex_models import CLIENT_VERSION, models_url
+from mandri.providers.chatgpt.identity import request_headers as chatgpt_headers
 from mandri.providers.refs import requires_api_base
 
 _TIMEOUT_SECONDS = 10
@@ -20,6 +22,7 @@ DEFAULT_PROVIDER_BASES: dict[ProviderKind, str] = {
     ProviderKind.OPENCODE: "https://opencode.ai/zen/v1",
     ProviderKind.OPENCODE_GO: "https://opencode.ai/zen/go/v1",
     ProviderKind.OPENAI: "https://api.openai.com/v1",
+    ProviderKind.CHATGPT: "https://chatgpt.com/backend-api/codex",
     ProviderKind.ANTHROPIC: "https://api.anthropic.com",
     ProviderKind.GEMINI: "https://generativelanguage.googleapis.com",
 }
@@ -37,7 +40,7 @@ _MODELS_PATHS: dict[ProviderKind, str] = {
 }
 
 _BASES_REQUIRED: frozenset[ProviderKind] = frozenset(
-    {ProviderKind.OPENCODE, ProviderKind.OPENCODE_GO}
+    {ProviderKind.OPENCODE, ProviderKind.OPENCODE_GO, ProviderKind.CHATGPT}
 )
 
 
@@ -60,7 +63,15 @@ def models_endpoint(kind: ProviderKind, api_base: Url | None) -> str:
     base = (api_base if api_base is not None else DEFAULT_PROVIDER_BASES[kind]).rstrip("/")
     if kind is ProviderKind.LM_STUDIO:
         return lm_studio_base(base) + "/api/v1/models"
+    if kind is ProviderKind.CHATGPT:
+        return models_url(base)
     return base + _MODELS_PATHS[kind]
+
+
+def models_params(kind: ProviderKind) -> dict[str, str] | None:
+    if kind is ProviderKind.CHATGPT:
+        return {"client_version": CLIENT_VERSION}
+    return None
 
 
 def lm_studio_base(base: str) -> str:
@@ -77,6 +88,8 @@ def models_headers(kind: ProviderKind, api_key: str) -> dict[str, str]:
         if api_key:
             headers["x-api-key"] = api_key
         return headers
+    if kind is ProviderKind.CHATGPT:
+        return chatgpt_headers(api_key)
     if api_key:
         return {
             "Authorization": f"Bearer {api_key}",
@@ -109,7 +122,9 @@ class ProviderVerifier(ProviderVerifierPort):
             async with httpx.AsyncClient(
                 timeout=_TIMEOUT_SECONDS, transport=self._transport
             ) as client:
-                response = await client.get(url, headers=models_headers(kind, api_key))
+                response = await client.get(
+                    url, headers=models_headers(kind, api_key), params=models_params(kind)
+                )
         except httpx.TimeoutException:
             return self._failure(kind, api_key, f"timeout (GET {url})")
         except httpx.TransportError as exc:

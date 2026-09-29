@@ -9,12 +9,14 @@ from mandri.core.ids import ProviderKind
 from mandri.core.types.execution import ProtectionError
 from mandri.gateway.privacy_known import KnownValues
 from mandri.gateway.privacy_protocol import GatewayProtocol, validate_request, visit_content
+from mandri.gateway.provider_identity import identity_headers
 from mandri.gateway.route_registry import ResolvedRoute
 from mandri.gateway.surrogate import SurrogateEngine
 from mandri.gateway.types.model import MODEL_REF_PREFIXES
 
 _BASES = {
     ProviderKind.OPENAI: "https://api.openai.com/v1",
+    ProviderKind.CHATGPT: "https://chatgpt.com/backend-api/codex",
     ProviderKind.ANTHROPIC: "https://api.anthropic.com",
     ProviderKind.GEMINI: "https://generativelanguage.googleapis.com",
     ProviderKind.OPENROUTER: "https://openrouter.ai/api/v1",
@@ -81,11 +83,11 @@ class EgressGuard:
     headers: dict[str, str] = field(default_factory=dict)
     sends: int = 0
 
-    async def check(self, request: httpx.Request) -> None:
-        self._check(request)
+    async def check(self, request: httpx.Request, *, complete_response: bool = False) -> None:
+        self._check(request, complete_response=complete_response)
         self.sends += 1
 
-    def _check(self, request: httpx.Request) -> None:
+    def _check(self, request: httpx.Request, *, complete_response: bool = False) -> None:
         expected = httpx.URL(provider_base(self.route))
         protocol = provider_endpoints(self.route).get(request.url.path)
         if (
@@ -111,10 +113,16 @@ class EgressGuard:
             }:
                 raise ProtectionError("privacy_egress_blocked", "Unexpected provider query control")
         known = KnownValues(self.engine)
+        identity = {
+            name.lower(): value for name, value in identity_headers(self.route.model).items()
+        }
         for name, value in request.headers.multi_items():
             if name in _AUTH_HEADERS:
                 credential = value.removeprefix("Bearer ") if name == "authorization" else value
                 self._credential(credential)
+            elif name in identity:
+                if not hmac.compare_digest(value, identity[name]):
+                    raise ProtectionError("privacy_egress_blocked", "Unexpected provider identity")
             elif known.text(value) != value:
                 raise ProtectionError("privacy_egress_blocked", "Unmasked provider header")
         try:
@@ -133,7 +141,9 @@ class EgressGuard:
             raise ProtectionError("privacy_egress_blocked", "Invalid provider request")
         if visit_content(payload, known.replace) != payload:
             raise ProtectionError("privacy_egress_blocked", "Unmasked provider content")
-        if payload.get("stream") is True or request.url.path.endswith(":streamGenerateContent"):
+        if not complete_response and (
+            payload.get("stream") is True or request.url.path.endswith(":streamGenerateContent")
+        ):
             raise ProtectionError(
                 "privacy_egress_blocked", "Protected provider streaming is disabled"
             )

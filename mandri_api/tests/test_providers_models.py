@@ -1,5 +1,7 @@
 """Reasoning catalog enrichment tests for the provider models REST route."""
 
+import base64
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -26,14 +28,23 @@ UNKNOWN = {
 class StubHttp:
     def __init__(self, payload: Any) -> None:
         self.payload = payload
+        self.calls: list[tuple[str, dict[str, str], dict[str, str] | None]] = []
 
     async def get(
-        self, url: str, headers: dict[str, str] | None = None, timeout: Any = None
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+        timeout: Any = None,
     ) -> Any:
+        self.calls.append((url, dict(headers or {}), params))
         return SimpleNamespace(status_code=200, text="", json=lambda: self.payload)
 
 
 class StubProviders:
+    async def ensure_fresh(self, name: str) -> None:
+        pass
+
     def get(self, name: str) -> Provider:
         return Provider(
             name=PROVIDER_NAME,
@@ -86,7 +97,7 @@ def test_provider_models_without_catalog_has_empty_reasoning(make_client) -> Non
 
 @pytest.mark.parametrize("suffix", ["", "/", "/v1", "/api/v1", "/api/v0/"])
 def test_lm_studio_native_catalog_exposes_models_and_capabilities(make_client, suffix):
-    class LocalProviders:
+    class LocalProviders(StubProviders):
         def get(self, name):
             return Provider(
                 name,

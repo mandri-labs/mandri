@@ -62,7 +62,8 @@ def test_provider_kind_values() -> None:
     assert ProviderKind("openrouter") is ProviderKind.OPENROUTER
     assert ProviderKind("opencode_go") is ProviderKind.OPENCODE_GO
     assert ProviderKind("lm_studio") is ProviderKind.LM_STUDIO
-    assert len(ProviderKind) == 9
+    assert ProviderKind("chatgpt") is ProviderKind.CHATGPT
+    assert len(ProviderKind) == 10
 
 
 def test_state_enums() -> None:

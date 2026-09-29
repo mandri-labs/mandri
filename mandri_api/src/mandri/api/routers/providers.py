@@ -4,13 +4,14 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Response
-from mandri.api.deps import Gateway, GatewayWiring, Http, Providers
+from mandri.api.deps import ChatGpt, ChatGptWiring, Gateway, GatewayWiring, Http, Providers
 from mandri.api.errors import ERROR_RESPONSES, NOT_FOUND, NOT_FOUND_CONFLICT, ApiError
 from mandri.core.ids import ProviderKind
 from mandri.gateway.catalog_enrichment import enrich_entries
 from mandri.gateway.model_capabilities import metadata_capabilities
-from mandri.gateway.reasoning_catalog import parse_lm_studio_entry
+from mandri.gateway.reasoning_catalog import parse_chatgpt_entry, parse_lm_studio_entry
 from mandri.providers.catalog import model_entries
+from mandri.providers.chatgpt_login import ChatGptLoginSession
 from mandri.providers.errors import (
     ProviderExistsError,
     ProviderInUseError,
@@ -19,8 +20,8 @@ from mandri.providers.errors import (
     ProviderVerificationError,
 )
 from mandri.providers.refs import requires_api_base
-from mandri.providers.service import Provider
-from mandri.providers.verify import models_endpoint, models_headers
+from mandri.providers.service import Provider, ProviderState
+from mandri.providers.verify import models_endpoint, models_headers, models_params
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/providers", tags=["providers"])
@@ -36,7 +37,7 @@ class ProviderIn(BaseModel):
     name: str
     kind: str
     api_base: str | None = None
-    api_key: str
+    api_key: str = ""
     verify: bool = True
 
 
@@ -50,6 +51,8 @@ class ProviderOut(BaseModel):
     kind: str
     api_base: str | None
     state: str
+    authorize_url: str | None = None
+    login_id: str | None = None
 
 
 class ModelOut(BaseModel):
@@ -63,12 +66,14 @@ class ModelOut(BaseModel):
     input_modalities: list[str] | None = None
 
 
-def _to_out(provider: Provider) -> ProviderOut:
+def _to_out(provider: Provider, session: ChatGptLoginSession | None = None) -> ProviderOut:
     return ProviderOut(
         name=provider.name,
         kind=provider.kind.value,
         api_base=None if provider.api_base is None else str(provider.api_base),
         state=provider.state.value,
+        authorize_url=None if session is None else session.authorize_url or None,
+        login_id=None if session is None else session.id,
     )
 
 
@@ -108,6 +113,53 @@ def _redact(secret: str, text: str) -> str:
     return text
 
 
+def _login_session(wiring: ChatGptWiring, provider: Provider) -> ChatGptLoginSession | None:
+    if provider.kind is not ProviderKind.CHATGPT:
+        return None
+    if provider.state is not ProviderState.PENDING_AUTH or wiring.login is None:
+        return None
+    return wiring.login.pending_for(provider.name)
+
+
+async def _create_chatgpt(body: ProviderIn, service: Providers, wiring: ChatGpt) -> ProviderOut:
+    if body.api_key.strip():
+        raise ApiError(
+            code="provider_invalid",
+            message="ChatGPT providers authenticate through OAuth sign-in, not an api_key",
+            status=400,
+        )
+    if wiring.login is None:
+        raise ApiError(
+            code="chatgpt_unavailable", message="ChatGPT sign-in is not available", status=503
+        )
+    name = body.name.strip()
+    if not name:
+        raise ApiError(
+            code="provider_invalid", message="provider name must be a non-empty string", status=400
+        )
+    try:
+        await service.add(name, ProviderKind.CHATGPT, body.api_base, "", verify=False)
+    except ProviderExistsError as error:
+        raise ApiError(code="provider_exists", message=str(error), status=409) from None
+    except ProviderInvalidError as error:
+        raise ApiError(code="provider_invalid", message=str(error), status=400) from None
+    session = wiring.login.pending_for(name)
+    if session is None:
+        session = await wiring.login.start(name, body.api_base)
+    return _to_out(service.get(name), session)
+
+
+def _require_signed_in(provider: Provider) -> None:
+    if provider.state is not ProviderState.PENDING_AUTH:
+        return
+    raise ApiError(
+        code="chatgpt_auth_pending",
+        message=f"provider {provider.name!r} is waiting for ChatGPT sign-in to complete",
+        status=409,
+        detail={"name": provider.name},
+    )
+
+
 def _require_api_base(provider: Provider) -> None:
     if requires_api_base(provider.kind) and provider.api_base is None:
         raise ApiError(
@@ -118,13 +170,15 @@ def _require_api_base(provider: Provider) -> None:
 
 
 @router.get("", operation_id="list_providers")
-async def list_providers(service: Providers) -> list[ProviderOut]:
-    return [_to_out(provider) for provider in service.list()]
+async def list_providers(service: Providers, wiring: ChatGpt) -> list[ProviderOut]:
+    return [_to_out(provider, _login_session(wiring, provider)) for provider in service.list()]
 
 
 @router.post("", operation_id="create_provider", status_code=201, responses=CONFLICT)
-async def create_provider(body: ProviderIn, service: Providers) -> ProviderOut:
+async def create_provider(body: ProviderIn, service: Providers, wiring: ChatGpt) -> ProviderOut:
     kind = _parse_kind(body.kind)
+    if kind is ProviderKind.CHATGPT:
+        return await _create_chatgpt(body, service, wiring)
     try:
         provider = await service.add(
             body.name, kind, body.api_base, body.api_key, verify=body.verify
@@ -164,7 +218,7 @@ async def update_provider(name: str, body: ProviderUpdateIn, service: Providers)
     status_code=204,
     responses=NOT_FOUND_CONFLICT,
 )
-async def delete_provider(name: str, service: Providers) -> Response:
+async def delete_provider(name: str, service: Providers, wiring: ChatGpt) -> Response:
     try:
         await service.remove(name)
     except ProviderNotFoundError:
@@ -176,18 +230,31 @@ async def delete_provider(name: str, service: Providers) -> Response:
             status=409,
             detail={"route_ids": error.route_ids},
         ) from None
+    if wiring.login is not None:
+        await wiring.login.cancel_provider(name)
     return Response(status_code=204)
 
 
 @router.post("/{name}/verify", operation_id="verify_provider", responses=NOT_FOUND)
-async def verify_provider(name: str, service: Providers) -> ProviderOut:
+async def verify_provider(name: str, service: Providers, wiring: ChatGpt) -> ProviderOut:
     try:
         provider = await service.verify(name)
     except ProviderNotFoundError:
         raise _not_found(name) from None
+    except ProviderInvalidError:
+        pending = _pending_session(wiring, name)
+        if pending is None:
+            raise ApiError(
+                code="chatgpt_auth_pending", message="Reconnect this ChatGPT account", status=409
+            ) from None
+        return _to_out(service.get(name), pending)
     except ProviderVerificationError as error:
         raise _verification_failed(error) from None
-    return _to_out(provider)
+    return _to_out(provider, _login_session(wiring, provider))
+
+
+def _pending_session(wiring: ChatGptWiring, name: str) -> ChatGptLoginSession | None:
+    return None if wiring.login is None else wiring.login.pending_for(name)
 
 
 def _model_out(wiring: GatewayWiring, provider: Provider, entry: dict[str, Any]) -> ModelOut:
@@ -197,6 +264,8 @@ def _model_out(wiring: GatewayWiring, provider: Provider, entry: dict[str, Any])
     info = None if catalog is None else catalog.lookup(provider_name, f"{provider_name}/{model_id}")
     if provider.kind is ProviderKind.LM_STUDIO:
         info = parse_lm_studio_entry(entry) or info
+    if provider.kind is ProviderKind.CHATGPT:
+        info = parse_chatgpt_entry(entry) or info
     capabilities = metadata_capabilities(entry)
     reasoning = capabilities["reasoning_supported"]
     if reasoning is None and info is not None:
@@ -218,14 +287,23 @@ async def list_provider_models(
     name: str, wiring: Gateway, service: Providers, client: Http
 ) -> list[ModelOut]:
     try:
+        await service.ensure_fresh(name)
         provider = service.get(name)
     except ProviderNotFoundError:
         raise _not_found(name) from None
+    except ProviderInvalidError as error:
+        raise ApiError(code="chatgpt_auth_pending", message=str(error), status=409) from None
     _require_api_base(provider)
+    _require_signed_in(provider)
     url = models_endpoint(provider.kind, provider.api_base)
     headers = models_headers(provider.kind, provider.api_key)
     try:
-        response = await client.get(url, headers=headers, timeout=_MODELS_TIMEOUT_SECONDS)
+        response = await client.get(
+            url,
+            headers=headers,
+            params=models_params(provider.kind),
+            timeout=_MODELS_TIMEOUT_SECONDS,
+        )
     except httpx.HTTPError:
         raise ApiError(
             code="provider_models_failed",

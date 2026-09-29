@@ -24,6 +24,7 @@ from mandri.gateway.privacy import GatewayPrivacy
 from mandri.gateway.reasoning_catalog import ReasoningCatalog
 from mandri.gateway.route_registry import RouteRegistry
 from mandri.gateway.usage import GatewayUsageSink
+from mandri.providers.chatgpt_login import ChatGptLoginService
 from mandri.providers.service import ProvidersRegistry
 from mandri.runtime.agents import AgentService
 from mandri.runtime.lifetime import SessionLifetimePort
@@ -48,6 +49,11 @@ class GatewayWiring:
 
 
 @dataclasses.dataclass
+class ChatGptWiring:
+    login: ChatGptLoginService | None = None
+
+
+@dataclasses.dataclass
 class LifespanState:
     usage: UsageRepository | None = None
     usage_refresh: Callable[[], Awaitable[bool]] | None = None
@@ -57,6 +63,7 @@ class LifespanState:
     sessions: SessionsService | None = None
     providers: ProvidersRegistry | None = None
     gateway: GatewayWiring | None = None
+    chatgpt: ChatGptWiring | None = None
     runtime: RuntimeService | None = None
     lifetime: SessionLifetimePort | None = None
     actions: ActionRegistry | None = None
@@ -115,6 +122,10 @@ def gateway_wiring(request: Request) -> GatewayWiring:
     return _require(_state(request).gateway, "Gateway is not available")
 
 
+def chatgpt_wiring(request: Request) -> ChatGptWiring:
+    return _state(request).chatgpt or ChatGptWiring()
+
+
 def usage_repository(request: Request) -> UsageRepository:
     return _require(_state(request).usage, "Usage statistics are not available")
 
@@ -125,4 +136,5 @@ Providers = typing.Annotated[ProvidersRegistry, Depends(providers_registry)]
 Http = typing.Annotated[httpx.AsyncClient, Depends(http_client)]
 Database = typing.Annotated[DatabasePort, Depends(database)]
 Gateway = typing.Annotated[GatewayWiring, Depends(gateway_wiring)]
+ChatGpt = typing.Annotated[ChatGptWiring, Depends(chatgpt_wiring)]
 Usage = typing.Annotated[UsageRepository, Depends(usage_repository)]

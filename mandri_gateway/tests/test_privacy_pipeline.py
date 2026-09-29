@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import httpx
+import litellm
 import pytest
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from mandri.core.ids import ModelRef, ProviderKind, RouteId, SecretRef, Url
@@ -65,6 +66,7 @@ class StaticKey:
 
 @pytest.fixture
 async def privacy(tmp_path: Path):
+    litellm.in_memory_llm_clients_cache.flush_cache()
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "state.sqlite")
     await db.migrate()

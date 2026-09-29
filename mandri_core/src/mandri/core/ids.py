@@ -38,6 +38,7 @@ class ProviderKind(enum.StrEnum):
     OLLAMA = "ollama"
     LM_STUDIO = "lm_studio"
     OPENAI = "openai"
+    CHATGPT = "chatgpt"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     CUSTOM = "custom"

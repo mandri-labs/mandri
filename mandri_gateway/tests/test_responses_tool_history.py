@@ -164,7 +164,7 @@ async def test_normalization_depends_on_protocol_not_model(monkeypatch, kind, mo
     selected = replace(selected, model=replace(selected.model, model_ref=ModelRef(model)))
     items = [call("a"), message("After"), output("a")]
     assert await ResponsesHandler().responses(selected, {"input": items}) == "OK"
-    if kind in {ProviderKind.OPENAI, ProviderKind.OPENROUTER}:
+    if kind in {ProviderKind.OPENAI, ProviderKind.OPENROUTER, ProviderKind.CHATGPT}:
         assert captured["input"] is items
         assert not captured["use_chat_completions_api"]
     else:

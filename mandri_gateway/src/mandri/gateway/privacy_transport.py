@@ -10,6 +10,7 @@ import httpx
 from mandri.core.ids import ProviderKind
 from mandri.core.types.execution import ProtectionError
 from mandri.gateway.privacy_egress import EgressGuard
+from mandri.gateway.provider_adapter import CURRENT_ADAPTER
 from mandri.gateway.usage_transport import observe_response
 
 
@@ -27,12 +28,16 @@ _INSTALLED = False
 
 
 async def _async_send(client: httpx.AsyncClient, request: httpx.Request) -> httpx.Response:
+    original = request
+    adapter = CURRENT_ADAPTER.get()
+    if adapter is not None:
+        request = adapter.request(request)
     scope = _CURRENT.get()
     if scope is not None:
         _require_active(scope)
         try:
             request.headers["accept-encoding"] = "identity"
-            await scope.guard.check(request)
+            await scope.guard.check(request, complete_response=adapter is not None)
         except ProtectionError as error:
             scope.failure = error
             raise
@@ -48,6 +53,8 @@ async def _async_send(client: httpx.AsyncClient, request: httpx.Request) -> http
             scope.failure = encoding_error
             raise encoding_error
     await observe_response(response)
+    if adapter is not None:
+        response = await adapter.response(response, original)
     return response
 
 

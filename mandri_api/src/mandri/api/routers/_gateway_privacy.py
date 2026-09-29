@@ -39,6 +39,16 @@ def restore_response(
     response: Response, prepared: PreparedRequest, protocol: GatewayProtocol
 ) -> Response:
     if prepared.guard is None:
+        if (
+            prepared.client_stream
+            and not isinstance(response, StreamingResponse)
+            and response.status_code < 400
+        ):
+            return Response(
+                content=complete_sse(json.loads(bytes(response.body)), protocol),
+                status_code=response.status_code,
+                media_type="text/event-stream",
+            )
         return response
     engine = prepared.guard.engine
     headers = {name: value for name, value in response.headers.items() if name != "content-length"}

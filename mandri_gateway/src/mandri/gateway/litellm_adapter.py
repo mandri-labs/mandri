@@ -12,9 +12,10 @@ from mandri.core.types.execution import PrivacyMode, ProtectionError
 from mandri.gateway.errors.upstream import UpstreamError
 from mandri.gateway.gemini_completion import generate_content
 from mandri.gateway.gemini_request import normalize_contents
-from mandri.gateway.privacy_call import guarded_call
 from mandri.gateway.privacy_count import protected_count_tokens
 from mandri.gateway.privacy_egress import EgressGuard, provider_base
+from mandri.gateway.provider_call import provider_call
+from mandri.gateway.provider_identity import identity_headers
 from mandri.gateway.ratelimit_headers import from_exception
 from mandri.gateway.reasoning_transport import apply_reasoning_transport
 from mandri.gateway.responses_input import normalize_tool_results
@@ -73,7 +74,10 @@ def _credentials(route: ResolvedRoute, guard: EgressGuard | None = None) -> dict
         if route.conversation_id is not None
         else f"route:{route.route_id}"
     )
-    headers = guard.headers if guard is not None else conversation_headers(model.provider, context)
+    headers = {
+        **(guard.headers if guard is not None else conversation_headers(model.provider, context)),
+        **identity_headers(model),
+    }
     if headers:
         credentials["extra_headers"] = headers
     return credentials
@@ -105,10 +109,8 @@ class OpenAIHandler:
         if stream:
             call_kwargs["stream_options"] = {"include_usage": True}
         try:
-            if guard is not None:
-                return await guarded_call(guard, litellm.acompletion, call_kwargs)
-            return await litellm.acompletion(**call_kwargs)
-        except ProtectionError:
+            return await provider_call(route, litellm.acompletion, call_kwargs, guard)
+        except (ProtectionError, UpstreamError):
             raise
         except Exception as error:
             raise upstream_error(error, route.model) from error
@@ -145,6 +147,7 @@ class ResponsesHandler:
         use_chat_completions = route.model.provider not in {
             ProviderKind.OPENAI,
             ProviderKind.OPENROUTER,
+            ProviderKind.CHATGPT,
         }
         if use_chat_completions:
             input_value = normalize_tool_results(input_value)
@@ -177,10 +180,8 @@ class ResponsesHandler:
             **payload,
         }
         try:
-            if guard is not None:
-                return await guarded_call(guard, litellm.aresponses, call_kwargs)
-            return await litellm.aresponses(**call_kwargs)
-        except ProtectionError:
+            return await provider_call(route, litellm.aresponses, call_kwargs, guard)
+        except (ProtectionError, UpstreamError):
             raise
         except Exception as error:
             raise upstream_error(error, route.model) from error
@@ -208,17 +209,10 @@ class AnthropicHandler:
                 **_credentials(route, guard),
                 "additional_drop_params": ["web_search_options"],
             }
-            if guard is not None:
-                return await guarded_call(
-                    guard,
-                    litellm.anthropic_interface.messages.acreate,
-                    kwargs,
-                    sdk=False
-                    if route.model.provider in {ProviderKind.OPENAI, ProviderKind.CUSTOM}
-                    else None,
-                )
-            return await litellm.anthropic_interface.messages.acreate(**kwargs)
-        except ProtectionError:
+            return await provider_call(
+                route, litellm.anthropic_interface.messages.acreate, kwargs, guard
+            )
+        except (ProtectionError, UpstreamError):
             raise
         except Exception as error:
             raise upstream_error(error, route.model) from error
@@ -238,7 +232,7 @@ class AnthropicHandler:
                 system=body.get("system"),
                 **credentials,
             )
-        except ProtectionError:
+        except (ProtectionError, UpstreamError):
             raise
         except Exception as error:
             raise upstream_error(error, route.model) from error
@@ -267,10 +261,8 @@ class GeminiHandler:
                 "num_retries": 0,
                 "timeout": _STREAM_TIMEOUT if stream else _CALL_TIMEOUT_SECONDS,
             }
-            if guard is not None:
-                return await guarded_call(guard, generate_content, kwargs)
-            return await generate_content(**kwargs)
-        except ProtectionError:
+            return await provider_call(route, generate_content, kwargs, guard)
+        except (ProtectionError, UpstreamError):
             raise
         except Exception as error:
             raise upstream_error(error, route.model) from error

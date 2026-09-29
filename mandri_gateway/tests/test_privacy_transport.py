@@ -165,7 +165,7 @@ async def test_sdk_cannot_swallow_transport_denial_or_replace_its_typed_error():
                 return {"choices": []}
 
     with pytest.raises(ProtectionError):
-        await guarded_call(scope().guard, swallowing_sdk, {}, sdk=False)
+        await guarded_call(scope().guard, swallowing_sdk, {})
     assert observed == []
 
 

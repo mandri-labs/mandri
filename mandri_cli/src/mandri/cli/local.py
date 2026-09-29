@@ -7,6 +7,8 @@ from mandri.config.types import default_opencode_db_path
 from mandri.core.ids import RouteId
 from mandri.core.ports.routes import RouteLookupPort
 from mandri.database.sqlite_adapter import AiosqliteDatabase
+from mandri.providers.chatgpt.resolver import ChatGptCredentialResolver
+from mandri.providers.chatgpt.store import ChatGptTokenStore
 from mandri.providers.service import ProvidersRegistry
 from mandri.sessions.bootstrap import build_sessions_backends
 from mandri.sessions.docker_titles import docker_title
@@ -48,7 +50,13 @@ async def build_providers_registry(
     base_dir: Path | None,
 ) -> tuple[ProvidersRegistry, AiosqliteDatabase]:
     db = await build_database(base_dir)
-    return ProvidersRegistry(build_config(base_dir), DatabaseRouteLookup(db)), db
+    store = ChatGptTokenStore(resolve_base_dir(base_dir))
+    store.migrate([entry.name for entry in build_config(base_dir).load().providers])
+    return ProvidersRegistry(
+        build_config(base_dir),
+        DatabaseRouteLookup(db),
+        token_resolver=ChatGptCredentialResolver(store),
+    ), db
 
 
 async def build_sessions_service(

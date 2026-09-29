@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mandri.api.deps import LifespanState
 from mandri.api.errors import register_error_handlers
 from mandri.api.routers.attachments import router as attachments_router
+from mandri.api.routers.chatgpt import router as chatgpt_router
 from mandri.api.routers.execution import router as execution_router
 from mandri.api.routers.forks import router as forks_router
 from mandri.api.routers.fs import router as fs_router
@@ -58,6 +59,7 @@ def create_app(cors_origins: Sequence[CorsOrigin] | None = None) -> FastAPI:
     app.include_router(attachments_router, prefix="/v1")
     app.include_router(transcript_records_router, prefix="/v1")
     app.include_router(providers_router, prefix="/v1")
+    app.include_router(chatgpt_router, prefix="/v1")
     app.include_router(gateway_router, prefix="/v1")
     app.include_router(runtime_router, prefix="/v1")
     app.include_router(execution_router, prefix="/v1")

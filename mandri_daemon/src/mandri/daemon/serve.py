@@ -18,7 +18,7 @@ from codex_cli_bin import bundled_codex_path
 from fastapi import FastAPI
 from mandri.api.actions import build_action_registry
 from mandri.api.app import create_app
-from mandri.api.deps import GatewayWiring
+from mandri.api.deps import ChatGptWiring, GatewayWiring
 from mandri.api.local_security import LocalSecurity
 from mandri.config.toml_adapter import TomlConfigAdapter
 from mandri.config.types import default_opencode_db_path
@@ -41,6 +41,7 @@ from mandri.core.types.sessions import Session, SessionStateError
 from mandri.core.usage_pricing import bundled_prices
 from mandri.core.version import __version__
 from mandri.daemon.agent_cache import backfill_agents, discover_agents
+from mandri.daemon.chatgpt import build_chatgpt, build_resolver
 from mandri.daemon.command_catalogs import create_command_catalog_cache
 from mandri.daemon.daemonctl import remove_pid_file, write_pid_file
 from mandri.daemon.desktop import install_controls
@@ -296,6 +297,7 @@ class RuntimeResources:
         self.runtime: RuntimeService | None = None
         self.providers: ProvidersRegistry | None = None
         self.gateway: GatewayWiring | None = None
+        self.chatgpt: ChatGptWiring | None = None
         self.actions: ActionRegistry | None = None
         self.agents: AgentService | None = None
         self.agent_tasks: list[asyncio.Task[None]] = []
@@ -417,6 +419,7 @@ def build_app(
             state.lifetime = resources.runtime
             state.providers = resources.providers
             state.gateway = resources.gateway
+            state.chatgpt = resources.chatgpt
             state.actions = resources.actions
             state.agents = resources.agents
             if resources.usage is not None:
@@ -491,10 +494,13 @@ async def wire_runtime(
     events = HubGatewayEventSink(hub)
     wired_routes: list[RouteLookupPort] = []
     resources.providers = ProvidersRegistry(
-        TomlConfigAdapter(base_dir), _DeferredRoutes(wired_routes)
+        TomlConfigAdapter(base_dir),
+        _DeferredRoutes(wired_routes),
+        token_resolver=build_resolver(http, base_dir),
     )
     registry = RouteRegistry(db, resources.providers, events)
     wired_routes.append(registry)
+    resources.chatgpt = build_chatgpt(http, base_dir, resources.providers)
     resources.gateway = GatewayWiring(
         registry,
         OpenAIHandler(),
@@ -637,6 +643,8 @@ async def stop_background_tasks(
                 )
     if resources.usage is not None:
         resources.usage.close()
+    if resources.chatgpt is not None and resources.chatgpt.login is not None:
+        await resources.chatgpt.login.aclose()
     await hub.close_all()
     await http.aclose()
     if resources.usage_db is not None:

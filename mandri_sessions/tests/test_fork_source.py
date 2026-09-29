@@ -23,7 +23,7 @@ from mandri.sessions.transcripts.resolver import TranscriptResolver
 from .substitutes import make_session
 
 
-@pytest.fixture(params=["0.154.0", "0.157.0"])
+@pytest.fixture(params=["0.154.0", "0.157.0", "0.159.0"])
 def native_source(tmp_path: Path, request):
     workspace = tmp_path / "workspace"
     (workspace / "api/src").mkdir(parents=True)

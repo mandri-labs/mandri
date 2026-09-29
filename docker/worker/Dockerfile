@@ -4,7 +4,7 @@ ARG TARGETARCH
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-httpx ca-certificates git openssh-client ripgrep iptables util-linux procps bubblewrap \
     && rm -rf /var/lib/apt/lists/*
-RUN npm install -g @anthropic-ai/claude-code@2.1.282 @openai/codex@0.157.0 opencode-ai@1.18.32 @earendil-works/pi-coding-agent@0.87.1 \
+RUN npm install -g @anthropic-ai/claude-code@2.1.282 @openai/codex@0.159.0 opencode-ai@1.18.32 @earendil-works/pi-coding-agent@0.87.1 \
     && npm cache clean --force
 ADD https://storage.googleapis.com/antigravity-public/antigravity-cli/1.2.11-6016716732497920/linux-x64/cli_linux_x64.tar.gz /tmp/agy.tar.gz
 RUN test "$TARGETARCH" = amd64 \

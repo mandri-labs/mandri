@@ -32,7 +32,7 @@ def source_record():
     )
 
 
-@pytest.mark.parametrize("version", ["0.154.0", "0.157.0"])
+@pytest.mark.parametrize("version", ["0.154.0", "0.157.0", "0.159.0"])
 async def test_explicit_fork_uses_source_context_and_selected_target_policy(version):
     source = source_record()
     held = False

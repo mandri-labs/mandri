@@ -1,6 +1,7 @@
 """Cross-platform best-effort system browser launcher."""
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -50,7 +51,7 @@ def _graphical_session() -> bool:
 
 
 def _wsl() -> bool:
-    return "microsoft" in os.uname().release.lower()
+    return "microsoft" in platform.release().lower()
 
 
 def _run(command: tuple[str, ...]) -> bool:

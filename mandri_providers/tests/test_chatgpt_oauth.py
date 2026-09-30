@@ -3,6 +3,8 @@
 import asyncio
 import base64
 import json
+import stat
+import sys
 from importlib.metadata import version
 from pathlib import Path
 
@@ -27,9 +29,11 @@ def test_pkce_challenge_is_s256_of_verifier() -> None:
     pair = oauth.pkce_pair()
     import hashlib
 
-    expected = base64.urlsafe_b64encode(
-        hashlib.sha256(pair.verifier.encode("ascii")).digest()
-    ).decode().rstrip("=")
+    expected = (
+        base64.urlsafe_b64encode(hashlib.sha256(pair.verifier.encode("ascii")).digest())
+        .decode()
+        .rstrip("=")
+    )
     assert pair.challenge == expected
     assert "=" not in pair.challenge
 
@@ -67,7 +71,9 @@ async def test_exchange_code_posts_form_and_returns_tokens() -> None:
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        tokens = await oauth.exchange_code(client, "code-1", "verifier-1", "http://localhost:1455/auth/callback")
+        tokens = await oauth.exchange_code(
+            client, "code-1", "verifier-1", "http://localhost:1455/auth/callback"
+        )
     assert seen["url"] == oauth.TOKEN_URL
     assert seen["content_type"] == "application/x-www-form-urlencoded"
     assert "grant_type=authorization_code" in str(seen["body"])
@@ -122,20 +128,23 @@ def test_headers_tolerate_malformed_tokens() -> None:
     assert "ChatGPT-Account-ID" not in request_headers("a.@@@.c")
 
 
-def test_store_round_trips_and_restricts_permissions(tmp_path: Path) -> None:
-    import stat
-
+def test_store_round_trips(tmp_path: Path) -> None:
     store = ChatGptTokenStore(tmp_path)
     assert store.load("work") is None
-    store.save(
-        "work", StoreTokenSet(access_token="a", refresh_token="r", expires_at_ms=12345)
-    )
+    store.save("work", StoreTokenSet(access_token="a", refresh_token="r", expires_at_ms=12345))
     loaded = store.load("work")
     assert loaded == StoreTokenSet(access_token="a", refresh_token="r", expires_at_ms=12345)
-    mode = stat.S_IMODE(token_path(tmp_path, "work").stat().st_mode)
-    assert mode == 0o600
     store.clear("work")
     assert store.load("work") is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows permissions use ACLs")
+def test_store_restricts_posix_permissions(tmp_path: Path) -> None:
+    store = ChatGptTokenStore(tmp_path)
+    store.save("work", StoreTokenSet(access_token="a", refresh_token="r", expires_at_ms=12345))
+    path = token_path(tmp_path, "work")
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
 
 
 def test_store_rejects_unsafe_names(tmp_path: Path) -> None:
@@ -203,7 +212,24 @@ async def test_loopback_server_times_out() -> None:
         await server.aclose()
 
 
-async def test_loopback_server_reports_busy_ports() -> None:
-    server = oauth.LoopbackCallbackServer(ports=(1, 2))
-    with pytest.raises(oauth.ChatGptAuthError, match="loopback"):
-        await server.start()
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_loopback_server_handles_busy_ports(fallback: bool) -> None:
+    occupied = oauth.LoopbackCallbackServer(ports=(0,))
+    await occupied.start()
+    assert occupied.port is not None
+    ports = (occupied.port, 0) if fallback else (occupied.port,)
+    server = oauth.LoopbackCallbackServer(ports=ports)
+    try:
+        if fallback:
+            await server.start()
+            assert server.port is not None and server.port != occupied.port
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{server.uri}?code=code-9&state=state-9")
+            assert response.status_code == 200
+            assert await server.wait(5.0) == ("code-9", "state-9")
+        else:
+            with pytest.raises(oauth.ChatGptAuthError, match="loopback"):
+                await server.start()
+    finally:
+        await server.aclose()
+        await occupied.aclose()

@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import secrets
 import socket
+import sys
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -169,7 +170,10 @@ def _reason(response: httpx.Response) -> str:
 def _bind(port: int) -> socket.socket | None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if sys.platform == "win32":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("127.0.0.1", port))
     except OSError:
         sock.close()

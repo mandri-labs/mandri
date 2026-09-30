@@ -72,6 +72,7 @@ def to_observation(record: GatewayUsageRecord) -> UsageObservation:
             "billing_mode_basis": "provider_configuration",
             "usage_protocol": record.usage_protocol,
             "upstream_request_id": record.upstream_request_id,
+            "client_response_id": record.client_response_id,
             "route_id": record.route_id,
             "status": record.status,
             "output_observed": record.output_observed,

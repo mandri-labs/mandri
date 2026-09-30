@@ -8,13 +8,18 @@ from typing import Any, cast
 from mandri.core.clock import system_now_ms
 from mandri.core.types.usage import UsageAccount, UsageFilters, UsageObservation, UsagePrice
 from mandri.core.usage_normalization import normalize_usage
-from mandri.core.usage_pricing import validate_price, value_usage
+from mandri.core.usage_pricing import value_usage
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage_accounting import advances, contribution, validate
-from mandri.database.usage_coverage import select_coverage
-from mandri.database.usage_prices import PriceIndex, prices_for
+from mandri.database.usage_coverage import (
+    scoped_facts,
+    select_coverage,
+)
+from mandri.database.usage_gateway_history import reconcile as reconcile_gateway_history
+from mandri.database.usage_prices import PriceIndex, prices_for, register_prices
 from mandri.database.usage_queries import advance, overview, revision
 from mandri.database.usage_reconcile import stage_history
+from mandri.database.usage_recovery import recover_gateway
 from mandri.database.usage_serialization import COUNTERS, encode, observation, price
 from mandri.database.usage_transactions import transaction
 from mandri.database.usage_valuation import revalue_batch
@@ -26,6 +31,13 @@ class UsageRepository:
 
     async def revision(self) -> int:
         return await transaction(self._database, revision, write=False)
+
+    async def reconcile_gateway_history(self) -> int:
+        return await transaction(
+            self._database,
+            lambda db: reconcile_gateway_history(db, self._save_fact),
+            write=True,
+        )
 
     async def has_gateway_usage(self, session_id: str, root_session_id: str | None = None) -> bool:
         return await transaction(
@@ -128,6 +140,14 @@ class UsageRepository:
                 encode(value),
             ),
         )
+        if fact is not None and fact.source == "gateway":
+            for native in scoped_facts(db, fact):
+                fact = recover_gateway(fact, native)
+        elif fact is not None and fact.source.startswith("native:"):
+            for gateway in scoped_facts(db, fact):
+                recovered = recover_gateway(gateway, fact)
+                if recovered != gateway:
+                    self._save_fact(db, recovered)
         if fact is not None and select_coverage(db, fact):
             self._save_fact(db, fact, prices)
         elif fact is None and value.kind == "delta":
@@ -235,6 +255,7 @@ class UsageRepository:
             "anchor",
             "parser_version",
             "reconciliation_version",
+            "route_revision",
             "status",
             "source_revision",
             "modified",
@@ -386,32 +407,41 @@ class UsageRepository:
     async def add_price(self, value: UsagePrice) -> int:
         return await self.add_prices([value])
 
+    async def catalog_prices(self, source: str) -> tuple[UsagePrice, ...]:
+        def read(db: sqlite3.Connection) -> tuple[UsagePrice, ...]:
+            rows = db.execute(
+                "SELECT payload FROM usage_price WHERE valuation_basis='current_price_comparison'"
+                " AND json_extract(payload,'$.source')=? ORDER BY price_id",
+                (source,),
+            )
+            return tuple(price(row[0]) for row in rows)
+
+        return await transaction(self._database, read, write=False)
+
+    async def remove_bundled_prices(self) -> int:
+        def remove(db: sqlite3.Connection) -> int:
+            deleted = db.execute(
+                "DELETE FROM usage_price WHERE"
+                " (price_id GLOB '????-??-??.v*:*' OR price_id GLOB 'current:go:*')"
+                " AND json_extract(payload,'$.source') NOT IN ('explicit','user_override')"
+            ).rowcount
+            if not deleted:
+                return revision(db)
+            db.execute(
+                "UPDATE usage_valuation SET catalog_revision=catalog_revision+1,"
+                " after_key=NULL WHERE id=1"
+            )
+            return advance(db)
+
+        return await transaction(self._database, remove, write=True)
+
     async def add_prices(self, values: Sequence[UsagePrice]) -> int:
-        for value in values:
-            validate_price(value)
+        return await transaction(self._database, lambda db: register_prices(db, values), write=True)
 
-        def save(db: sqlite3.Connection) -> int:
-            changed = False
-            for value in values:
-                payload = encode(value)
-                row = db.execute(
-                    "SELECT payload FROM usage_price WHERE price_id=?",
-                    (value.price_id,),
-                ).fetchone()
-                if row:
-                    if row[0] != payload and encode(price(row[0])) != payload:
-                        raise ValueError("Price versions are immutable")
-                    continue
-                db.execute("INSERT INTO usage_price VALUES (?,?)", (value.price_id, payload))
-                changed = True
-            if changed:
-                db.execute(
-                    "UPDATE usage_valuation SET catalog_revision=catalog_revision+1,"
-                    " after_key=NULL WHERE id=1"
-                )
-            return advance(db) if changed else revision(db)
-
-        return await transaction(self._database, save, write=True)
+    async def sync_catalog_prices(self, values: Sequence[UsagePrice]) -> int:
+        return await transaction(
+            self._database, lambda db: register_prices(db, values, public=True), write=True
+        )
 
     async def catalog_state(self, source: str = "public") -> dict[str, Any] | None:
         def read(db: sqlite3.Connection) -> dict[str, Any] | None:

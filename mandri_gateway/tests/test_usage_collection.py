@@ -11,7 +11,6 @@ from fastapi import FastAPI, Request
 from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from mandri.api.routers.gateway import _collect_usage, _UsageStreamingResponse
 from mandri.core.ids import ModelRef, ProviderKind, RouteId, SecretRef, Url
-from mandri.core.usage_pricing import bundled_prices
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
 from mandri.database.usage_migrations import migrate_usage
@@ -27,6 +26,8 @@ from mandri.gateway.usage_payload import observe_payload
 from mandri.gateway.usage_transport import UsageDecoder
 from mandri.providers.service import Provider, ProviderState
 from starlette.requests import ClientDisconnect
+
+from mandri_core.tests.usage_fixtures import synthetic_prices
 
 
 @pytest.fixture
@@ -430,6 +431,8 @@ async def test_real_litellm_translation_captures_raw_cost(monkeypatch, route, pr
     assert records[-1].output_tokens == 3
     assert records[-1].provider_cost == Decimal("0.123")
     assert records[-1].upstream_request_id == "upstream-id"
+    if protocol in {"chat", "anthropic"}:
+        assert records[-1].client_response_id is not None
     assert len({record.request_id for record in records}) == 1
     await asyncio.gather(*logging_tasks)
 
@@ -453,7 +456,7 @@ async def test_raw_gateway_snapshots_replace_one_priced_repository_fact(route, t
 
     collector = UsageCollector(openai, "chat", sink)
     try:
-        for price in bundled_prices():
+        for price in synthetic_prices():
             await repository.add_price(price)
         await collector.publish()
         assert to_observation(collector.record).model == "gpt-4.1-mini"

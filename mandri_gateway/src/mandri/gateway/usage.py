@@ -11,6 +11,7 @@ import anyio
 from mandri.core.clock import system_now_ms
 from mandri.gateway.route_registry import ResolvedRoute
 from mandri.gateway.usage_attribution import UsageAttribution
+from mandri.gateway.usage_client_identity import client_response_id
 from mandri.gateway.usage_identity import billing_mode
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class GatewayUsageRecord:
     requested_model: str | None = None
     upstream_protocol: str | None = None
     upstream_request_id: str | None = None
+    client_response_id: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
@@ -160,7 +162,12 @@ class UsageStream(AsyncIterator[Any]):
     async def __anext__(self) -> Any:
         try:
             with usage_scope(self.collector):
-                return await anext(self.source)
+                item = await anext(self.source)
+                if self.collector.record.client_response_id is None:
+                    identity = client_response_id(item)
+                    if identity is not None:
+                        await self.collector.publish(client_response_id=identity)
+                return item
         except StopAsyncIteration:
             await self.collector.finish("completed")
             await self.aclose()
@@ -193,5 +200,8 @@ async def collect_call(collector: UsageCollector, call: Callable[[], Awaitable[A
         raise
     if isinstance(result, AsyncIterator):
         return UsageStream(result, collector)
+    identity = client_response_id(result)
+    if identity is not None:
+        collector.record = replace(collector.record, client_response_id=identity)
     await collector.finish("completed")
     return result

@@ -61,7 +61,7 @@ def to_usage_observation(item: NativeUsageObservation, *, sequence: int) -> Usag
             )
         ),
         input_includes_cache=context.harness == "codex",
-        output_includes_reasoning=True if context.harness in {"codex", "claude", "pi"} else None,
+        output_includes_reasoning=True,
         reported_cost_usd=item.reported_cost_usd,
         reported_cost_basis="harness_estimate" if item.reported_cost_usd is not None else None,
         pricing_context={
@@ -95,7 +95,5 @@ def to_usage_observation(item: NativeUsageObservation, *, sequence: int) -> Usag
                 if item.scope in {"request", "message"} and counters.get("request_count") == 1
                 else {}
             ),
-        }
-        if context.harness in {"codex", "claude", "pi"}
-        else {},
+        },
     )

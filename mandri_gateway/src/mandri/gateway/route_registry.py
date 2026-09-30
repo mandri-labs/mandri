@@ -132,6 +132,7 @@ class RouteRegistry:
                 route.privacy_scope_id,
             ),
         )
+        await self._remember(route, provider.kind, int(route.created_at))
         self._emit(GatewayEventKind.ROUTE_CREATED, route.id, route.provider_name)
         return route
 
@@ -162,14 +163,28 @@ class RouteRegistry:
 
     async def swap(self, route_id: RouteId, provider_name: str, model_id: str) -> Route:
         provider = self._providers.get(provider_name)
-        await self.get(route_id)
+        previous = await self.get(route_id)
+        now = int(system_now_ms())
+        history = await self._db.fetch_one(
+            "SELECT 1 FROM gateway_route_history WHERE route_id=? LIMIT 1", (str(route_id),)
+        )
+        if history is None:
+            await self._remember(previous, self._providers.get(previous.provider_name).kind, now)
         await self._db.execute(
             "UPDATE gateway_route SET provider_name = ?, model_ref = ? WHERE id = ?",
             (provider.name, str(_ref(provider, model_id)), str(route_id)),
         )
         route = await self.get(route_id)
+        await self._remember(route, provider.kind, now)
         self._emit(GatewayEventKind.ROUTE_UPDATED, route.id, route.provider_name)
         return route
+
+    async def _remember(self, route: Route, kind: ProviderKind, effective_from: int) -> None:
+        await self._db.execute(
+            "INSERT INTO gateway_route_history"
+            " (route_id,effective_from,provider_name,provider_kind,model_ref) VALUES (?,?,?,?,?)",
+            (str(route.id), effective_from, route.provider_name, kind.value, str(route.model_ref)),
+        )
 
     async def set_reasoning_effort(self, route_id: RouteId, effort: str | None) -> None:
         route = await self.get(route_id)

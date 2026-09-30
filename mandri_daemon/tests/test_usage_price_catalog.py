@@ -4,8 +4,10 @@ from decimal import Decimal, localcontext
 import pytest
 from mandri.core.types.usage import UsageObservation
 from mandri.core.usage_normalization import normalize_usage
-from mandri.core.usage_pricing import REVIEWED_AT, bundled_prices, value_usage
-from mandri.daemon.usage_price_catalog import decimal_rate, parse_models_dev, parse_openrouter
+from mandri.core.usage_pricing import value_usage
+from mandri.daemon.usage_catalog_sources import decimal_rate, parse_models_dev, parse_openrouter
+
+REVIEWED_AT = 1000
 
 
 def model(cost: dict[str, object]) -> dict[str, object]:
@@ -71,7 +73,7 @@ def test_models_dev_uses_exact_provider_ids_and_no_cheapest_alias():
         },
         "google": {"models": {"gemini-test": model({"input": 1, "output": 2})}},
     }
-    prices = (*parse_models_dev(payload, REVIEWED_AT), *bundled_prices())
+    prices = parse_models_dev(payload, REVIEWED_AT)
     assert value_usage(request("opencode", "deepseek-v4.1-flash"), prices)[0] == Decimal("0.00054")
     assert value_usage(request("opencode_go", "deepseek-v4.1-flash"), prices)[0] == Decimal(
         "0.00027"
@@ -81,7 +83,6 @@ def test_models_dev_uses_exact_provider_ids_and_no_cheapest_alias():
         ("opencode", "omen-alpha"),
         ("opencode_go", "omen"),
         ("custom", "omen-alpha"),
-        ("google", "gemini-test"),
     ]:
         assert value_usage(request(provider, name), prices) == (None, None)
     assert value_usage(request("gemini", "gemini-test"), prices)[0] == Decimal("0.0014")
@@ -169,7 +170,11 @@ def test_bad_models_are_skipped_without_losing_valid_peers():
             }
         }
     }
-    assert [price.model for price in parse_models_dev(payload, REVIEWED_AT)] == ["valid"]
+    assert [price.model for price in parse_models_dev(payload, REVIEWED_AT)] == [
+        "valid",
+        "valid",
+        "valid",
+    ]
 
 
 def test_openrouter_free_missing_cache_is_zero_and_provider_is_exact():
@@ -283,6 +288,12 @@ def test_empty_or_incompatible_catalog_is_failure(parse, payload):
         ),
         (
             "opencode-go",
+            "mimo-v2.6-pro",
+            {"input": "0.435", "output": "0.87", "cache_read": "0.003625"},
+            "0.000350175",
+        ),
+        (
+            "opencode-go",
             "gpt-5.6-luna",
             {"input": "0.2", "output": "1.2", "cache_read": "0.02", "cache_write": "0.25"},
             "0.000332",
@@ -346,3 +357,40 @@ def test_openrouter_responses_auto_tier_and_absent_cache_write_are_valued():
         },
     )
     assert value_usage(normalize_usage(value), prices)[0] == Decimal("0.001368")
+
+
+def test_multimodal_mimo_uses_text_comparison_without_changing_observed_modality():
+    prices = parse_models_dev(
+        {
+            "opencode-go": {
+                "models": {
+                    "mimo-v2.6-pro": model(
+                        {"input": "0.435", "output": "0.87", "cache_read": "0.003625"}
+                    )
+                }
+            }
+        },
+        REVIEWED_AT,
+    )
+    value = replace(
+        request("go-account", "mimo-v2.6-pro"),
+        source="gateway",
+        harness="claude",
+        cache_read_tokens=600,
+        reasoning_tokens=50,
+        pricing_context={
+            "comparison_basis": "standard_text_api",
+            "provider_kind": "opencode_go",
+            "modality": "multimodal",
+        },
+    )
+    assert value_usage(value, prices)[0] == Decimal("0.000350175")
+    assert value.pricing_context["modality"] == "multimodal"
+    assert value_usage(replace(value, pricing_context={"modality": "multimodal"}), prices) == (
+        None,
+        None,
+    )
+    historical = replace(prices[0], valuation_basis="historical_tariff")
+    assert value_usage(value, [historical]) == (None, None)
+    override = replace(prices[0], source="user_override")
+    assert value_usage(value, [override]) == (None, None)

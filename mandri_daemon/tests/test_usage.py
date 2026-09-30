@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -217,7 +218,8 @@ async def test_restart_resumes_pending_valuation_even_when_catalog_is_cached(mon
         await db.close()
 
 
-async def test_claude_native_history_is_priced_per_message_model(tmp_path):
+@pytest.mark.parametrize("routing", ["native", "gateway"])
+async def test_claude_native_history_is_priced_per_message_model(tmp_path, routing):
     home = tmp_path / "claude"
     project = home / "projects" / "-synthetic"
     project.mkdir(parents=True)
@@ -248,14 +250,15 @@ async def test_claude_native_history_is_priced_per_message_model(tmp_path):
         await db.execute(
             "INSERT INTO session(id,harness,native_id,project_path,created_at,updated_at,state,"
             "last_synced_at,model_source,model) VALUES('s','claude','native-test','/synthetic',"
-            "1,1,'stopped',1,'native','claude-test-b')"
+            "1,1,'stopped',1,?,?)",
+            (routing, "opencode_go/claude-test-b" if routing == "gateway" else "claude-test-b"),
         )
         repository = UsageRepository(db)
         for index, model in enumerate(("claude-test-a", "claude-test-b"), 1):
             await repository.add_price(
                 UsagePrice(
                     price_id=model,
-                    provider="anthropic",
+                    provider="opencode_go" if routing == "gateway" else "anthropic",
                     model=model,
                     effective_from=0,
                     rates={"input_tokens": Decimal(index), "output_tokens": Decimal(index)},
@@ -265,12 +268,33 @@ async def test_claude_native_history_is_priced_per_message_model(tmp_path):
         await sync.reconcile()
         overview = await repository.overview()
         assert {row["key"] for row in overview["breakdown"]} == {"claude-test-a", "claude-test-b"}
-        assert overview["summary"]["usd_equivalent"] == "0.000036"
+        assert overview["summary"]["usd_equivalent"] == (
+            "0.000024" if routing == "gateway" else "0.000036"
+        )
+        assert overview["source_breakdown"]["gateway"]["fact_count"] == (
+            1 if routing == "gateway" else 0
+        )
+        assert overview["source_breakdown"]["claude"]["fact_count"] == (
+            1 if routing == "gateway" else 2
+        )
         assert overview["summary"]["unclassified_fact_count"] == 0
         assert overview["summary"]["request_count"] == 2
         prior = await repository.revision()
         await UsageHistorySync(db, repository, tmp_path / "codex", claude_home=home).reconcile()
         assert await repository.revision() == prior
+        if routing == "gateway":
+            await db.execute(
+                "UPDATE usage_cursor SET payload=json_set(payload,'$.reconciliation_version',4)"
+            )
+            await db.execute(
+                "UPDATE usage_fact SET payload="
+                "json_remove(payload,'$.pricing_context.attributed_source')"
+            )
+            assert (await repository.overview())["source_breakdown"]["gateway"]["fact_count"] == 0
+            await UsageHistorySync(db, repository, tmp_path / "codex", claude_home=home).reconcile()
+            rebuilt = await repository.overview()
+            assert rebuilt["source_breakdown"]["gateway"]["fact_count"] == 1
+            assert rebuilt["summary"]["usd_equivalent"] == overview["summary"]["usd_equivalent"]
     finally:
         await db.close()
 
@@ -298,5 +322,62 @@ async def test_opencode_history_never_promotes_gateway_harness_models(tmp_path, 
         stored = await db.fetch_one("SELECT payload FROM usage_observation")
         assert stored is not None
         assert json.loads(stored["payload"])["authoritative"] is False
+    finally:
+        await db.close()
+
+
+@pytest.mark.parametrize("harness", ["claude", "codex", "pi", "agy", "opencode"])
+@pytest.mark.parametrize("gateway_first", [False, True])
+async def test_gateway_history_source_preserves_cost_and_deduplication(
+    tmp_path, harness, gateway_first
+):
+    db = AiosqliteDatabase()
+    await db.connect(":memory:")
+    await db.migrate()
+    await migrate_usage(db._require_connection())
+    repository = UsageRepository(db)
+    sync = UsageHistorySync(db, repository, tmp_path)
+    native = UsageObservation(
+        source=f"native:{harness}",
+        source_key="history-request",
+        fact_key="history-request",
+        session_id="s",
+        harness=harness,
+        model="test-model",
+        occurred_at=20,
+        input_tokens=100,
+        output_tokens=10,
+        request_count=1,
+        reported_cost_usd=Decimal("0.39"),
+        pricing_context={"evidence": "history_request"},
+    )
+    attributed = sync._attributed(
+        native,
+        {"harness": harness, "model_source": "gateway", "model": "opencode_go/test-model"},
+    )
+    gateway = replace(
+        attributed,
+        source="gateway",
+        source_key="gateway-request",
+        fact_key="gateway-request",
+        occurred_at=10,
+        observed_at=30,
+        complete=True,
+        pricing_context={"provider_kind": "opencode_go"},
+    )
+    try:
+        if gateway_first:
+            await repository.record(gateway)
+        await repository.record(attributed)
+        overview = await repository.overview()
+        assert overview["source_breakdown"]["gateway"]["reported_cost_usd"] == "0.39"
+        assert overview["summary"]["fact_count"] == 1
+        if not gateway_first:
+            stored = await db.fetch_one("SELECT source FROM usage_fact")
+            assert stored["source"] == f"native:{harness}"
+            await repository.record(gateway)
+        overview = await repository.overview()
+        assert overview["summary"]["fact_count"] == 1
+        assert overview["source_breakdown"]["gateway"]["reported_cost_usd"] == "0.39"
     finally:
         await db.close()

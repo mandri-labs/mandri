@@ -5,14 +5,16 @@ from decimal import Decimal
 
 import httpx
 import pytest
-from mandri.core.types.usage import UsagePrice
-from mandri.core.usage_pricing import REVIEWED_AT, bundled_prices
+from mandri.core.types.usage import UsageObservation, UsagePrice
+from mandri.core.usage_pricing import value_usage
 from mandri.daemon import usage_prices
-from mandri.daemon.usage_price_catalog import MODELS_DEV_URL, OPENROUTER_URL
+from mandri.daemon.usage_catalog_sources import MODELS_DEV_URL, OPENROUTER_URL
 from mandri.daemon.usage_prices import CACHE_SECONDS, RETRY_SECONDS, PriceCatalogSync
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
 from mandri.database.usage_migrations import migrate_usage
+
+REVIEWED_AT = 1000
 
 PAYLOADS = {
     MODELS_DEV_URL: {
@@ -44,12 +46,20 @@ class Repository:
         self.state = None
         self.writes = 0
 
-    async def add_prices(self, prices: Sequence[UsagePrice]) -> int:
+    async def sync_catalog_prices(self, prices: Sequence[UsagePrice]) -> int:
         self.writes += 1
+        old = self.prices
+        self.prices = {}
         for price in prices:
-            existing = self.prices.get(price.price_id)
+            existing = old.get(price.price_id)
             assert existing is None or existing == price
             self.prices[price.price_id] = price
+        return self.writes
+
+    async def catalog_prices(self, source):
+        return tuple(price for price in self.prices.values() if price.source == source)
+
+    async def remove_bundled_prices(self):
         return self.writes
 
     async def catalog_state(self, source="public"):
@@ -88,7 +98,7 @@ async def test_sync_uses_only_public_get_without_inherited_credentials_and_cache
         first, second = await asyncio.gather(sync.refresh(), sync.refresh())
         assert not first["cached"] and second["cached"]
         assert not first["errors"]
-        assert first["price_count"] == len(bundled_prices()) + 2
+        assert first["price_count"] == 4
         assert {str(request.url) for request in seen} == set(PAYLOADS)
         assert repository.writes == 1
         restored = PriceCatalogSync(repository, http, now=lambda: REVIEWED_AT / 1000 + 2)
@@ -135,7 +145,7 @@ async def test_refresh_failures_keep_prior_prices_and_back_off_per_source():
 
 
 @pytest.mark.parametrize("mode", ["redirect", "invalid", "large_header", "large_body", "timeout"])
-async def test_bounded_failures_still_persist_official_fallback(monkeypatch, mode):
+async def test_bounded_failures_never_invent_fallback_prices(monkeypatch, mode):
     monkeypatch.setattr(usage_prices, "MAX_RESPONSE_BYTES", 250)
     seen = []
 
@@ -155,9 +165,9 @@ async def test_bounded_failures_still_persist_official_fallback(monkeypatch, mod
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
         result = await PriceCatalogSync(repository, http).refresh()
     assert len(result["errors"]) == 2
-    assert result["price_count"] == len(bundled_prices())
+    assert result["price_count"] == 0
     assert set(seen) == set(PAYLOADS)
-    assert any(price.model == "gpt-6-astra" for price in repository.prices.values())
+    assert not repository.prices
 
 
 async def test_sync_persists_prices_and_freshness_in_real_repository(tmp_path):
@@ -178,8 +188,8 @@ async def test_sync_persists_prices_and_freshness_in_real_repository(tmp_path):
     assert first["price_count"] == second["price_count"]
     assert len(requests) == 2
     rows = await db.fetch_all("SELECT payload FROM usage_price")
-    assert len(rows) == len(bundled_prices()) + 2
-    assert (await repository.catalog_state())["version"] == 1
+    assert len(rows) == 4
+    assert (await repository.catalog_state())["version"] == 2
     assert first["revision"] == second["revision"]
     await db.close()
 
@@ -233,7 +243,7 @@ async def test_unchanged_prices_keep_immutable_versions_across_refresh_and_resta
         now[0] += CACHE_SECONDS + 1
         payloads[MODELS_DEV_URL]["openai"]["models"]["model"]["cost"]["input"] = "2.5"
         changed = await restarted.refresh()
-        assert len(repository.prices) == len(original_ids) + 1
+        assert len(repository.prices) == len(original_ids)
         assert changed["sources"][MODELS_DEV_URL]["reviewed_at"] == int(now[0] * 1000)
 
 
@@ -248,4 +258,154 @@ async def test_total_request_deadline_is_bounded(monkeypatch):
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
         result = await PriceCatalogSync(repository, http).refresh()
     assert set(result["errors"].values()) == {"TimeoutError"}
-    assert result["price_count"] == len(bundled_prices())
+    assert result["price_count"] == 0
+
+
+async def test_restart_offline_retains_only_downloaded_prices(tmp_path):
+    db = AiosqliteDatabase()
+    await db.connect(tmp_path / "catalog.db")
+    await db.migrate()
+    await migrate_usage(db._require_connection())
+    repository = UsageRepository(db)
+    now = [10.0]
+
+    def respond(request):
+        return httpx.Response(200, json=PAYLOADS[str(request.url)])
+
+    try:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+            await PriceCatalogSync(repository, http, now=lambda: now[0]).refresh()
+        initial = await repository.catalog_prices(MODELS_DEV_URL)
+        now[0] += CACHE_SECONDS + 1
+
+        def offline(request):
+            raise httpx.ConnectError("offline")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(offline)) as http:
+            result = await PriceCatalogSync(repository, http, now=lambda: now[0]).refresh()
+        assert len(result["errors"]) == 2
+        assert await repository.catalog_prices(MODELS_DEV_URL) == initial
+        value = UsageObservation(
+            source="native:codex",
+            source_key="a",
+            fact_key="a",
+            model="model",
+            input_tokens=100,
+            output_tokens=10,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            reasoning_tokens=0,
+            input_includes_cache=False,
+            output_includes_reasoning=True,
+            pricing_context={"comparison_basis": "standard_text_api"},
+        )
+        assert value_usage(value, initial)[0] == Decimal("0.000225")
+    finally:
+        await db.close()
+
+
+async def test_legacy_embedded_prices_are_removed_without_erasing_user_or_public_prices(tmp_path):
+    db = AiosqliteDatabase()
+    await db.connect(tmp_path / "catalog.db")
+    await db.migrate()
+    await migrate_usage(db._require_connection())
+    repository = UsageRepository(db)
+    try:
+        for identity, source, basis in [
+            ("2026-01-01.v1:openai:model", "https://provider.invalid", "historical_tariff"),
+            ("2026-01-01.v2:openai:model", "https://provider.invalid", "current_price_comparison"),
+            ("current:go:100:model:peak", "https://provider.invalid", "current_price_comparison"),
+            ("2026-01-01.v3:openai:model", "user_override", "current_price_comparison"),
+            ("downloaded", MODELS_DEV_URL, "current_price_comparison"),
+        ]:
+            await repository.add_price(
+                UsagePrice(
+                    price_id=identity,
+                    provider="openai",
+                    model="model",
+                    effective_from=0,
+                    source=source,
+                    valuation_basis=basis,
+                    reviewed_at=1,
+                    rates={"input_tokens": Decimal(7), "output_tokens": Decimal(11)},
+                )
+            )
+        await repository.remove_bundled_prices()
+        rows = await db.fetch_all("SELECT price_id FROM usage_price ORDER BY price_id")
+        assert [row["price_id"] for row in rows] == ["2026-01-01.v3:openai:model", "downloaded"]
+    finally:
+        await db.close()
+
+
+async def test_forced_refresh_discovers_new_models_within_cache_period():
+    payloads = deepcopy(PAYLOADS)
+    seen = []
+
+    def respond(request):
+        seen.append(str(request.url))
+        return httpx.Response(200, json=payloads[str(request.url)])
+
+    repository = Repository()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        sync = PriceCatalogSync(repository, http)
+        await sync.refresh()
+        payloads[MODELS_DEV_URL]["openai"]["models"]["new-model"] = {
+            "modalities": {"output": ["text"]},
+            "cost": {"input": 7, "output": 11},
+        }
+        assert (await sync.refresh())["cached"]
+        assert len(seen) == 2
+        assert not (await sync.refresh(force=True))["cached"]
+        assert len(seen) == 4
+        assert any(price.model == "new-model" for price in repository.prices.values())
+
+
+async def test_catalog_snapshot_retires_removed_prices_and_keeps_user_overrides(tmp_path):
+    db = AiosqliteDatabase()
+    await db.connect(tmp_path / "catalog.db")
+    await db.migrate()
+    await migrate_usage(db._require_connection())
+    repo = UsageRepository(db)
+    downloaded = UsagePrice(
+        price_id="public-old",
+        provider="openai",
+        model="retired-model",
+        effective_from=0,
+        reviewed_at=1,
+        valuation_basis="current_price_comparison",
+        source=MODELS_DEV_URL,
+        rates={"input_tokens": Decimal(7), "output_tokens": Decimal(11)},
+    )
+    try:
+        await repo.add_price(downloaded)
+        await repo.add_price(
+            UsagePrice(
+                price_id="custom",
+                provider="openai",
+                model="retired-model",
+                effective_from=0,
+                source="user_override",
+                rates={"input_tokens": Decimal(17), "output_tokens": Decimal(21)},
+            )
+        )
+        await repo.sync_catalog_prices([])
+        assert not await repo.catalog_prices(MODELS_DEV_URL)
+        rows = await db.fetch_all("SELECT price_id FROM usage_price")
+        assert [row["price_id"] for row in rows] == ["custom"]
+        with pytest.raises(ValueError, match="downloaded current prices"):
+            await repo.sync_catalog_prices(
+                [
+                    UsagePrice(
+                        price_id="bad",
+                        provider="openai",
+                        model="model",
+                        effective_from=0,
+                        rates={"input_tokens": Decimal(7)},
+                    )
+                ]
+            )
+        assert [
+            row["price_id"] for row in await db.fetch_all("SELECT price_id FROM usage_price")
+        ] == ["custom"]
+    finally:
+        await db.close()

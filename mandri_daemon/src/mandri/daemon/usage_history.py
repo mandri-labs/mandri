@@ -11,6 +11,7 @@ from mandri.core.ids import HarnessKind, HarnessSessionId, ProjectPath
 from mandri.core.ports.database import DatabasePort
 from mandri.core.ports.transcripts import SessionRef
 from mandri.core.types.usage import UsageObservation
+from mandri.daemon.usage_history_routes import attribute_route
 from mandri.database.usage import UsageRepository
 from mandri.sessions.transcripts.claude_transcripts import ClaudeTranscriptReader
 from mandri.sessions.transcripts.codex_transcripts import CodexTranscriptReader
@@ -22,7 +23,7 @@ from mandri.sessions.usage.types import NativeUsageContext
 from mandri.sessions.usage_opencode import OpencodeUsageReader
 
 logger = logging.getLogger(__name__)
-RECONCILIATION_VERSION = 4
+RECONCILIATION_VERSION = 6
 
 
 class UsageHistorySync:
@@ -47,7 +48,8 @@ class UsageHistorySync:
     async def reconcile(self) -> bool:
         rows = await self._database.fetch_all(
             "SELECT id,native_id,project_path,harness,parent_session_id,parent_native_id,"
-            "model,model_source FROM session WHERE harness IN ('codex','claude','opencode','pi')"
+            "model,model_source,gateway_route_id FROM session"
+            " WHERE harness IN ('codex','claude','opencode','pi')"
             " AND native_id IS NOT NULL AND execution_backend='host' AND id>?"
             " ORDER BY id LIMIT 20",
             (self._after,),
@@ -78,6 +80,17 @@ class UsageHistorySync:
                 break
             root = parent["parent_session_id"]
         row["root_session_id"] = root
+        row["route_history"] = (
+            await self._database.fetch_all(
+                "SELECT * FROM gateway_route_history WHERE route_id=? ORDER BY effective_from,id",
+                (row["gateway_route_id"],),
+            )
+            if row.get("gateway_route_id")
+            else []
+        )
+        row["route_revision"] = hashlib.sha256(
+            json.dumps(row["route_history"], sort_keys=True).encode()
+        ).hexdigest()
         session_id, native_id, harness = str(row["id"]), str(row["native_id"]), str(row["harness"])
         source_key = harness + "-history:" + hashlib.sha256(native_id.encode()).hexdigest()
         stored = await self._repository.read_cursor(source_key)
@@ -104,6 +117,7 @@ class UsageHistorySync:
             stored is None
             or stored.get("parser_version") != 2
             or stored.get("reconciliation_version") != RECONCILIATION_VERSION
+            or stored.get("route_revision") != row["route_revision"]
             or stored.get("status") == "source_changed"
         )
         if (
@@ -177,6 +191,7 @@ class UsageHistorySync:
         checkpoint = {
             **asdict(batch.cursor),
             "reconciliation_version": RECONCILIATION_VERSION,
+            "route_revision": row["route_revision"],
             "session_id": session_id,
             "source_revision": source_revision,
             "status": "backfill" if pending else "partial" if partial else "ready",
@@ -201,16 +216,32 @@ class UsageHistorySync:
         return pending
 
     def _attributed(self, value: UsageObservation, row: dict[str, Any]) -> UsageObservation:
+        attributed = attribute_route(value, row.get("route_history", []))
+        if attributed is not None:
+            return replace(attributed, root_session_id=row.get("root_session_id"))
         pricing = dict(value.pricing_context)
         model = row.get("model")
         provider = value.provider
+        if pricing.get("observed_provider") == "mandri" or (
+            row.get("model_source") == "gateway"
+            and isinstance(model, str)
+            and "/" in model
+            and value.model in {model, model.partition("/")[2]}
+        ):
+            pricing["attributed_source"] = "gateway"
+            value = replace(value, pricing_context=pricing)
         if pricing.get("provider_kind"):
             return replace(
                 value,
                 provider=provider or str(pricing["provider_kind"]),
                 root_session_id=row.get("root_session_id"),
             )
-        if row.get("model_source") != "native" and value.model and isinstance(model, str):
+        if (
+            not row.get("route_history")
+            and row.get("model_source") != "native"
+            and value.model
+            and isinstance(model, str)
+        ):
             alias, separator, upstream = model.partition("/")
             if separator and value.model in {model, upstream}:
                 provider = alias
@@ -261,6 +292,7 @@ class UsageHistorySync:
         if (
             stored
             and stored.get("reconciliation_version") == RECONCILIATION_VERSION
+            and stored.get("route_revision") == row["route_revision"]
             and stored.get("phase") == "active"
             and stored.get("source_revision") == revision
         ):
@@ -269,6 +301,7 @@ class UsageHistorySync:
             stored is None
             or stored.get("phase") != "staging"
             or stored.get("reconciliation_version") != RECONCILIATION_VERSION
+            or stored.get("route_revision") != row["route_revision"]
         )
         if not reset and stored is not None:
             revision = str(stored.get("source_revision", revision))
@@ -285,13 +318,16 @@ class UsageHistorySync:
         if batch.status == "unavailable":
             await self._unavailable(source_key, session_id, stored)
             return False
-        values = [self._opencode_attributed(value) for value in batch.observations]
+        values = [
+            self._opencode_attributed(self._attributed(value, row)) for value in batch.observations
+        ]
         checkpoint = {
             "session_id": session_id,
             "offset": batch.cursor,
             "source_revision": revision,
             "parser_version": 2,
             "reconciliation_version": RECONCILIATION_VERSION,
+            "route_revision": row["route_revision"],
             "status": "backfill" if batch.has_more else batch.status,
         }
         await self._repository.stage_history(

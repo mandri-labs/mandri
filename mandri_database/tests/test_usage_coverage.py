@@ -162,6 +162,92 @@ async def test_shared_upstream_identity_precedes_timestamps_and_model_aliases(re
 
 
 @pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("upstream", [None, "upstream-response"])
+async def test_converted_client_response_identity_counts_once(repository, reverse, upstream):
+    value = gateway(
+        pricing_context={
+            "provider_kind": "openai",
+            "status": "completed",
+            "upstream_request_id": upstream,
+            "client_response_id": "converted-message",
+        }
+    )
+    await check_pair(
+        repository,
+        identified(native(occurred_at=900), "converted-message"),
+        value,
+        reverse,
+        20,
+        1,
+        False,
+    )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_unowned_gateway_response_identity_counts_once(repository, reverse):
+    value = identified(gateway(session_id=None, root_session_id=None), "response-1")
+    await check_pair(
+        repository,
+        identified(native(occurred_at=900), "response-1"),
+        value,
+        reverse,
+        20,
+        1,
+        True,
+    )
+
+
+async def test_history_batch_matches_each_unowned_gateway_response(repository):
+    originals = [
+        identified(native(source_key=str(index), fact_key=str(index)), f"response-{index}")
+        for index in range(3)
+    ]
+    for index in range(3):
+        await repository.record(
+            identified(
+                gateway(
+                    session_id=None,
+                    root_session_id=None,
+                    source_key=f"g{index}",
+                    fact_key=f"g{index}",
+                ),
+                f"response-{index}",
+            )
+        )
+    await repository.stage_history(
+        originals,
+        "history",
+        {"session_id": "child", "status": "ready"},
+        reset=True,
+        complete=True,
+    )
+    assert (await repository.overview())["summary"]["fact_count"] == 3
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_exact_native_response_recovers_missing_gateway_counters(repository, reverse):
+    value = gateway(
+        input_tokens=None,
+        output_tokens=None,
+        complete=False,
+        pricing_context={
+            "provider_kind": "openai",
+            "status": "completed",
+            "client_response_id": "converted-message",
+        },
+    )
+    original = identified(
+        native(occurred_at=900, output_tokens=10, complete=True), "converted-message"
+    )
+    await check_pair(repository, original, value, reverse, 100, 1, False)
+    result = await repository.overview()
+    assert result["summary"]["output_tokens"] == 10
+    assert result["source_breakdown"]["gateway"]["fact_count"] == 1
+    stored = await repository._database.fetch_one("SELECT payload FROM usage_fact")
+    assert '"usage_evidence":"native_request"' in stored["payload"]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
 async def test_distinct_upstream_requests_survive_equal_times_and_counters(repository, reverse):
     await check_pair(
         repository,

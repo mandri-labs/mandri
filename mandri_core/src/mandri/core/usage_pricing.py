@@ -2,24 +2,17 @@ from collections.abc import Sequence
 from decimal import Decimal, localcontext
 
 from mandri.core.types.usage import UsageObservation, UsagePrice
-from mandri.core.usage_price_catalog import (
-    CALCULATION_VERSION,
-)
-from mandri.core.usage_price_catalog import (
-    REVIEWED_AT as REVIEWED_AT,
-)
-from mandri.core.usage_price_catalog import (
-    TOKEN_FIELDS as TOKEN_FIELDS,
-)
-from mandri.core.usage_price_catalog import (
-    bundled_prices as bundled_prices,
-)
-from mandri.core.usage_price_schedule import (
-    OPENCODE_GO_SCHEDULED_MODELS,
-    matches_weekly_intervals,
-    validate_weekly_intervals,
-)
+from mandri.core.usage_price_identity import pricing_provider
+from mandri.core.usage_price_schedule import matches_weekly_intervals, validate_weekly_intervals
 
+CALCULATION_VERSION = "1"
+TOKEN_FIELDS = (
+    "input_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "output_tokens",
+    "reasoning_tokens",
+)
 OVERRIDE_SOURCES = {"explicit", "user_override"}
 REFERENCE_ASSUMPTIONS: dict[str, object] = {
     "modality": "text",
@@ -86,12 +79,6 @@ def validate_price(price: UsagePrice) -> None:
         raise ValueError("Invalid context interval")
     if "utc_weekly_intervals" in price.constraints:
         validate_weekly_intervals(price.constraints["utc_weekly_intervals"])
-    elif (
-        price.source == "https://models.dev/api.json"
-        and price.provider == "opencode_go"
-        and price.model in OPENCODE_GO_SCHEDULED_MODELS
-    ):
-        raise ValueError("OpenCode Go DeepSeek prices require the published peak schedule")
 
 
 def _priced_tokens(
@@ -194,6 +181,13 @@ def _applicable(price: UsagePrice, observation: UsageObservation, counters: dict
     context = observation.pricing_context
     if context.get("comparison_basis") == "standard_text_api":
         context = {**REFERENCE_ASSUMPTIONS, **context}
+        if (
+            price.valuation_basis == "current_price_comparison"
+            and price.source not in OVERRIDE_SOURCES
+            and price.constraints.get("modality") == "text"
+            and context.get("modality") == "multimodal"
+        ):
+            context = {**context, "modality": "text"}
     for key, expected in price.constraints.items():
         if key in {"min_context_tokens", "max_context_tokens"}:
             actual = request_context_tokens(observation)
@@ -221,6 +215,24 @@ def _applicable(price: UsagePrice, observation: UsageObservation, counters: dict
     return True
 
 
+def _source_priority(price: UsagePrice) -> tuple[int, bool]:
+    rank = (
+        4
+        if price.source in OVERRIDE_SOURCES
+        else 3
+        if price.provider == "openrouter" and price.source == "https://openrouter.ai/api/v1/models"
+        else 2
+        if price.source == "https://models.dev/api.json"
+        else 1
+    )
+    direct = (
+        price.source_model is None
+        or price.source_model == price.model
+        or price.source_model.partition("/")[2] == price.model
+    )
+    return rank, direct
+
+
 def value_usage(
     observation: UsageObservation, prices: Sequence[UsagePrice]
 ) -> tuple[Decimal | None, str | None]:
@@ -229,7 +241,7 @@ def value_usage(
         return None, None
     matching = []
     for price in prices:
-        provider = observation.pricing_context.get("provider_kind", observation.provider)
+        provider = pricing_provider(observation)
         instance_override = (
             price.source in OVERRIDE_SOURCES and price.provider == observation.provider
         )
@@ -243,10 +255,16 @@ def value_usage(
             continue
         matching.append(price)
     current = [price for price in matching if price.valuation_basis == "current_price_comparison"]
-    latest = max((price.reviewed_at or 0 for price in current), default=0)
+    source_rank = max((_source_priority(price) for price in current), default=(0, False))
+    latest = max(
+        (price.reviewed_at or 0 for price in current if _source_priority(price) == source_rank),
+        default=0,
+    )
     candidates = []
     for price in matching:
-        if price.valuation_basis == "current_price_comparison" and price.reviewed_at != latest:
+        if price.valuation_basis == "current_price_comparison" and (
+            _source_priority(price) != source_rank or price.reviewed_at != latest
+        ):
             continue
         quantities = _priced_tokens(observation, price)
         if quantities is not None and _applicable(price, observation, quantities[0]):

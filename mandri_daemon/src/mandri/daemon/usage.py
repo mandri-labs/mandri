@@ -22,11 +22,13 @@ class UsageCoordinator:
         self._next_accounts = 0.0
         self._accounts_task: asyncio.Future[None] | None = None
         self._revision = 0
+        self._coverage_revision = -1
         self._published = 0
         self._notification: asyncio.TimerHandle | None = None
         self.reconcile: Callable[[], Awaitable[bool | None]] | None = None
         self.refresh_accounts: Callable[[], Awaitable[None]] | None = None
         self.refresh_prices: Callable[[], Awaitable[dict[str, Any]]] | None = None
+        self.force_refresh_prices: Callable[[], Awaitable[dict[str, Any]]] | None = None
 
     async def record(self, observation: UsageObservation) -> None:
         self._changed(await self.repository.record(observation))
@@ -49,6 +51,8 @@ class UsageCoordinator:
             self._published = self._revision
 
     async def refresh(self) -> bool:
+        if self.force_refresh_prices is not None:
+            await self.force_refresh_prices()
         self._wake.set()
         await self._collect_accounts()
         return True
@@ -83,6 +87,8 @@ class UsageCoordinator:
                         "Usage reconciliation failed; retained metrics remain available"
                     )
             try:
+                if await self.repository.revision() != self._coverage_revision:
+                    self._coverage_revision = await self.repository.reconcile_gateway_history()
                 valuation = await self.repository.revalue_pending()
                 busy = busy or valuation["next_key"] is not None
                 self._changed(await self.repository.revision())

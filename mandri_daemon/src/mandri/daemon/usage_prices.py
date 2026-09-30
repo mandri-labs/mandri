@@ -9,8 +9,7 @@ from typing import Any, Protocol
 
 import httpx
 from mandri.core.types.usage import UsagePrice
-from mandri.core.usage_pricing import bundled_prices
-from mandri.daemon.usage_price_catalog import (
+from mandri.daemon.usage_catalog_sources import (
     MODELS_DEV_URL,
     OPENROUTER_URL,
     parse_models_dev,
@@ -24,7 +23,11 @@ MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class PriceRepository(Protocol):
-    async def add_prices(self, prices: Sequence[UsagePrice]) -> int: ...
+    async def sync_catalog_prices(self, prices: Sequence[UsagePrice]) -> int: ...
+
+    async def catalog_prices(self, source: str) -> tuple[UsagePrice, ...]: ...
+
+    async def remove_bundled_prices(self) -> int: ...
 
     async def catalog_state(self, source: str = "public") -> dict[str, Any] | None: ...
 
@@ -61,13 +64,16 @@ class PriceCatalogSync:
         self._revision = 0
         self._loaded = False
 
-    async def refresh(self) -> dict[str, object]:
+    async def refresh(self, *, force: bool = False) -> dict[str, object]:
         async with self._lock:
             if not self._loaded:
                 await self._restore()
+                self._revision = await self._repository.remove_bundled_prices()
                 self._loaded = True
             pending = [
-                url for url, state in self._sources.items() if self._clock() >= state.retry_at
+                url
+                for url, state in self._sources.items()
+                if force or self._clock() >= state.retry_at
             ]
             if pending:
                 if self._http is None:
@@ -75,19 +81,15 @@ class PriceCatalogSync:
                         await asyncio.gather(*(self._fetch(http, url) for url in pending))
                 else:
                     await asyncio.gather(*(self._fetch(self._http, url) for url in pending))
-            prices = (
-                *bundled_prices(),
-                *(price for state in self._sources.values() for price in state.prices),
-            )
+            prices = tuple(price for state in self._sources.values() for price in state.prices)
             if prices != self._persisted:
-                self._revision = await self._repository.add_prices(prices)
+                self._revision = await self._repository.sync_catalog_prices(prices)
                 self._persisted = prices
             if pending:
                 self._revision = await self._repository.save_catalog_state(self._metadata())
             return {
                 "revision": self._revision,
-                "price_count": len(bundled_prices())
-                + sum(state.price_count for state in self._sources.values()),
+                "price_count": sum(state.price_count for state in self._sources.values()),
                 "cached": not pending,
                 "valuation_basis": "current_price_comparison",
                 "sources": {
@@ -105,7 +107,11 @@ class PriceCatalogSync:
 
     async def _restore(self) -> None:
         saved = await self._repository.catalog_state()
-        if not saved or saved.get("version") != 1:
+        for url, state in self._sources.items():
+            state.prices = await self._repository.catalog_prices(url)
+            state.price_count = len(state.prices)
+        self._persisted = tuple(price for state in self._sources.values() for price in state.prices)
+        if not saved or saved.get("version") != 2:
             return
         sources = saved.get("sources")
         if not isinstance(sources, dict):
@@ -117,7 +123,7 @@ class PriceCatalogSync:
             retry_at = metadata.get("retry_at")
             count = metadata.get("price_count")
             reviewed_at = metadata.get("reviewed_at")
-            if type(retry_at) is not int or type(count) is not int or not 0 <= count <= 5000:
+            if type(retry_at) is not int or type(count) is not int or not 0 <= count <= 50_000:
                 continue
             if reviewed_at is not None and (type(reviewed_at) is not int or reviewed_at < 0):
                 continue
@@ -134,7 +140,7 @@ class PriceCatalogSync:
 
     def _metadata(self) -> dict[str, Any]:
         return {
-            "version": 1,
+            "version": 2,
             "sources": {
                 url: {
                     "price_count": state.price_count,

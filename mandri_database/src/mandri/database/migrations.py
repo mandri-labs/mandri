@@ -6,7 +6,7 @@ from mandri.database.errors import MigrationError
 from mandri.database.usage_migrations import USAGE_TABLES
 from mandri.database.usage_schema import USAGE_STATEMENTS
 
-LATEST_VERSION = 16
+LATEST_VERSION = 17
 
 
 class Migration(NamedTuple):
@@ -320,6 +320,16 @@ MIGRATIONS: tuple[Migration, ...] = (
             " WHERE deleted=0",
             "CREATE INDEX ix_session_sync ON session(harness,id)"
             " WHERE native_id IS NOT NULL AND execution_backend='host'",
+        ),
+    ),
+    Migration(
+        version=17,
+        statements=(
+            "CREATE TABLE gateway_route_history (id INTEGER PRIMARY KEY, route_id TEXT NOT NULL,"
+            " effective_from INTEGER NOT NULL, provider_name TEXT NOT NULL,"
+            " provider_kind TEXT NOT NULL, model_ref TEXT NOT NULL)",
+            "CREATE INDEX ix_gateway_route_history ON gateway_route_history(route_id,"
+            " effective_from,id)",
         ),
     ),
 )

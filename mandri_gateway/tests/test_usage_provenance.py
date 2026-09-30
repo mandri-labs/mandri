@@ -4,7 +4,7 @@ from decimal import Decimal
 import httpx
 import pytest
 from mandri.core.ids import ModelRef, ProviderKind, RouteId, SecretRef
-from mandri.core.usage_pricing import REVIEWED_AT, bundled_prices, value_usage
+from mandri.core.usage_pricing import value_usage
 from mandri.gateway.route_registry import ResolvedRoute
 from mandri.gateway.types.model import Model
 from mandri.gateway.usage import UsageCollector, usage_scope
@@ -13,6 +13,8 @@ from mandri.gateway.usage_observation import to_observation
 from mandri.gateway.usage_payload import observe_payload
 from mandri.gateway.usage_transport import observe_response
 from mandri.providers.service import Provider, ProviderState, provider_model_ref
+
+from mandri_core.tests.usage_fixtures import REVIEWED_AT, synthetic_prices
 
 
 def collector(kind=ProviderKind.OPENAI):
@@ -85,7 +87,7 @@ async def test_route_model_wins_over_wire_and_response_models():
     assert item.pricing_context["usage_protocol"] == "responses"
     assert item.pricing_context["service_tier"] == "standard"
     assert "private-content" not in str(item)
-    assert value_usage(item, bundled_prices())[0] == Decimal("0.00054")
+    assert value_usage(item, synthetic_prices())[0] == Decimal("0.00054")
 
 
 async def test_wire_model_does_not_override_route_selection():
@@ -121,7 +123,7 @@ async def test_unknown_response_model_preserves_selected_model_pricing():
             },
         },
     )
-    assert value_usage(to_observation(usage.record), bundled_prices())[0] == Decimal("0.00054")
+    assert value_usage(to_observation(usage.record), synthetic_prices())[0] == Decimal("0.00054")
 
 
 async def test_malformed_identity_metadata_does_not_break_capture():

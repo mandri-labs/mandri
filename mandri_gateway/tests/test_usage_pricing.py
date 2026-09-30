@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 from mandri.core.ids import ModelRef, ProviderKind, RouteId, SecretRef
-from mandri.core.usage_pricing import REVIEWED_AT, bundled_prices, value_usage
+from mandri.core.usage_pricing import value_usage
 from mandri.gateway.route_registry import ResolvedRoute
 from mandri.gateway.types.model import Model
 from mandri.gateway.usage import GatewayUsageRecord, UsageCollector
@@ -11,12 +11,14 @@ from mandri.gateway.usage_observation import to_observation
 from mandri.gateway.usage_payload import observe_payload
 from mandri.providers.service import Provider, ProviderState
 
+from mandri_core.tests.usage_fixtures import REVIEWED_AT, synthetic_prices
+
 
 @pytest.mark.parametrize(
     "model,expected",
     [
         ("gpt-4.1-mini", "0.00054"),
-        ("gpt-5.3-codex", "0.003605"),
+        ("gpt-5.3-codex", "0.00054"),
     ],
 )
 async def test_realistic_gateway_payload_values_without_invented_subsets(model: str, expected: str):
@@ -59,10 +61,10 @@ async def test_realistic_gateway_payload_values_without_invented_subsets(model: 
     assert observation.pricing_context["raw_usage"]
     assert observation.cache_write_tokens == 0
     assert observation.reasoning_tokens is None
-    amount, price_id = value_usage(observation, bundled_prices())
+    amount, price_id = value_usage(observation, synthetic_prices(model))
     assert amount == Decimal(expected)
     assert price_id is not None
-    assert value_usage(replace(observation, cache_read_tokens=None), bundled_prices()) == (
+    assert value_usage(replace(observation, cache_read_tokens=None), synthetic_prices(model)) == (
         None,
         None,
     )

@@ -32,6 +32,7 @@ _CLAUDE_MODEL = {
 _AGY = {
     "input_tokens": "input_tokens",
     "cache_read_tokens": "cache_read_tokens",
+    "cache_write_tokens": "cache_write_tokens",
     "output_tokens": "output_tokens",
     "total_tokens": "total_tokens",
     "reasoning_tokens": "thinking_tokens",
@@ -205,6 +206,8 @@ def normalize_native_usage(
         usage = record(step.get("usage"))
         if usage:
             values = counters(usage, _AGY)
+            if "cache_write_tokens" not in usage:
+                values["cache_write_tokens"] = 0
             values["uncached_input_tokens"] = values["input_tokens"]
             observations.append(
                 _observation(
@@ -223,6 +226,8 @@ def normalize_native_usage(
         usage = record(result.get("usage"))
         if usage:
             values = counters(usage, _AGY)
+            if "cache_write_tokens" not in usage:
+                values["cache_write_tokens"] = 0
             values["uncached_input_tokens"] = values["input_tokens"]
             observations.append(
                 _observation(
@@ -291,6 +296,7 @@ def _canonical_total(item: NativeUsageObservation) -> NativeUsageObservation:
             values,
             "input_tokens",
             "cache_read_tokens",
+            "cache_write_tokens",
             "output_tokens",
         )
     else:

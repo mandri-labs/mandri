@@ -11,37 +11,60 @@ def shared_scope(left: UsageObservation, right: UsageObservation) -> bool:
         return left.session_id == right.session_id
     left_ids = {left.session_id, left.root_session_id} - {None}
     right_ids = {right.session_id, right.root_session_id} - {None}
-    return bool(left_ids & right_ids)
+    return bool(left_ids & right_ids) or (
+        (not left_ids or not right_ids)
+        and (same_request(left, right) if right.source == "gateway" else same_request(right, left))
+    )
 
 
 def gateway_facts(db: sqlite3.Connection, value: UsageObservation) -> list[UsageObservation]:
     rows = db.execute(
         "SELECT f.payload FROM usage_fact f WHERE f.source='gateway'"
-        " AND (f.session_id IN (?,?) OR f.root_session_id IN (?,?))",
-        (value.session_id, value.root_session_id, value.session_id, value.root_session_id),
+        " AND (f.session_id IN (?,?) OR f.root_session_id IN (?,?)"
+        " OR (f.session_id IS NULL AND f.root_session_id IS NULL))",
+        (
+            value.session_id,
+            value.root_session_id,
+            value.session_id,
+            value.root_session_id,
+        ),
     ).fetchall()
-    return [item for row in rows if shared_scope(value, item := observation(row["payload"]))]
+    return [observation(row["payload"]) for row in rows]
 
 
 def scoped_facts(db: sqlite3.Connection, value: UsageObservation) -> list[UsageObservation]:
     ids = tuple(sorted({key for key in (value.session_id, value.root_session_id) if key}))
-    if not ids:
-        return []
     placeholders = ",".join("?" for _ in ids)
     if value.source.startswith("native"):
-        return gateway_facts(db, value)
+        return [item for item in gateway_facts(db, value) if shared_scope(value, item)]
     elif value.source == "gateway":
+        identity = request_identity(value)
+        response_ids = tuple(
+            key
+            for key in (
+                identity[1] if identity else None,
+                value.pricing_context.get("client_response_id"),
+            )
+            if isinstance(key, str) and key
+        )
+        identities = ",".join("?" for _ in response_ids)
+        scope = f"(session_id IN ({placeholders}) OR root_session_id IN ({placeholders}))"
+        params: tuple[object, ...] = (*ids, *ids)
+        if identity and response_ids:
+            scope += (
+                " OR (json_extract(payload,'$.pricing_context.provider_kind')=?"
+                " AND json_extract(payload,'$.pricing_context.upstream_request_id')"
+                f" IN ({identities}))"
+            )
+            params += (identity[0], *response_ids)
         rows = db.execute(
-            "SELECT payload FROM usage_observation WHERE"
-            f" (session_id IN ({placeholders})"
-            f" OR root_session_id IN ({placeholders}))"
+            f"SELECT payload FROM usage_observation WHERE ({scope})"
             " AND json_extract(payload,'$.kind')='delta'"
             " AND json_extract(payload,'$.authoritative')=1"
             " AND source LIKE 'native%'"
-            " UNION ALL SELECT payload FROM usage_fact WHERE"
-            f" (session_id IN ({placeholders}) OR root_session_id IN ({placeholders}))"
+            f" UNION ALL SELECT payload FROM usage_fact WHERE ({scope})"
             " AND source LIKE 'native%'",
-            (*ids, *ids, *ids, *ids),
+            (*params, *params),
         ).fetchall()
     else:
         return []
@@ -56,6 +79,8 @@ def scoped_facts(db: sqlite3.Connection, value: UsageObservation) -> list[UsageO
 def request_identity(value: UsageObservation) -> tuple[str, str] | None:
     provider = value.pricing_context.get("provider_kind")
     identity = value.pricing_context.get("upstream_request_id")
+    if not identity and value.source == "gateway":
+        identity = value.pricing_context.get("client_response_id")
     if (
         value.request_count == 1
         and isinstance(provider, str)
@@ -65,6 +90,19 @@ def request_identity(value: UsageObservation) -> tuple[str, str] | None:
     ):
         return provider, identity
     return None
+
+
+def same_request(native: UsageObservation, gateway: UsageObservation) -> bool:
+    native_id, gateway_id = request_identity(native), request_identity(gateway)
+    return bool(
+        native_id is not None
+        and gateway_id is not None
+        and native_id[0] == gateway_id[0]
+        and (
+            native_id[1] == gateway_id[1]
+            or native_id[1] == gateway.pricing_context.get("client_response_id")
+        )
+    )
 
 
 def gateway_end(value: UsageObservation) -> int | None:
@@ -82,7 +120,7 @@ def gateway_end(value: UsageObservation) -> int | None:
 def coverage(native: UsageObservation, gateway: UsageObservation) -> tuple[bool, bool]:
     native_id, gateway_id = request_identity(native), request_identity(gateway)
     if native_id is not None and gateway_id is not None:
-        duplicate = native_id == gateway_id
+        duplicate = same_request(native, gateway)
         uncertain_owner = native.session_id is None or gateway.session_id is None
         return duplicate, duplicate and uncertain_owner
     if native.non_overlapping:
@@ -148,6 +186,8 @@ def select_coverage(db: sqlite3.Connection, fact: UsageObservation) -> bool:
                 scopes[scope][fact.fact_key] = fact
         suppress = ambiguous = False
         for gateway in scopes[scope].values():
+            if not shared_scope(native, gateway):
+                continue
             duplicate, uncertain = coverage(native, gateway)
             suppress |= duplicate
             ambiguous |= uncertain

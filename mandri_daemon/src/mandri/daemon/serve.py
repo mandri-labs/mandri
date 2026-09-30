@@ -38,7 +38,6 @@ from mandri.core.types.config import DEFAULT_CORS_ORIGINS, CorsOrigin, DaemonCon
 from mandri.core.types.execution import PrivacyMode, SessionPolicy
 from mandri.core.types.model_selection import ModelSource
 from mandri.core.types.sessions import Session, SessionStateError
-from mandri.core.usage_pricing import bundled_prices
 from mandri.core.version import __version__
 from mandri.daemon.agent_cache import backfill_agents, discover_agents
 from mandri.daemon.chatgpt import build_chatgpt, build_resolver
@@ -461,7 +460,6 @@ async def wire_runtime(
     await resources.usage_db.connect(base_dir / "usage.db")
     await resources.usage_db.migrate()
     resources.usage = UsageCoordinator(UsageRepository(resources.usage_db), hub)
-    await resources.usage.repository.add_prices(bundled_prices())
     usage_history = UsageHistorySync(
         db,
         resources.usage.repository,
@@ -473,7 +471,9 @@ async def wire_runtime(
         opencode_db=Path(config.sessions.opencode_db_path or default_opencode_db_path()),
     )
     resources.usage.reconcile = usage_history.reconcile
-    resources.usage.refresh_prices = PriceCatalogSync(resources.usage.repository).refresh
+    price_catalog = PriceCatalogSync(resources.usage.repository)
+    resources.usage.refresh_prices = price_catalog.refresh
+    resources.usage.force_refresh_prices = partial(price_catalog.refresh, force=True)
     executions = ExecutionRepository(db)
     privacy = build_privacy(
         config.privacy,

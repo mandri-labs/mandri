@@ -21,6 +21,9 @@ from mandri.providers.errors import ProviderInvalidError, ProviderNotFoundError
 from mandri.providers.service import ProvidersRegistry
 
 SCHEMA = (
+    "CREATE TABLE gateway_route_history (id INTEGER PRIMARY KEY, route_id TEXT NOT NULL,"
+    " effective_from INTEGER NOT NULL, provider_name TEXT NOT NULL,"
+    " provider_kind TEXT NOT NULL, model_ref TEXT NOT NULL)",
     """
     CREATE TABLE gateway_route (
       id TEXT PRIMARY KEY,
@@ -245,6 +248,38 @@ async def test_swap_updates_model_and_emits_event(make_registry) -> None:
     swapped = await registry.swap(route.id, "prov", "claude-y")
     assert str(swapped.model_ref) == "openrouter/claude-y"
     assert sink.events[-1] == (GatewayEventKind.ROUTE_UPDATED, route.id, "prov")
+
+
+async def test_route_history_preserves_provider_kind_across_swap_and_delete(make_registry):
+    registry = await make_registry(
+        FakeEventSink(),
+        DaemonConfig(
+            providers=[
+                ProviderConfig(name="go-account", kind="opencode_go", api_key="fixture-go"),
+                ProviderConfig(name="zen-account", kind="opencode", api_key="fixture-zen"),
+            ]
+        ),
+    )
+    route = await registry.create("go-account", "glm-5.3-flash", (WireFormat.OPENAI,))
+    await registry.swap(route.id, "zen-account", "glm-5.3-flash")
+    await registry.delete(route.id)
+    history = await registry._db.fetch_all(
+        "SELECT provider_name,provider_kind,model_ref FROM gateway_route_history"
+        " WHERE route_id=? ORDER BY effective_from,id",
+        (str(route.id),),
+    )
+    assert history == [
+        {
+            "provider_name": "go-account",
+            "provider_kind": "opencode_go",
+            "model_ref": "custom_openai/glm-5.3-flash",
+        },
+        {
+            "provider_name": "zen-account",
+            "provider_kind": "opencode",
+            "model_ref": "custom_openai/glm-5.3-flash",
+        },
+    ]
 
 
 async def test_route_ids_for_provider_filters_by_provider(make_registry) -> None:

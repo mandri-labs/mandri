@@ -7,11 +7,13 @@ import pytest
 from mandri.core.ids import HarnessKind, HarnessSessionId, ProjectPath
 from mandri.core.ports.transcripts import SessionRef
 from mandri.core.types.usage import UsageFilters
-from mandri.core.usage_pricing import REVIEWED_AT, bundled_prices, value_usage
+from mandri.core.usage_pricing import value_usage
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
 from mandri.database.usage_migrations import migrate_usage
 from mandri.sessions.usage_opencode import OpencodeUsageReader, opencode_usage_observation
+
+from mandri_core.tests.usage_fixtures import REVIEWED_AT, synthetic_prices
 
 
 def message(identity="message-1", **changes):
@@ -88,7 +90,7 @@ def test_metadata_provenance_and_price():
     assert item.complete and item.authoritative
     assert item.request_count == 1
     assert "private" not in json.dumps(asdict(item), default=str)
-    assert value_usage(item, bundled_prices())[0] == Decimal("0.00054")
+    assert value_usage(item, synthetic_prices())[0] == Decimal("0.00054")
 
 
 def test_pagination_exact_session_and_stable_message_keys(store):
@@ -233,7 +235,7 @@ def test_reasoning_overlap_uses_counter_evidence_across_versions(
     priced = replace(
         item, provider="openai", pricing_context={**item.pricing_context, "provider_kind": "openai"}
     )
-    assert value_usage(priced, bundled_prices())[0] == (
+    assert value_usage(priced, synthetic_prices())[0] == (
         Decimal(expected) if expected is not None else None
     )
 
@@ -246,7 +248,7 @@ async def test_replaying_and_updating_history_replaces_fact(store, tmp_path):
     await migrate_usage(db._require_connection())
     repository = UsageRepository(db)
     try:
-        for price in bundled_prices():
+        for price in synthetic_prices():
             await repository.add_price(price)
         item = batch(store).observations[0]
         await repository.record(item)

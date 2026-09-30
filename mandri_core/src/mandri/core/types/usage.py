@@ -106,3 +106,5 @@ class UsagePrice:
     currency: str = "USD"
     unit: str = "per_million_tokens"
     valuation_basis: Literal["historical_tariff", "current_price_comparison"] = "historical_tariff"
+    source_provider: str | None = None
+    source_model: str | None = None

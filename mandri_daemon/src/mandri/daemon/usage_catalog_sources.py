@@ -4,8 +4,8 @@ from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any
 
 from mandri.core.types.usage import UsagePrice
-from mandri.core.usage_price_schedule import OPENCODE_GO_SCHEDULED_MODELS
 from mandri.core.usage_pricing import validate_price
+from mandri.daemon.usage_catalog_identity import model_aliases, project_prices
 
 MODELS_DEV_URL = "https://models.dev/api.json"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/models"
@@ -16,7 +16,7 @@ PROVIDER_IDS = {
     "opencode": "opencode",
     "opencode-go": "opencode_go",
 }
-MAX_PRICES = 5000
+MAX_PRICES = 50_000
 MAX_TIERS = 32
 MODELS_DEV_FIELDS = {
     "input": "input_tokens",
@@ -172,16 +172,16 @@ def parse_models_dev(payload: object, reviewed_at: int) -> tuple[UsagePrice, ...
     if not isinstance(payload, dict):
         raise ValueError("Invalid models.dev catalog")
     result: list[UsagePrice] = []
-    for source_provider, provider in PROVIDER_IDS.items():
-        entry = payload.get(source_provider)
+    for source_provider, entry in payload.items():
+        if not isinstance(source_provider, str):
+            continue
+        provider = PROVIDER_IDS.get(source_provider, source_provider)
         if not isinstance(entry, dict) or not isinstance(entry.get("models"), dict):
             continue
         for model, details in entry["models"].items():
             if not isinstance(details, dict) or not isinstance(model, str):
                 continue
             if details.get("id", model) != model:
-                continue
-            if provider == "opencode_go" and model in OPENCODE_GO_SCHEDULED_MODELS:
                 continue
             modalities = details.get("modalities", {})
             if not isinstance(modalities, dict) or not _supports_text(modalities.get("output")):
@@ -202,6 +202,13 @@ def parse_models_dev(payload: object, reviewed_at: int) -> tuple[UsagePrice, ...
                 )
             except ValueError:
                 continue
+            prices = project_prices(
+                prices,
+                model_aliases(model, details.get("canonical_model_id")),
+                provider,
+                source_provider,
+                model,
+            )
             if len(result) + len(prices) > MAX_PRICES:
                 raise ValueError("Catalog exceeds price limit")
             result.extend(prices)
@@ -266,7 +273,31 @@ def parse_openrouter(payload: object, reviewed_at: int) -> tuple[UsagePrice, ...
             continue
         if len(result) + len(prices) > MAX_PRICES:
             raise ValueError("Catalog exceeds price limit")
-        result.extend(prices)
+        result.extend(project_prices(prices, {model}, "openrouter", "openrouter", model))
+        namespace, separator, identifier = model.partition("/")
+        provider = PROVIDER_IDS.get(namespace, namespace)
+        if separator and provider in {"openai", "anthropic", "gemini"} and ":" not in model:
+            reference = _tiered_prices(
+                provider,
+                identifier,
+                cost,
+                OPENROUTER_FIELDS,
+                _openrouter_tiers(cost),
+                OPENROUTER_URL,
+                reviewed_at,
+                "per_token",
+            )
+            result.extend(
+                project_prices(
+                    reference,
+                    model_aliases(identifier, entry.get("canonical_slug")),
+                    provider,
+                    "openrouter",
+                    model,
+                )
+            )
+        if len(result) > MAX_PRICES:
+            raise ValueError("Catalog exceeds price limit")
     if not result:
         raise ValueError("No supported OpenRouter prices")
     return tuple(result)

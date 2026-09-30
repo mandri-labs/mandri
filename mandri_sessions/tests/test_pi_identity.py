@@ -1,8 +1,8 @@
-import sqlite3
 from types import SimpleNamespace
 
 import pytest
 from mandri.core.ids import HarnessKind, HarnessSessionId, SessionId
+from mandri.database.errors import ConstraintError
 from mandri.database.executions import ExecutionRepository
 from mandri.database.native_sessions import NativePiSessionIdentities
 from mandri.database.sqlite_adapter import AiosqliteDatabase
@@ -196,6 +196,6 @@ async def test_pi_identity_adoption_rolls_back_both_rows_on_failure(identities):
         "CREATE TRIGGER reject_identity BEFORE UPDATE OF native_id ON session"
         " WHEN NEW.id='managed' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END"
     )
-    with pytest.raises(sqlite3.IntegrityError, match="synthetic failure"):
+    with pytest.raises(ConstraintError, match="synthetic failure"):
         await service.adopt_pi_native_id(SessionId("managed"), HarnessSessionId("taken"))
     assert await database.fetch_all("SELECT * FROM session ORDER BY id") == before

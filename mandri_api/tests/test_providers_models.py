@@ -1,7 +1,5 @@
 """Reasoning catalog enrichment tests for the provider models REST route."""
 
-import base64
-import json
 from types import SimpleNamespace
 from typing import Any
 

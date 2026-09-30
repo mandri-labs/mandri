@@ -75,7 +75,13 @@ def test_gateway_provider_selection_is_identical_across_harnesses(routing_client
     assert response.status_code == 201, response.text
     route_id = response.json()["gateway_route_id"]
     assert route_id is not None
-    inserted = database.execute.call_args.args[1]
+    route_inserts = [
+        call
+        for call in database.execute.await_args_list
+        if call.args[0].startswith("INSERT INTO gateway_route ")
+    ]
+    assert len(route_inserts) == 1
+    inserted = route_inserts[0].args[1]
     assert inserted[0] == route_id
     assert inserted[1] == "configured_provider"
     assert inserted[2].endswith("organization/model")

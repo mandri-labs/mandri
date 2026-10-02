@@ -147,7 +147,7 @@ HARNESS_LAUNCH_ARGS: Mapping[str, tuple[str, ...]] = {
         "--verbose",
         "-p",
     ),
-    HarnessKind.OPENCODE.value: ("serve", "--port", "{listen_port}"),
+    HarnessKind.OPENCODE.value: ("serve", "--stdio", "--port", "{listen_port}"),
 }
 
 

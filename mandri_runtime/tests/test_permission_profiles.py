@@ -48,8 +48,8 @@ async def test_opencode_permissions_reach_native_session(mode, action):
         await adapter.set_mode(mode)
         adapter._request.assert_awaited_once_with(
             "PATCH",
-            "/session/s1",
-            {"permission": [{"permission": "*", "pattern": "*", "action": action}]},
+            "/api/session/s1",
+            {"permissions": [{"action": "*", "resource": "*", "effect": action}]},
         )
     finally:
         await adapter.aclose()
@@ -62,8 +62,8 @@ async def test_legacy_opencode_rules_use_native_array_shape():
         await adapter.set_mode("acceptEdits")
         adapter._request.assert_awaited_once_with(
             "PATCH",
-            "/session/s1",
-            {"permission": [{"permission": "edit", "pattern": "*", "action": "allow"}]},
+            "/api/session/s1",
+            {"permissions": [{"action": "edit", "resource": "*", "effect": "allow"}]},
         )
     finally:
         await adapter.aclose()

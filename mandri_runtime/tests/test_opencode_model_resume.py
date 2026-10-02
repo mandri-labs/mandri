@@ -40,7 +40,7 @@ async def test_prompt_overrides_model_remembered_by_resumed_conversation():
     sent = []
 
     def respond(request):
-        sent.append(json.loads(request.content))
+        sent.append((request.url.path, json.loads(request.content)))
         return httpx.Response(204)
 
     control = OpencodeControlAdapter("http://opencode.invalid", "native-session")
@@ -53,11 +53,18 @@ async def test_prompt_overrides_model_remembered_by_resumed_conversation():
         await control.send_prompt("follow up")
     finally:
         await control.aclose()
-    assert [body["model"] for body in sent] == [
-        {"providerID": "mandri", "modelID": "mandri_gateway"},
-        {"providerID": "mandri", "modelID": "mandri_gateway"},
+    assert sent == [
+        (
+            "/api/session/native-session/model",
+            {"model": {"providerID": "mandri", "id": "mandri_gateway"}},
+        ),
+        ("/api/session/native-session/prompt", {"text": "continue"}),
+        (
+            "/api/session/native-session/model",
+            {"model": {"providerID": "mandri", "id": "mandri_gateway"}},
+        ),
+        ("/api/session/native-session/prompt", {"text": "follow up"}),
     ]
-    assert sent[0]["parts"] == [{"type": "text", "text": "continue"}]
 
 
 @pytest.mark.parametrize("harness", list(HarnessKind))

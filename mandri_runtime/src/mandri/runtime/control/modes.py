@@ -15,7 +15,7 @@ from mandri.core.types.config import SessionModeConfig
 _CLAUDE_PERMISSION_FLAG = "--permission-mode"
 _CODEX_POLICY_KEY = "approvalPolicy"
 _CODEX_SANDBOX_KEY = "sandbox"
-_OPENCODE_AGENT_KEY = "agent"
+_OPENCODE_AGENT_KEY = "default_agent"
 _OPENCODE_PERMISSION_KEY = "permission"
 
 CODEX_PROFILES: dict[str, dict[str, str]] = {

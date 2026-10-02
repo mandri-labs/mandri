@@ -2166,6 +2166,11 @@ class RuntimeService:
         launch_mode: modes.LaunchMode | None,
         resume_native_id: HarnessSessionId | None = None,
     ) -> ManagedProcess:
+        if harness == "opencode":
+            password = secrets.token_urlsafe(32)
+            prepared.env["OPENCODE_SERVER_PASSWORD"] = password
+            prepared.env["OPENCODE_PASSWORD"] = password
+            self._session_state(session_id).control_auth = ("opencode", password)
         owner = (
             self._docker.owner
             if policy.execution_backend is ExecutionBackend.DOCKER and self._docker
@@ -2222,9 +2227,6 @@ class RuntimeService:
                 for key, value in prepared.env.items()
             }
             if harness == "opencode":
-                password = secrets.token_urlsafe(32)
-                env.update(OPENCODE_SERVER_USERNAME="mandri", OPENCODE_SERVER_PASSWORD=password)
-                self._session_state(session_id).control_auth = ("mandri", password)
                 argv.extend(["--hostname", "0.0.0.0"])
             ready = await backend.readiness()
             await self._executions.phase(session_id, ExecutionPhase.PREPARING_STATE)

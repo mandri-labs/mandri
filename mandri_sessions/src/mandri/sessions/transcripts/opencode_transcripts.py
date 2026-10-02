@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from mandri.core.ids import PageToken, RawEvent
+from mandri.core.opencode_messages import message_events, message_record
 from mandri.core.ports.transcripts import SessionRef, TranscriptPage
+from mandri.core.types.agents import AgentState
 from mandri.sessions.native_activity import native_model, native_turn_busy
+from mandri.sessions.opencode_store import message_table
 from mandri.sessions.transcripts.errors import TranscriptStoreError
 from mandri.sessions.transcripts.record_preview import MAX_PREVIEW_BYTES, preview_from_prefix
 from mandri.sessions.transcripts.record_view import MAX_INLINE_BYTES
@@ -26,6 +29,25 @@ class OpencodeTranscriptReader:
     def __init__(self, db_path: Path) -> None:
         self._db_path = Path(db_path)
 
+    def agent_state(self, session: SessionRef) -> AgentState:
+        rows = self._read_rows(str(session.native_id), None, 1, metadata_only=True)
+        if not rows or rows[0][1] is None:
+            return AgentState.UNKNOWN
+        try:
+            latest = json.loads(rows[0][1])
+        except (ValueError, RecursionError):
+            return AgentState.UNKNOWN
+        if isinstance(latest, dict) and latest.get("type") == "idle":
+            return {
+                "failed": AgentState.FAILED,
+                "interrupted": AgentState.STOPPED,
+                "succeeded": AgentState.COMPLETED,
+            }.get(str(latest.get("outcome")), AgentState.UNKNOWN)
+        busy, _ = self.status(session)
+        if busy is None:
+            return AgentState.UNKNOWN
+        return AgentState.RUNNING if busy else AgentState.COMPLETED
+
     def status(self, session: SessionRef) -> tuple[bool | None, str | None]:
         rows = self._read_rows(str(session.native_id), None, 64, metadata_only=True)
         if not rows:
@@ -40,6 +62,12 @@ class OpencodeTranscriptReader:
                 break
             if not isinstance(info, dict):
                 break
+            if info.get("type") == "idle":
+                if busy is None:
+                    busy = False
+                continue
+            if "type" in info:
+                info = message_record(info, str(session.native_id))["message"]
             entry = json.dumps({"type": "message.updated", "properties": {"info": info}})
             if busy is None:
                 busy = native_turn_busy(session.harness, [entry])
@@ -55,7 +83,7 @@ class OpencodeTranscriptReader:
         has_more = len(rows) > limit
         rows = rows[:limit]
         parts = self._read_parts([str(row[2]) for row in rows])
-        entries = [self._entry(row, parts) for row in rows]
+        entries = [self._entry(row, parts, str(session.native_id)) for row in rows]
         next_token = self._encode_token(rows) if has_more and rows else None
         return TranscriptPage(entries=entries, next_token=next_token, has_more=has_more)
 
@@ -76,6 +104,12 @@ class OpencodeTranscriptReader:
         for row in reversed(rows):
             message_id = str(row[2])
             info = {**_decode_data(str(row[1]), int(row[3])), "id": message_id}
+            if info.get("type") in {"user", "assistant", "idle", "synthetic", "system", "skill"}:
+                entries.extend(
+                    RawEvent(json.dumps(event))
+                    for event in message_events(info, str(session.native_id))
+                )
+                continue
             entries.append(
                 RawEvent(
                     json.dumps(
@@ -110,7 +144,9 @@ class OpencodeTranscriptReader:
             connection = sqlite3.connect(uri, uri=True, timeout=SQLITE_TIMEOUT_S)
             try:
                 values: list[object] = []
-                for table in ("message", "part"):
+                messages = message_table(connection, str(session.native_id))
+                tables = (messages,) if messages == "session_message" else ("message", "part")
+                for table in tables:
                     row = connection.execute(
                         f"SELECT count(*), max(time_updated) FROM {table} WHERE session_id = ?",
                         (str(session.native_id),),
@@ -147,11 +183,18 @@ class OpencodeTranscriptReader:
         try:
             connection = sqlite3.connect(uri, uri=True, timeout=SQLITE_TIMEOUT_S)
             try:
-                return connection.execute(
-                    f"SELECT rowid, {data}, id{size_column}"
-                    f" FROM message {where} ORDER BY rowid DESC LIMIT ?",
+                table = message_table(connection, session_id)
+                if metadata_only and table == "session_message":
+                    data = _projected_metadata_sql()
+                type_column = ", type" if table == "session_message" else ""
+                rows = connection.execute(
+                    f"SELECT rowid, {data}, id{size_column}{type_column}"
+                    f" FROM {table} {where} ORDER BY rowid DESC LIMIT ?",
                     (*params, fetch_limit),
                 ).fetchall()
+                if table == "session_message":
+                    return [_projected_row(row) for row in rows]
+                return rows
             finally:
                 connection.close()
         except sqlite3.Error as error:
@@ -167,6 +210,10 @@ class OpencodeTranscriptReader:
         try:
             connection = sqlite3.connect(uri, uri=True, timeout=SQLITE_TIMEOUT_S)
             try:
+                if not connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'part'"
+                ).fetchone():
+                    return {}
                 rows = connection.execute(
                     f"SELECT message_id, {_bounded_data_sql()}, id, length(CAST(data AS BLOB))"
                     " FROM part"
@@ -186,11 +233,14 @@ class OpencodeTranscriptReader:
         return parts
 
     @staticmethod
-    def _entry(row: tuple[Any, ...], parts: dict[str, list[Any]]) -> RawEvent:
+    def _entry(row: tuple[Any, ...], parts: dict[str, list[Any]], session_id: str) -> RawEvent:
         message_id = str(row[2])
         message = _decode_data(str(row[1]), int(row[3]))
         if message.get("type") == "mandri.transcript_record":
             return RawEvent(json.dumps(message))
+        if message.get("type") in {"user", "assistant", "idle", "synthetic", "system", "skill"}:
+            raw = json.dumps(message_record(message, session_id))
+            return RawEvent(json.dumps(_decode_data(raw, len(raw.encode("utf-8")))))
         if message_id not in parts:
             return RawEvent(str(row[1]))
         payload = {"message": message, "parts": parts[message_id]}
@@ -223,6 +273,29 @@ def _bounded_data_sql() -> str:
         f"CASE WHEN length(CAST(data AS BLOB)) > {MAX_INLINE_BYTES}"
         f" THEN substr(data, 1, {MAX_PREVIEW_BYTES}) ELSE data END"
     )
+
+
+def _projected_metadata_sql() -> str:
+    keys = ("model", "time", "finish", "error", "tokens", "cost", "outcome")
+    fields = ", ".join(f"'{key}', json_extract(data, '$.{key}')" for key in keys)
+    metadata = f"json_object({fields})"
+    return (
+        f"CASE WHEN json_valid(data) THEN CASE WHEN length(CAST({metadata} AS BLOB)) <= 65536"
+        f" THEN {metadata} END END"
+    )
+
+
+def _projected_row(row: tuple[Any, ...]) -> tuple[Any, ...]:
+    raw = row[1]
+    size = row[3] if len(row) == 5 else 0
+    if raw is not None and size <= MAX_INLINE_BYTES:
+        try:
+            info = json.loads(raw)
+        except (ValueError, RecursionError):
+            return (row[0], raw, *row[2:-1])
+        if isinstance(info, dict):
+            raw = json.dumps({**info, "id": row[2], "type": row[-1]})
+    return (row[0], raw, *row[2:-1])
 
 
 def _decode_data(data: str, size: int) -> dict[str, Any]:

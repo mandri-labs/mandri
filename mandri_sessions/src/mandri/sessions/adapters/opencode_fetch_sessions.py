@@ -21,6 +21,7 @@ from mandri.sessions.errors import (
     SchemaDriftError,
     SessionParseError,
 )
+from mandri.sessions.opencode_store import session_tables
 
 REQUIRED_SESSION_COLUMNS = frozenset(
     {"id", "title", "directory", "time_created", "time_updated", "time_archived"}
@@ -38,22 +39,31 @@ class OpencodeSqliteFetchSessionsAdapter(FetchSessionsPort):
         uri = f"{self._db_path.resolve().as_uri()}?mode=ro"
         try:
             with closing(sqlite3.connect(uri, uri=True, timeout=SQLITE_TIMEOUT_S)) as connection:
-                self._check_schema(connection)
-                columns = {row[1] for row in connection.execute("PRAGMA table_info(session)")}
-                parent = "parent_id" if "parent_id" in columns else "NULL"
-                rows = connection.execute(
-                    f"SELECT id, title, directory, time_created, time_updated, {parent}"
-                    " FROM session"
-                    " WHERE time_archived IS NULL"
-                    " ORDER BY time_updated DESC"
-                ).fetchall()
+                tables = session_tables(connection)
+                if not tables:
+                    raise SchemaDriftError("opencode store has no session tables")
+                sessions: dict[str, Session] = {}
+                for table in tables:
+                    self._check_schema(connection, table)
+                    columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                    parent = "parent_id" if "parent_id" in columns else "NULL"
+                    migrated = (
+                        " AND id NOT IN (SELECT id FROM session_v2)"
+                        if table == "session" and "session_v2" in tables
+                        else ""
+                    )
+                    rows = connection.execute(
+                        f"SELECT id, title, directory, time_created, time_updated, {parent}"
+                        f" FROM {table} WHERE time_archived IS NULL{migrated}"
+                    ).fetchall()
+                    sessions.update((row[0], self._row_to_session(row)) for row in rows)
         except sqlite3.Error as error:
             raise DatabaseAccessError(f"cannot read opencode store: {error}") from error
-        return [self._row_to_session(row) for row in rows]
+        return sorted(sessions.values(), key=lambda session: session.updated_at, reverse=True)
 
     @staticmethod
-    def _check_schema(connection: sqlite3.Connection) -> None:
-        columns = connection.execute("PRAGMA table_info(session)").fetchall()
+    def _check_schema(connection: sqlite3.Connection, table: str = "session") -> None:
+        columns = connection.execute(f"PRAGMA table_info({table})").fetchall()
         names = {str(row[1]) for row in columns}
         missing = REQUIRED_SESSION_COLUMNS - names
         if missing:

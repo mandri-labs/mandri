@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import re
 import secrets
 from collections.abc import Awaitable, Callable
@@ -18,7 +19,7 @@ from mandri.runtime.control.pi_rpc import PiRpcConnection
 from mandri.runtime.control.stdio_rpc import StdioRpcConnection
 from mandri.runtime.process import ManagedProcess
 
-_LISTENING = re.compile(r"opencode server listening on (http://127\.0\.0\.1:([0-9]+))$")
+_LISTENING = re.compile(r"(?:opencode )?server listening on (http://127\.0\.0\.1:([0-9]+))$")
 
 
 async def _drain(read: Callable[[], Awaitable[str]]) -> None:
@@ -39,7 +40,7 @@ def _opencode_argv(command: list[str]) -> list[str]:
             ("--port=", "--hostname=", "--mdns=")
         ):
             result.append(argument)
-    return [*result, "--hostname", "127.0.0.1", "--port", "0", "--mdns=false"]
+    return [*result, "--hostname", "127.0.0.1", "--port", "0"]
 
 
 async def _opencode_catalog(
@@ -51,6 +52,13 @@ async def _opencode_catalog(
     address = None
     while line := await process.read_stdout_line():
         match = _LISTENING.fullmatch(line.strip())
+        if match is None:
+            try:
+                payload = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(payload, dict) and isinstance(payload.get("url"), str):
+                match = _LISTENING.fullmatch(f"server listening on {payload['url']}")
         if match and 0 < int(match[2]) < 65536:
             address = match[1]
             break
@@ -102,7 +110,7 @@ async def discover_commands(
         argv = [*argv, "--no-session"]
     environment = dict(env)
     if harness is HarnessKind.OPENCODE:
-        environment.update(OPENCODE_SERVER_PASSWORD=password, OPENCODE_SERVER_USERNAME="opencode")
+        environment.update(OPENCODE_SERVER_PASSWORD=password, OPENCODE_PASSWORD=password)
     process = await spawn(argv, cwd=cwd, env=environment)
     stderr = asyncio.create_task(_drain(process.read_stderr_line))
     try:

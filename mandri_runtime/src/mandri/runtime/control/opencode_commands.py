@@ -3,7 +3,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from mandri.core.opencode import GATEWAY_MODEL_REF
+from mandri.core.opencode import gateway_model
 from mandri.runtime.control.agents.base import HttpCall
 from mandri.runtime.control.errors import ControlError, ControlTransportError
 
@@ -24,7 +24,11 @@ class OpencodeCommands:
 
     async def _catalog(self) -> list[dict[str, Any]]:
         async with asyncio.timeout(15):
-            data = response_data(await self._call("GET", "/command", None), "command discovery")
+            response_data(await self._call("GET", "/api/integration", None), "plugin activation")
+            result = response_data(
+                await self._call("GET", "/api/command", None), "command discovery"
+            )
+            data = result.get("data") if isinstance(result, dict) else None
         if not isinstance(data, list) or any(
             not isinstance(item, dict)
             or not isinstance(item.get("name"), str)
@@ -56,41 +60,16 @@ class OpencodeCommands:
         matches = [item for item in await self._catalog() if item["name"] == command_id]
         if len(matches) != 1:
             raise ControlError("This OpenCode command is no longer available")
-        command = matches[0]
-        model = command.get("model")
-        if not model and command.get("agent"):
-            async with asyncio.timeout(15):
-                agents = response_data(await self._call("GET", "/agent", None), "agent discovery")
-            if not isinstance(agents, list):
-                raise ControlTransportError("OpenCode returned an invalid agent catalog")
-            agent = next(
-                (
-                    item
-                    for item in agents
-                    if isinstance(item, dict) and item.get("name") == command["agent"]
-                ),
-                None,
-            )
-            if agent is None:
-                raise ControlError("The command's OpenCode agent is unavailable")
-            model = agent.get("model")
-            if isinstance(model, dict):
-                model = f"{model.get('providerID')}/{model.get('modelID')}"
-        if model and model != GATEWAY_MODEL_REF:
-            raise ControlError(
-                "This command selects a model outside the Mandri gateway; "
-                "update its native configuration before running it"
-            )
-        result = response_data(
-            await self._call(
-                "POST",
-                f"/session/{self._session_id}/command",
-                {"command": command_id, "arguments": arguments, "model": GATEWAY_MODEL_REF},
-            ),
-            "command execution",
+        selected = await self._call(
+            "POST", f"/api/session/{self._session_id}/model", {"model": gateway_model()}
         )
-        if not isinstance(result, dict) or not isinstance(result.get("info"), dict):
+        if selected.status_code != 204:
+            raise ControlTransportError("OpenCode rejected the gateway model selection")
+        result = await self._call(
+            "POST",
+            f"/api/session/{self._session_id}/command",
+            {"name": command_id, "text": arguments},
+        )
+        if result.status_code != 204:
             raise ControlTransportError("OpenCode did not confirm the command result")
-        if result["info"].get("error"):
-            raise ControlError("OpenCode could not complete the command")
-        return {"kind": "transcript", "message": "Command completed"}
+        return {"kind": "transcript", "message": "Command submitted"}

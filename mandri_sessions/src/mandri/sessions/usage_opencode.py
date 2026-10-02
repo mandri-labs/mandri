@@ -7,8 +7,10 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from mandri.core.ids import HarnessKind
+from mandri.core.opencode_messages import message_record
 from mandri.core.ports.transcripts import SessionRef
 from mandri.core.types.usage import UsageObservation
+from mandri.sessions.opencode_store import message_table
 from mandri.sessions.transcripts.errors import TranscriptStoreError
 from mandri.sessions.transcripts.opencode_transcripts import (
     SQLITE_TIMEOUT_S,
@@ -56,6 +58,8 @@ def opencode_usage_observation(
     routing: str = "native",
     history_request: bool = False,
 ) -> UsageObservation | None:
+    if info.get("type") == "assistant":
+        info = message_record(info, native_id)["message"]
     if info.get("role") != "assistant" or info.get("sessionID", native_id) != native_id:
         return None
     message_id = _identity(info.get("id"))
@@ -240,7 +244,7 @@ class OpencodeUsageReader(OpencodeTranscriptReader):
             )
             if item is not None:
                 observations.append(item)
-            elif info.get("role") == "assistant":
+            elif info.get("role", info.get("type")) == "assistant":
                 times = info.get("time")
                 original = _count(times.get("created")) if isinstance(times, dict) else None
                 if original is None or original >= created:
@@ -256,7 +260,12 @@ class OpencodeUsageReader(OpencodeTranscriptReader):
     def _session_created(self, native_id: str) -> int | None:
         uri = f"{self._db_path.resolve().as_uri()}?mode=ro"
         with closing(sqlite3.connect(uri, uri=True, timeout=SQLITE_TIMEOUT_S)) as connection:
+            table = (
+                "session_v2"
+                if message_table(connection, native_id) == "session_message"
+                else "session"
+            )
             row = connection.execute(
-                "SELECT time_created FROM session WHERE id = ?", (native_id,)
+                f"SELECT time_created FROM {table} WHERE id = ?", (native_id,)
             ).fetchone()
         return _count(row[0]) if row else None

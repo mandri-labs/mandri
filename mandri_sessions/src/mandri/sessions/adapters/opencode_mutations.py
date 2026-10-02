@@ -39,7 +39,7 @@ class _OpencodeRestAdapter:
 
 
 class OpencodeRestRenameSessionAdapter(_OpencodeRestAdapter, RenameSessionPort):
-    """Rename sessions through PATCH /session/{id}."""
+    """Rename sessions through PATCH /api/session/{id}."""
 
     def rename(self, session_id: SessionId, title: SessionTitle) -> None:
         asyncio.run(self.rename_async(session_id, title))
@@ -49,7 +49,9 @@ class OpencodeRestRenameSessionAdapter(_OpencodeRestAdapter, RenameSessionPort):
             raise SessionRenameError("title must not be empty")
         async with self._session() as client:
             try:
-                response = await client.patch(f"/session/{session_id}", json={"title": str(title)})
+                response = await client.patch(
+                    f"/api/session/{session_id}", json={"title": str(title)}
+                )
             except httpx.HTTPError as error:
                 raise self._communication_error(session_id, error) from error
             if response.status_code >= 400:
@@ -59,7 +61,7 @@ class OpencodeRestRenameSessionAdapter(_OpencodeRestAdapter, RenameSessionPort):
 
 
 class OpencodeRestDeleteSessionAdapter(_OpencodeRestAdapter, DeleteSessionPort):
-    """Delete sessions through DELETE /session/{id}."""
+    """Delete sessions through DELETE /api/session/{id}."""
 
     def delete(self, session_id: SessionId) -> None:
         asyncio.run(self.delete_async(session_id))
@@ -67,7 +69,7 @@ class OpencodeRestDeleteSessionAdapter(_OpencodeRestAdapter, DeleteSessionPort):
     async def delete_async(self, session_id: SessionId) -> None:
         async with self._session() as client:
             try:
-                response = await client.delete(f"/session/{session_id}")
+                response = await client.delete(f"/api/session/{session_id}")
             except httpx.HTTPError as error:
                 raise self._communication_error(session_id, error) from error
             if response.status_code >= 400:
@@ -77,7 +79,7 @@ class OpencodeRestDeleteSessionAdapter(_OpencodeRestAdapter, DeleteSessionPort):
 
 
 class OpencodeRestCheckSessionExistsAdapter(_OpencodeRestAdapter, CheckSessionExistsPort):
-    """Check session existence through GET /session/{id}."""
+    """Check session existence through GET /api/session/{id}."""
 
     def exists(self, session_id: SessionId) -> bool:
         return asyncio.run(self.exists_async(session_id))
@@ -85,7 +87,7 @@ class OpencodeRestCheckSessionExistsAdapter(_OpencodeRestAdapter, CheckSessionEx
     async def exists_async(self, session_id: SessionId) -> bool:
         async with self._session() as client:
             try:
-                response = await client.get(f"/session/{session_id}")
+                response = await client.get(f"/api/session/{session_id}")
             except httpx.HTTPError as error:
                 raise self._communication_error(session_id, error) from error
         if response.status_code == 404:

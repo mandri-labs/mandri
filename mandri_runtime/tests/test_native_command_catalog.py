@@ -143,7 +143,7 @@ async def test_agy_help_preserves_profile_and_never_starts_stream_conversation()
 
 
 async def test_opencode_catalog_only_http_get_loopback_and_cleanup():
-    process = CatalogProcess(["opencode server listening on http://127.0.0.1:42345"])
+    process = CatalogProcess(["server listening on http://127.0.0.1:42345"])
     spawn = AsyncMock(return_value=process)
     requests = []
     real_client = httpx.AsyncClient
@@ -156,7 +156,7 @@ async def test_opencode_catalog_only_http_get_loopback_and_cleanup():
         def handle(request):
             requests.append(request)
             return httpx.Response(
-                200, json=[{"name": "custom", "description": "Configured command"}]
+                200, json={"data": [{"name": "custom", "description": "Configured command"}]}
             )
 
         kwargs["transport"] = httpx.MockTransport(handle)
@@ -178,9 +178,11 @@ async def test_opencode_catalog_only_http_get_loopback_and_cleanup():
         "127.0.0.1",
         "--port",
         "0",
-        "--mdns=false",
     ]
-    assert [(request.method, request.url.path) for request in requests] == [("GET", "/command")]
+    assert [(request.method, request.url.path) for request in requests] == [
+        ("GET", "/api/integration"),
+        ("GET", "/api/command"),
+    ]
     assert requests[0].url.params["directory"] == "/work/café"
     process.stop.assert_awaited_once()
 

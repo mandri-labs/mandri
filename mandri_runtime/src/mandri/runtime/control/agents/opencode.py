@@ -2,7 +2,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from mandri.core.opencode import GATEWAY_MODEL_ID, gateway_model
+from mandri.core.opencode import gateway_model
 from mandri.core.types.agents import Agent, AgentCapabilities
 from mandri.runtime.control.agents.base import HttpCall
 from mandri.runtime.control.errors import ControlTransportError
@@ -19,21 +19,21 @@ class OpencodeAgentControl:
         return AgentCapabilities(message=True, stop=True)
 
     async def create(self, content: str, title: str | None) -> dict[str, Any]:
-        response = await self._call("GET", f"/session/{quote(self._parent, safe='')}", None)
+        response = await self._call("GET", f"/api/session/{quote(self._parent, safe='')}", None)
         self._check(response)
         parent = self._object(response)
         if parent.get("id") != self._parent:
             raise ControlTransportError("OpenCode returned a different parent session")
         body: dict[str, Any] = {
             "parentID": self._parent,
-            "model": {"providerID": "mandri", "id": GATEWAY_MODEL_ID},
+            "model": gateway_model(),
         }
-        for field in ("permission", "agent"):
+        for field in ("permissions", "agent"):
             if parent.get(field) is not None:
                 body[field] = parent[field]
         if title:
             body["title"] = title
-        response = await self._call("POST", "/session", body)
+        response = await self._call("POST", "/api/session", body)
         self._check(response)
         child = self._object(response)
         native_id = child.get("id")
@@ -41,8 +41,8 @@ class OpencodeAgentControl:
             raise ControlTransportError("OpenCode did not return the requested child relationship")
         response = await self._call(
             "POST",
-            f"/session/{quote(native_id, safe='')}/prompt_async",
-            {"parts": [{"type": "text", "text": content}], "model": gateway_model()},
+            f"/api/session/{quote(native_id, safe='')}/prompt",
+            {"text": content},
         )
         self._check(response)
         return child
@@ -50,19 +50,25 @@ class OpencodeAgentControl:
     async def message(self, agent: Agent, content: str) -> None:
         response = await self._call(
             "POST",
-            f"/session/{quote(agent.native_id, safe='')}/prompt_async",
-            {"parts": [{"type": "text", "text": content}], "model": gateway_model()},
+            f"/api/session/{quote(agent.native_id, safe='')}/model",
+            {"model": gateway_model()},
+        )
+        self._check(response)
+        response = await self._call(
+            "POST",
+            f"/api/session/{quote(agent.native_id, safe='')}/prompt",
+            {"text": content},
         )
         self._check(response)
 
     async def stop(self, agent: Agent) -> bool:
         response = await self._call(
-            "POST", f"/session/{quote(agent.native_id, safe='')}/abort", None
+            "POST", f"/api/session/{quote(agent.native_id, safe='')}/interrupt", None
         )
         self._check(response)
         try:
-            result = response.json()
-        except ValueError:
+            result = response.json()["interrupted"]
+        except (ValueError, KeyError, TypeError):
             raise ControlTransportError("OpenCode returned an invalid stop result") from None
         if not isinstance(result, bool):
             raise ControlTransportError("OpenCode returned an invalid stop result")
@@ -71,8 +77,8 @@ class OpencodeAgentControl:
     @staticmethod
     def _object(response: httpx.Response) -> dict[str, Any]:
         try:
-            result = response.json()
-        except ValueError:
+            result = response.json()["data"]
+        except (ValueError, KeyError, TypeError):
             raise ControlTransportError("OpenCode returned an invalid child session") from None
         if not isinstance(result, dict):
             raise ControlTransportError("OpenCode returned an invalid child session")

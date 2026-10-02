@@ -8,7 +8,7 @@ _MODALITIES = ("text", "image", "audio", "video", "pdf")
 
 
 def gateway_model() -> dict[str, str]:
-    return {"providerID": "mandri", "modelID": GATEWAY_MODEL_ID}
+    return {"providerID": "mandri", "id": GATEWAY_MODEL_ID}
 
 
 def model_entry(metadata: ModelMetadata | None) -> dict[str, Any]:

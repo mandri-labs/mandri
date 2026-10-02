@@ -29,6 +29,9 @@ def historical_state(
             if reader is None or status is None:
                 return AgentState.UNKNOWN
             ref = SessionRef(agent.harness, HarnessSessionId(agent.native_id))
+            agent_state = getattr(reader, "agent_state", None)
+            if agent_state is not None:
+                return AgentState(agent_state(ref))
             if not reader.page(ref, None, 1).entries:
                 return AgentState.UNKNOWN
             busy, _ = status(ref)

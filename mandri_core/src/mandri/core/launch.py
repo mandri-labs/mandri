@@ -158,8 +158,10 @@ def opencode_env(
         },
         "autoupdate": False,
         "share": "disabled",
+        "enabled_providers": ["mandri"],
     }
     if extra_config:
         config.update(extra_config)
     config["model"] = config["small_model"] = GATEWAY_MODEL_REF
+    config["enabled_providers"] = ["mandri"]
     return {"OPENCODE_CONFIG_CONTENT": json.dumps(config)}

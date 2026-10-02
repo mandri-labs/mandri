@@ -140,10 +140,13 @@ async def test_opencode_adapter_sends_gateway_alias() -> None:
         await control.send_prompt("continue")
     finally:
         await control.aclose()
-    assert requests[0].url.path == "/session/oc-1/prompt_async"
+    assert [request.url.path for request in requests] == [
+        "/api/session/oc-1/model",
+        "/api/session/oc-1/prompt",
+    ]
     assert json.loads(requests[0].content)["model"] == {
         "providerID": "mandri",
-        "modelID": "mandri_gateway",
+        "id": "mandri_gateway",
     }
 
 

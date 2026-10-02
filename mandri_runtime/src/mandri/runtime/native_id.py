@@ -3,9 +3,11 @@
 import asyncio
 from collections.abc import Callable, Mapping
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from mandri.core.ids import HarnessSessionId
+from mandri.core.opencode import gateway_model
 from mandri.runtime.control.errors import ControlTransportError
 from mandri.runtime.errors import OpencodeSessionMissingError
 
@@ -37,14 +39,14 @@ def codex_native_id(result: Mapping[str, Any]) -> HarnessSessionId | None:
 async def capture_opencode_session_id(
     port: int, auth: tuple[str, str] | None = None
 ) -> HarnessSessionId | None:
-    url = f"http://127.0.0.1:{port}/session"
+    url = f"http://127.0.0.1:{port}/api/session"
     if await _list_opencode_session_ids(url, auth) is None:
         return None
     try:
         async with httpx.AsyncClient(
             timeout=_OPENCODE_CREATE_TIMEOUT, auth=auth, trust_env=False
         ) as client:
-            response = await client.post(url, json={})
+            response = await client.post(url, json={"model": gateway_model()})
     except (httpx.ConnectError, httpx.ConnectTimeout):
         return None
     except (httpx.HTTPError, OSError) as error:
@@ -52,8 +54,8 @@ async def capture_opencode_session_id(
     if response.status_code >= 400:
         raise ControlTransportError(f"OpenCode session creation rejected: {response.status_code}")
     try:
-        payload = response.json()
-    except ValueError:
+        payload = response.json()["data"]
+    except (ValueError, KeyError, TypeError):
         raise ControlTransportError("OpenCode session creation returned invalid data") from None
     if not isinstance(payload, dict):
         raise ControlTransportError("OpenCode session creation returned invalid data")
@@ -87,21 +89,51 @@ async def verify_opencode_session_id(
     alive: Callable[[], bool] | None = None,
     auth: tuple[str, str] | None = None,
 ) -> HarnessSessionId:
-    """Return the session id once the existing opencode conversation is listed by the server."""
-    url = f"http://127.0.0.1:{port}/session"
+    """Verify an existing OpenCode conversation by identity."""
+    url = f"http://127.0.0.1:{port}/api/session/{quote(session_id, safe='')}"
     deadline = asyncio.get_running_loop().time() + _OPENCODE_STARTUP_SECONDS
     while alive is None or alive():
         if asyncio.get_running_loop().time() >= deadline:
             raise ControlTransportError("OpenCode did not become ready before startup expired")
-        sessions = (
-            await _list_opencode_session_ids(url, auth)
-            if auth
-            else await _list_opencode_session_ids(url)
-        )
-        if sessions is not None:
-            if session_id in sessions:
-                return HarnessSessionId(session_id)
+        try:
+            async with httpx.AsyncClient(
+                timeout=_OPENCODE_PROBE_TIMEOUT, auth=auth, trust_env=False
+            ) as client:
+                response = await client.get(url)
+                if response.status_code == 404:
+                    migration = await client.get(
+                        f"http://127.0.0.1:{port}/api/experimental/migration/v1"
+                    )
+                    if migration.status_code != 200:
+                        raise ControlTransportError("OpenCode migration status is unavailable")
+                    try:
+                        state = migration.json()["status"]
+                    except (ValueError, KeyError, TypeError):
+                        raise ControlTransportError(
+                            "OpenCode returned invalid migration status"
+                        ) from None
+                    if state in {"required", "running"}:
+                        await asyncio.sleep(_OPENCODE_LAUNCH_DELAY_S)
+                        continue
+                    if state != "completed":
+                        raise ControlTransportError("OpenCode session migration failed")
+        except (httpx.HTTPError, OSError):
+            await asyncio.sleep(_OPENCODE_LAUNCH_DELAY_S)
+            continue
+        if response.status_code == 404:
             raise OpencodeSessionMissingError(session_id)
+        if response.status_code == 200:
+            try:
+                payload = response.json()["data"]
+            except (ValueError, KeyError, TypeError):
+                raise ControlTransportError(
+                    "OpenCode session verification returned invalid data"
+                ) from None
+            if isinstance(payload, dict) and payload.get("id") == session_id:
+                return HarnessSessionId(session_id)
+            raise ControlTransportError(
+                "OpenCode session verification returned a different identity"
+            )
         await asyncio.sleep(_OPENCODE_LAUNCH_DELAY_S)
     raise ControlTransportError(
         f"opencode process exited before session {session_id} was available"
@@ -115,14 +147,14 @@ async def _list_opencode_session_ids(
         async with httpx.AsyncClient(
             timeout=_OPENCODE_PROBE_TIMEOUT, auth=auth, trust_env=False
         ) as client:
-            response = await client.get(url)
+            response = await client.get(url, params={"limit": 1})
     except (httpx.HTTPError, OSError):
         return None
     if response.status_code >= 400:
         return None
     try:
-        payload = response.json()
-    except ValueError:
+        payload = response.json()["data"]
+    except (ValueError, KeyError, TypeError):
         return None
     if not isinstance(payload, list):
         return None

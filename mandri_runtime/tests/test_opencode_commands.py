@@ -21,14 +21,16 @@ async def test_catalog_is_dynamic_and_does_not_expose_templates(control):
     control._request = AsyncMock(
         return_value=httpx.Response(
             200,
-            json=[
-                {
-                    "name": "custom",
-                    "description": "Custom command",
-                    "template": "private prompt",
-                    "hints": ["$1", "$ARGUMENTS"],
-                }
-            ],
+            json={
+                "data": [
+                    {
+                        "name": "custom",
+                        "description": "Custom command",
+                        "template": "private prompt",
+                        "hints": ["$1", "$ARGUMENTS"],
+                    }
+                ]
+            },
         )
     )
     assert await control.list_commands() == [
@@ -41,57 +43,47 @@ async def test_catalog_is_dynamic_and_does_not_expose_templates(control):
             "kind": "prompt",
         }
     ]
-    control._request.assert_awaited_once_with("GET", "/command", None)
+    control._request.assert_awaited_with("GET", "/api/command", None)
 
 
 async def test_execution_revalidates_catalog_and_preserves_arguments(control):
     control._request = AsyncMock(
         side_effect=[
-            httpx.Response(200, json=[{"name": "custom"}]),
-            httpx.Response(200, json={"info": {"id": "message"}, "parts": []}),
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(200, json={"data": [{"name": "custom"}]}),
+            httpx.Response(204),
+            httpx.Response(204),
         ]
     )
     assert (await control.execute_command("custom", '  "two words"\nthree'))["kind"] == "transcript"
     control._request.assert_awaited_with(
         "POST",
-        "/session/native-session/command",
+        "/api/session/native-session/command",
         {
-            "command": "custom",
-            "arguments": '  "two words"\nthree',
-            "model": "mandri/mandri_gateway",
+            "name": "custom",
+            "text": '  "two words"\nthree',
         },
     )
 
 
 async def test_missing_command_never_falls_through_to_prompt(control):
-    control._request = AsyncMock(return_value=httpx.Response(200, json=[]))
+    control._request = AsyncMock(return_value=httpx.Response(200, json={"data": []}))
     with pytest.raises(ControlError, match="no longer available"):
         await control.execute_command("removed", "")
-    assert control._request.await_count == 1
+    assert control._request.await_count == 2
 
 
-@pytest.mark.parametrize(
-    "command,extra",
-    [
-        ({"name": "custom", "model": "other/model"}, []),
-        (
-            {"name": "custom", "agent": "researcher"},
-            [
-                httpx.Response(
-                    200,
-                    json=[
-                        {"name": "researcher", "model": {"providerID": "other", "modelID": "model"}}
-                    ],
-                )
-            ],
-        ),
-    ],
-)
-async def test_model_override_cannot_bypass_gateway(control, command, extra):
-    control._request = AsyncMock(side_effect=[httpx.Response(200, json=[command]), *extra])
-    with pytest.raises(ControlError, match="outside the Mandri gateway"):
+async def test_rejected_gateway_selection_never_executes_command(control):
+    control._request = AsyncMock(
+        side_effect=[
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(200, json={"data": [{"name": "custom"}]}),
+            httpx.Response(400),
+        ]
+    )
+    with pytest.raises(ControlTransportError, match="gateway model"):
         await control.execute_command("custom", "")
-    assert all(call.args[0] == "GET" for call in control._request.call_args_list)
+    assert control._request.await_count == 3
 
 
 @pytest.mark.parametrize(
@@ -104,21 +96,44 @@ async def test_model_override_cannot_bypass_gateway(control, command, extra):
 )
 async def test_failed_or_unconfirmed_execution_is_not_success(control, response):
     control._request = AsyncMock(
-        side_effect=[httpx.Response(200, json=[{"name": "custom"}]), response]
+        side_effect=[
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(200, json={"data": [{"name": "custom"}]}),
+            httpx.Response(204),
+            response,
+        ]
     )
     with pytest.raises(ControlError):
         await control.execute_command("custom", "")
-    assert control._request.await_count == 2
+    assert control._request.await_count == 4
 
 
 async def test_native_question_reply_and_reject_use_native_request_id(control):
-    control._request = AsyncMock(return_value=httpx.Response(200, json=True))
+    control._request = AsyncMock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "fields": [
+                            {"key": "first", "type": "string"},
+                            {"key": "second", "type": "multiselect"},
+                        ]
+                    }
+                },
+            ),
+            httpx.Response(204),
+        ]
+    )
     assert await control.answer_question("q/1", [["first"], ["second", "third"]])
     control._request.assert_awaited_with(
-        "POST", "/question/q%2F1/reply", {"answers": [["first"], ["second", "third"]]}
+        "POST",
+        "/api/session/native-session/form/q%2F1/reply",
+        {"answer": {"first": "first", "second": ["second", "third"]}},
     )
+    control._request = AsyncMock(return_value=httpx.Response(204))
     assert await control.answer_question("q/1", None)
-    control._request.assert_awaited_with("POST", "/question/q%2F1/reject", None)
+    control._request.assert_awaited_with("DELETE", "/api/session/native-session/form/q%2F1", None)
     control._request.return_value = httpx.Response(404)
     assert not await control.answer_question("old", [["first"]])
 
@@ -139,8 +154,23 @@ def test_questions_and_recovery_are_session_scoped():
 async def test_pending_inputs_recovered_from_both_native_endpoints(control):
     control._request = AsyncMock(
         side_effect=[
-            httpx.Response(200, json=[{"id": "permission", "sessionID": "native-session"}]),
-            httpx.Response(200, json=[{"id": "question", "sessionID": "native-session"}]),
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(
+                200, json={"data": [{"id": "permission", "sessionID": "native-session"}]}
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "question",
+                            "sessionID": "native-session",
+                            "title": "More",
+                            "fields": [{"key": "first", "type": "string"}],
+                        }
+                    ]
+                },
+            ),
         ]
     )
     await control._recover_pending_permissions()

@@ -263,6 +263,20 @@ def _updated(agent: Agent, raw: dict[str, Any]) -> Agent:
         )
     if method == "session.idle" or method == "result":
         state = AgentState.FAILED if raw.get("is_error") else AgentState.COMPLETED
+    if method == "session.status":
+        properties = raw.get("properties", {})
+        status = properties.get("status", {})
+        status_type = status.get("type") if isinstance(status, dict) else status
+        if status_type in {"busy", "retry"}:
+            state = AgentState.RUNNING
+        elif status_type == "idle":
+            state = (
+                AgentState.FAILED
+                if properties.get("outcome") == "failed"
+                else AgentState.STOPPED
+                if properties.get("outcome") == "interrupted"
+                else AgentState.COMPLETED
+            )
     if method in ("session.error", "error"):
         state = AgentState.FAILED
     if raw.get("type") == "system":
@@ -271,7 +285,11 @@ def _updated(agent: Agent, raw: dict[str, Any]) -> Agent:
             state = AgentState.RUNNING
         elif status in ("completed", "failed", "stopped"):
             state = AgentState(status)
-    if "requestApproval" in str(method) or method in ("permission.asked", "permission.v2.asked"):
+    if "requestApproval" in str(method) or method in (
+        "permission.asked",
+        "permission.v2.asked",
+        "question.asked",
+    ):
         state = AgentState.WAITING
     task_id = raw.get("task_id") if agent.harness is HarnessKind.CLAUDE else None
     changes: dict[str, Any] = {"state": state}

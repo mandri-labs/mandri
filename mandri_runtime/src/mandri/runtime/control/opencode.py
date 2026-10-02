@@ -21,7 +21,7 @@ from mandri.core.ids import (
 from mandri.core.opencode import gateway_model
 from mandri.core.ports.control import ControlRequest, HarnessControl
 from mandri.core.types.approvals import ApprovalRequest
-from mandri.core.types.prompt import UserPrompt
+from mandri.core.types.prompt import UserPrompt, prompt_text
 from mandri.runtime.control import PromptOutcome, PromptState
 from mandri.runtime.control.agents.opencode import OpencodeAgentControl
 from mandri.runtime.control.errors import (
@@ -31,7 +31,8 @@ from mandri.runtime.control.errors import (
 )
 from mandri.runtime.control.modes import OPENCODE_PERMISSION_RULES
 from mandri.runtime.control.opencode_commands import OpencodeCommands
-from mandri.runtime.control.opencode_questions import question_answers, recovered_inputs
+from mandri.runtime.control.opencode_events import OpencodeEvents, form_event, permission_event
+from mandri.runtime.control.opencode_questions import form_answers, question_answers
 from mandri.runtime.control.prompt import native_parts
 
 _REQUEST_TIMEOUT = httpx.Timeout(None)
@@ -122,10 +123,12 @@ class OpencodeControlAdapter(HarnessControl):
         self._recovered = False
         self._seen: set[str] = set()
         self._closing = False
+        self._approval_owners: dict[str, str] = {}
+        self._converter = OpencodeEvents(self._request)
         self.agents = OpencodeAgentControl(self._request, str(self._session_id))
 
     async def capture_identity(self) -> HarnessSessionId:
-        response = await self._request("GET", f"/session/{self._session_id}")
+        response = await self._request("GET", f"/api/session/{self._session_id}")
         if not _is_ok(response.status_code):
             raise ControlTransportError(
                 f"opencode session {self._session_id} is unavailable: status {response.status_code}"
@@ -144,19 +147,28 @@ class OpencodeControlAdapter(HarnessControl):
             return request
 
     async def next_event(self) -> dict[str, Any] | None:
-        """Return the next SSE event verbatim, or None once the stream closes."""
+        """Return the next normalized event, or None once the stream closes."""
         self._ensure_event_pump()
         if not self._recovered:
             self._recovered = True
             await self._recover_pending_permissions()
-        return await self._queue.get()
+        event = await self._queue.get()
+        if event is not None and event.get("type") in (*_PERMISSION_EVENT_TYPES, "question.asked"):
+            properties = event.get("properties", {})
+            reference, owner = properties.get("id"), properties.get("sessionID")
+            if isinstance(reference, str) and isinstance(owner, str):
+                self._approval_owners[reference] = owner
+        return event
 
     async def answer_approval(
         self, native_request_ref: str, decision: ApprovalDecision | None
     ) -> bool:
         reply = _reply_for(decision)
+        owner = quote(self._approval_owners.get(native_request_ref, str(self._session_id)), safe="")
         response = await self._request(
-            "POST", f"/permission/{native_request_ref}/reply", {"reply": reply}
+            "POST",
+            f"/api/session/{owner}/permission/{quote(native_request_ref, safe='')}/reply",
+            {"decision": reply},
         )
         if response.status_code == 404:
             return False
@@ -172,10 +184,14 @@ class OpencodeControlAdapter(HarnessControl):
             raise ModeRejectedError(f"opencode does not support mode: {mode}")
         response = await self._request(
             "PATCH",
-            f"/session/{self._session_id}",
+            f"/api/session/{self._session_id}",
             {
-                "permission": [
-                    {"permission": name, "pattern": "*", "action": action}
+                "permissions": [
+                    {
+                        "action": name,
+                        "resource": "*",
+                        "effect": action,
+                    }
                     for name, action in rules.items()
                 ]
             },
@@ -185,8 +201,20 @@ class OpencodeControlAdapter(HarnessControl):
         return ModeApplication.MID_SESSION_APPLIED
 
     async def send_prompt(self, text: str | UserPrompt) -> PromptOutcome:
-        body = {"parts": native_parts(text, "opencode"), "model": gateway_model()}
-        response = await self._request("POST", f"/session/{self._session_id}/prompt_async", body)
+        response = await self._request(
+            "POST", f"/api/session/{self._session_id}/model", {"model": gateway_model()}
+        )
+        if not _is_ok(response.status_code):
+            raise PromptDeliveryFailedError("OpenCode rejected the gateway model selection")
+        body: dict[str, Any] = {"text": prompt_text(text)}
+        files = [
+            {"uri": part["url"]}
+            for part in native_parts(text, "opencode")
+            if part["type"] == "file"
+        ]
+        if files:
+            body["files"] = files
+        response = await self._request("POST", f"/api/session/{self._session_id}/prompt", body)
         if not _is_ok(response.status_code):
             raise PromptDeliveryFailedError(
                 f"opencode prompt delivery failed: status {response.status_code}"
@@ -205,11 +233,22 @@ class OpencodeControlAdapter(HarnessControl):
     async def answer_question(
         self, native_request_ref: str, answers: list[list[str]] | None
     ) -> bool:
-        action = "reject" if answers is None else "reply"
+        action = "" if answers is None else "/reply"
+        owner = quote(self._approval_owners.get(native_request_ref, str(self._session_id)), safe="")
+        body = None
+        if answers is not None:
+            response = await self._request(
+                "GET", f"/api/session/{owner}/form/{quote(native_request_ref, safe='')}"
+            )
+            if response.status_code == 404:
+                return False
+            if not _is_ok(response.status_code):
+                raise ControlTransportError("OpenCode form recovery failed")
+            body = {"answer": form_answers(response.json()["data"], answers)}
         response = await self._request(
-            "POST",
-            f"/question/{quote(native_request_ref, safe='')}/{action}",
-            None if answers is None else {"answers": answers},
+            "DELETE" if answers is None else "POST",
+            f"/api/session/{owner}/form/{quote(native_request_ref, safe='')}{action}",
+            body,
         )
         if response.status_code == 404:
             return False
@@ -218,7 +257,7 @@ class OpencodeControlAdapter(HarnessControl):
         return True
 
     async def interrupt(self) -> bool:
-        response = await self._request("POST", f"/session/{self._session_id}/abort")
+        response = await self._request("POST", f"/api/session/{self._session_id}/interrupt")
         return _is_ok(response.status_code)
 
     async def aclose(self) -> None:
@@ -259,7 +298,7 @@ class OpencodeControlAdapter(HarnessControl):
         while not self._closing:
             try:
                 async with self._client.stream(
-                    "GET", "/event", timeout=_STREAM_TIMEOUT
+                    "GET", "/api/event", timeout=_STREAM_TIMEOUT
                 ) as response:
                     if not _is_ok(response.status_code):
                         await asyncio.sleep(_RECONNECT_DELAY_SECONDS)
@@ -268,30 +307,62 @@ class OpencodeControlAdapter(HarnessControl):
                     async for line in response.aiter_lines():
                         event = _parse_sse_event(line)
                         if event is not None:
-                            self._queue.put_nowait(event)
+                            for converted in await self._converter.convert(event):
+                                self._queue.put_nowait(converted)
             except (httpx.HTTPError, ControlTransportError):
                 if self._closing:
                     return
                 await asyncio.sleep(_RECONNECT_DELAY_SECONDS)
 
     async def _recover_pending_permissions(self) -> None:
-        for path, event_type in (
-            ("/permission", "permission.asked"),
-            ("/question", "question.asked"),
+        owners = [str(self._session_id)]
+        seen = set(owners)
+        for owner in owners:
+            cursor = None
+            while True:
+                query = f"parentID={quote(owner, safe='')}&limit=100"
+                if cursor is not None:
+                    query += f"&cursor={quote(cursor, safe='')}"
+                response = await self._request("GET", f"/api/session?{query}")
+                if response.status_code != 200:
+                    raise ControlTransportError("OpenCode child session recovery failed")
+                try:
+                    payload = response.json()
+                    children = payload["data"]
+                    cursor = payload.get("cursor", {}).get("next")
+                    for child in children:
+                        child_id = child["id"]
+                        if child.get("parentID") == owner and child_id not in seen:
+                            owners.append(child_id)
+                            seen.add(child_id)
+                except (ValueError, KeyError, TypeError):
+                    raise ControlTransportError(
+                        "OpenCode returned invalid child sessions"
+                    ) from None
+                if cursor is None:
+                    break
+        for owner in owners:
+            await self._recover_session_inputs(owner)
+
+    async def _recover_session_inputs(self, owner: str) -> None:
+        for path, convert in (
+            ("permission", permission_event),
+            ("form", form_event),
         ):
-            response = await self._request("GET", path)
-            if path == "/question" and response.status_code == 404:
-                continue
+            response = await self._request("GET", f"/api/session/{quote(owner, safe='')}/{path}")
             if not _is_ok(response.status_code):
                 raise ControlTransportError(
                     f"OpenCode pending input recovery failed ({response.status_code})"
                 )
             try:
-                records = response.json()
-            except ValueError:
+                records = response.json()["data"]
+            except (ValueError, KeyError, TypeError):
                 raise ControlTransportError("OpenCode returned invalid pending inputs") from None
-            for event in recovered_inputs(records, event_type, str(self._session_id)):
-                self._queue.put_nowait(event)
+            if not isinstance(records, list):
+                raise ControlTransportError("OpenCode returned invalid pending inputs")
+            for record in records:
+                if isinstance(record, dict) and record.get("sessionID") == owner:
+                    self._queue.put_nowait(convert(record))
 
 
 @final

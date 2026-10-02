@@ -201,8 +201,9 @@ async def test_native_adapters_preserve_image_content_and_codex_steering(tmp_pat
     try:
         await opencode.send_prompt(prepared)
         method, path, body = opencode._request.call_args.args
-        assert (method, path) == ("POST", "/session/session/prompt_async")
-        assert base64.b64decode(body["parts"][1]["url"].split(",", 1)[1]) == PNG
+        assert (method, path) == ("POST", "/api/session/session/prompt")
+        assert body["text"] == prepared.text
+        assert base64.b64decode(body["files"][0]["uri"].split(",", 1)[1]) == PNG
     finally:
         await opencode.aclose()
 

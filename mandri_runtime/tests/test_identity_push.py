@@ -193,9 +193,7 @@ def _install_probe_client(
 async def test_verify_opencode_session_returns_existing_id_on_ok(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _install_probe_client(
-        monkeypatch, [FakeProbeResponse(200, [{"id": "ses_existing"}, {"id": "other"}])]
-    )
+    _install_probe_client(monkeypatch, [FakeProbeResponse(200, {"data": {"id": "ses_existing"}})])
     identity = await native_id.verify_opencode_session_id(4096, "ses_existing")
     assert identity == HarnessSessionId("ses_existing")
 
@@ -203,7 +201,9 @@ async def test_verify_opencode_session_returns_existing_id_on_ok(
 async def test_verify_opencode_session_fails_fast_on_missing_conversation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _install_probe_client(monkeypatch, [FakeProbeResponse(200, [{"id": "other"}])])
+    _install_probe_client(
+        monkeypatch, [FakeProbeResponse(404), FakeProbeResponse(200, {"status": "completed"})]
+    )
     with pytest.raises(OpencodeSessionMissingError):
         await native_id.verify_opencode_session_id(4096, "ses_gone")
 
@@ -222,7 +222,7 @@ async def test_verify_opencode_session_retries_until_ok(
 ) -> None:
     _install_probe_client(
         monkeypatch,
-        [httpx.ConnectError("refused"), FakeProbeResponse(200, [{"id": "ses_retry"}])],
+        [httpx.ConnectError("refused"), FakeProbeResponse(200, {"data": {"id": "ses_retry"}})],
     )
     identity = await native_id.verify_opencode_session_id(4096, "ses_retry")
     assert identity == HarnessSessionId("ses_retry")

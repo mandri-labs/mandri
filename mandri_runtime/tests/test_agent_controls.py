@@ -91,7 +91,10 @@ async def test_claude_stops_verified_task_identity_not_agent_identity():
 @pytest.mark.parametrize("payload", [[], None, {}, {"id": "child", "parentID": "unrelated"}])
 async def test_opencode_rejects_invalid_child_before_prompt(payload):
     call = AsyncMock(
-        side_effect=[httpx.Response(200, json={"id": "parent"}), httpx.Response(200, json=payload)]
+        side_effect=[
+            httpx.Response(200, json={"data": {"id": "parent"}}),
+            httpx.Response(200, json={"data": payload}),
+        ]
     )
     with pytest.raises(ControlTransportError):
         await OpencodeAgentControl(call, "parent").create("hello", None)
@@ -100,21 +103,21 @@ async def test_opencode_rejects_invalid_child_before_prompt(payload):
 
 async def test_opencode_child_inherits_permissions_and_agent_but_uses_gateway_alias():
     settings = {
-        "permission": [{"permission": "bash", "pattern": "*", "action": "deny"}],
+        "permissions": [{"action": "bash", "resource": "*", "effect": "deny"}],
         "agent": "plan",
         "model": {"id": "selected-model", "providerID": "selected-provider"},
     }
     call = AsyncMock(
         side_effect=[
-            httpx.Response(200, json={"id": "parent", **settings}),
-            httpx.Response(200, json={"id": "child", "parentID": "parent"}),
+            httpx.Response(200, json={"data": {"id": "parent", **settings}}),
+            httpx.Response(200, json={"data": {"id": "child", "parentID": "parent"}}),
             httpx.Response(204),
         ]
     )
     await OpencodeAgentControl(call, "parent").create("hello", "Child")
     assert call.await_args_list[1].args == (
         "POST",
-        "/session",
+        "/api/session",
         {
             "parentID": "parent",
             "title": "Child",
@@ -122,16 +125,13 @@ async def test_opencode_child_inherits_permissions_and_agent_but_uses_gateway_al
             "model": {"providerID": "mandri", "id": "mandri_gateway"},
         },
     )
-    assert call.await_args_list[2].args[1] == "/session/child/prompt_async"
-    assert call.await_args_list[2].args[2]["model"] == {
-        "providerID": "mandri",
-        "modelID": "mandri_gateway",
-    }
+    assert call.await_args_list[2].args[1] == "/api/session/child/prompt"
+    assert call.await_args_list[2].args[2] == {"text": "hello"}
 
 
 @pytest.mark.parametrize("stopped", [True, False])
 async def test_opencode_stop_preserves_native_result(stopped):
-    call = AsyncMock(return_value=httpx.Response(200, json=stopped))
+    call = AsyncMock(return_value=httpx.Response(200, json={"interrupted": stopped}))
     assert await OpencodeAgentControl(call, "parent").stop(child(HarnessKind.OPENCODE)) is stopped
 
 
@@ -140,4 +140,4 @@ async def test_opencode_native_identity_is_one_url_segment():
     await OpencodeAgentControl(call, "parent").message(
         replace(child(HarnessKind.OPENCODE), native_id="child/../parent"), "hello"
     )
-    assert call.await_args.args[1] == "/session/child%2F..%2Fparent/prompt_async"
+    assert call.await_args.args[1] == "/api/session/child%2F..%2Fparent/prompt"

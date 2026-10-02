@@ -407,15 +407,44 @@
             ],
             "title": "Target"
           },
+          "target_conflicts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Conflicts",
+            "type": "array"
+          },
           "target_dirty": {
             "default": false,
             "title": "Target Dirty",
             "type": "boolean"
           },
+          "target_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Error"
+          },
           "target_head": {
             "default": "",
             "title": "Target Head",
             "type": "string"
+          },
+          "target_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Path"
           },
           "token": {
             "anyOf": [
@@ -5698,6 +5727,16 @@
               "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
               "title": "Session Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "discard_ignored",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Discard Ignored",
+              "type": "boolean"
             }
           }
         ],

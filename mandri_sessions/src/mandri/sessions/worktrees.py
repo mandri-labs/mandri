@@ -10,7 +10,7 @@ from mandri.core.ports.database import DatabasePort
 from mandri.core.types.execution import ProtectionError
 from mandri.core.types.worktree_integration import IntegrationPreview, IntegrationStrategy
 from mandri.core.types.worktrees import Worktree
-from mandri.sessions import worktree_git, worktree_integration
+from mandri.sessions import worktree_git, worktree_integration, worktree_transaction
 from mandri.sessions.errors import SessionNotFoundError
 
 
@@ -224,6 +224,9 @@ class SessionWorktrees:
         strategy: IntegrationStrategy,
     ) -> IntegrationPreview:
         async with self._lock:
+            worktree = await self._required(session_id)
+            if worktree.pending_integration is not None:
+                await self._recover_integration(session_id, worktree)
             await self.validate(session_id)
             worktree = await self._required(session_id)
             return await asyncio.to_thread(worktree_integration.preview, worktree, target, strategy)
@@ -263,13 +266,13 @@ class SessionWorktrees:
         commit = await asyncio.to_thread(
             worktree_integration.create_commit, worktree, plan, message
         )
-        index_tree = await asyncio.to_thread(worktree_git.git, worktree.path, "write-tree")
+        _, _, index_tree = await asyncio.to_thread(worktree_integration.snapshot, worktree)
         pending = {
             "integrated_target": target,
             "integrated_commit": commit,
             "integrated_head": plan.source_head,
             "integrated_tree": plan.source_tree,
-            "integrated_index": index_tree.stdout.strip(),
+            "integrated_index": index_tree,
         }
         prepared = dataclasses.replace(worktree, pending_integration=pending)
         await self._save(session_id, prepared)
@@ -280,6 +283,7 @@ class SessionWorktrees:
         return await self._required(session_id)
 
     async def _recover_integration(self, session_id: SessionId, worktree: Worktree) -> Worktree:
+        await asyncio.to_thread(worktree_transaction.recover, worktree)
         values = worktree.pending_integration or {}
         candidate = dataclasses.replace(
             worktree,
@@ -308,6 +312,7 @@ class SessionWorktrees:
         else:
             worktree = dataclasses.replace(worktree, pending_integration=None)
         await self._save(session_id, worktree)
+        await asyncio.to_thread(worktree_transaction.discard, worktree)
         return worktree
 
     async def resolve(
@@ -334,11 +339,11 @@ class SessionWorktrees:
         )
         await asyncio.to_thread(worktree_integration.prepare_resolution, worktree, plan)
 
-    async def finish(self, session_id: SessionId) -> Worktree:
+    async def finish(self, session_id: SessionId, *, discard_ignored: bool = False) -> Worktree:
         async with self._lock:
-            return await complete_operation(self._finish(session_id))
+            return await complete_operation(self._finish(session_id, discard_ignored))
 
-    async def _finish(self, session_id: SessionId) -> Worktree:
+    async def _finish(self, session_id: SessionId, discard_ignored: bool) -> Worktree:
         worktree = await self._required(session_id)
         if worktree.state == "closed":
             return worktree
@@ -346,9 +351,17 @@ class SessionWorktrees:
             raise ProtectionError("worktree_unavailable", "Worktree recovery is pending")
         registered = await asyncio.to_thread(worktree_git.registered, worktree)
         if registered:
-            if not await asyncio.to_thread(worktree_integration.can_clean, worktree):
+            if not await asyncio.to_thread(
+                worktree_integration.can_clean, worktree, discard_ignored=True
+            ):
                 raise ProtectionError(
                     "worktree_has_changes", "The worktree contains unintegrated changes"
+                )
+            if not discard_ignored and await asyncio.to_thread(
+                worktree_integration.has_ignored_files, worktree
+            ):
+                raise ProtectionError(
+                    "worktree_ignored_files", "The worktree contains files ignored by Git"
                 )
             worktree = dataclasses.replace(worktree, state="closing")
             await self._save(session_id, worktree)

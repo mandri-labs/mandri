@@ -3,10 +3,12 @@
 import asyncio
 import contextlib
 import logging
+from collections.abc import Callable
 from typing import Any, final
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
 from mandri.core.ids import SessionId
+from mandri.runtime.liveness.degradation import is_stream_degradation
 from mandri.runtime.liveness.errors import UnknownSessionError
 from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
 from mandri.runtime.liveness.port import LivenessPort
@@ -36,11 +38,13 @@ class OpencodeLivenessAdapter:
         session_id: SessionId,
         *,
         since: int = 0,
+        native_identity: Callable[[], str | None] | None = None,
     ) -> None:
         self._hub = hub
         self._topic = topic
         self._port = port
         self._session_id = session_id
+        self._native_identity = native_identity
         self._handle: SubscriberHandle | None = None
         self._task: asyncio.Task[None] | None = None
         self._last_seq = since
@@ -48,6 +52,8 @@ class OpencodeLivenessAdapter:
         self._root: str | None = None
         self._root_turn_active = False
         self._children: set[str] = set()
+        self._pending_approvals: set[str] = set()
+        self._approval_refs: dict[str, str] = {}
 
     def start(self) -> None:
         self._handle = self._hub.subscribe(self._topic, since=self._last_seq, internal=True)
@@ -103,11 +109,31 @@ class OpencodeLivenessAdapter:
 
     def _observe_frame(self, frame: dict[str, Any]) -> None:
         payload = frame.get("payload")
-        if not isinstance(payload, dict) or "type" in payload:
+        if not isinstance(payload, dict):
+            return
+        raw = payload.get("raw")
+        if is_stream_degradation(payload):
+            self._mark_uncertain()
+            return
+        if payload.get("type") == "approval.resolved" and isinstance(raw, dict):
+            reference = self._approval_refs.pop(str(raw.get("approval_id")), None)
+            if reference is None:
+                reference = raw.get("native_request_ref")
+            if isinstance(reference, str):
+                for kind in self._close_approval(reference):
+                    self._emit(kind)
+            return
+        if payload.get("type") == "approval.pending" and isinstance(raw, dict):
+            properties = _properties_of(raw)
+            reference = properties.get("id")
+            approval_id = payload.get("approval_id")
+            if isinstance(reference, str) and isinstance(approval_id, str):
+                self._approval_refs[approval_id] = reference
+            return
+        if "type" in payload:
             return
         if payload.get("source") != _SOURCE:
             return
-        raw = payload.get("raw")
         if not isinstance(raw, dict):
             return
         for kind in self._translate(raw):
@@ -131,36 +157,90 @@ class OpencodeLivenessAdapter:
         if event_type == "session.deleted":
             return self._turn_end(owner)
         if event_type == "message.part.updated":
-            return self._turn_activity(owner)
+            part = properties.get("part")
+            if not isinstance(part, dict):
+                return []
+            state = part.get("state")
+            time = part.get("time")
+            if part.get("type") == "tool":
+                active = isinstance(state, dict) and state.get("status") in {"pending", "running"}
+            else:
+                active = part.get("type") in {"text", "reasoning"} and not (
+                    isinstance(time, dict) and time.get("end") is not None
+                )
+            return self._turn_activity(owner) if active else []
+        if event_type == "message.updated":
+            info = properties.get("info")
+            if isinstance(info, dict) and info.get("role") == "assistant":
+                time = info.get("time")
+                if info.get("error") is not None or (
+                    isinstance(time, dict)
+                    and time.get("completed") is not None
+                    and info.get("finish") not in {None, "tool-calls", "unknown"}
+                    and not info.get("summary")
+                ):
+                    return self._turn_end(owner)
         if event_type in _PERMISSION_OPEN_TYPES:
+            reference = properties.get("id")
+            if not isinstance(reference, str) or reference in self._pending_approvals:
+                return []
+            self._pending_approvals.add(reference)
             return [LivenessEvidenceKind.APPROVAL_OPENED]
         if event_type in _PERMISSION_REPLY_TYPES and (
             event_type in {"permission.replied", "question.replied", "question.rejected"}
             or _has_resolution(properties)
         ):
-            return [LivenessEvidenceKind.APPROVAL_CLOSED]
+            reference = properties.get("requestID") or properties.get("id")
+            return self._close_approval(str(reference))
         return []
 
+    def _close_approval(self, reference: str) -> list[LivenessEvidenceKind]:
+        if reference not in self._pending_approvals:
+            return []
+        self._pending_approvals.discard(reference)
+        return [] if self._pending_approvals else [LivenessEvidenceKind.APPROVAL_CLOSED]
+
     def _turn_activity(self, owner: str | None) -> list[LivenessEvidenceKind]:
+        if self._native_identity is not None:
+            self._root = self._native_identity()
+            if self._root is None:
+                if owner is not None:
+                    self._children.add(owner)
+                return [LivenessEvidenceKind.BACKGROUND_STARTED]
         if owner is None or self._root is None or owner == self._root:
             if owner is not None and self._root is None:
                 self._root = owner
+            kinds: list[LivenessEvidenceKind] = []
+            if owner in self._children:
+                self._children.discard(owner)
+                if not self._children:
+                    kinds.append(LivenessEvidenceKind.BACKGROUND_ENDED)
             if self._root_turn_active:
-                return []
+                return kinds
             self._root_turn_active = True
-            return [LivenessEvidenceKind.TURN_STARTED]
+            return [*kinds, LivenessEvidenceKind.TURN_STARTED]
         if owner in self._children:
             return []
         self._children.add(owner)
         return [LivenessEvidenceKind.BACKGROUND_STARTED]
 
     def _turn_end(self, owner: str | None) -> list[LivenessEvidenceKind]:
+        if self._native_identity is not None:
+            self._root = self._native_identity()
+            if self._root is None:
+                if owner is not None:
+                    self._children.discard(owner)
+                return [] if self._children else [LivenessEvidenceKind.BACKGROUND_ENDED]
         if owner is not None and self._root is not None and owner != self._root:
             if owner not in self._children:
                 return []
             self._children.discard(owner)
-            return [LivenessEvidenceKind.BACKGROUND_ENDED]
+            return [] if self._children else [LivenessEvidenceKind.BACKGROUND_ENDED]
         self._root_turn_active = False
+        if owner in self._children:
+            self._children.discard(owner)
+            if not self._children:
+                return [LivenessEvidenceKind.TURN_ENDED, LivenessEvidenceKind.BACKGROUND_ENDED]
         return [LivenessEvidenceKind.TURN_ENDED]
 
     def _emit(self, kind: LivenessEvidenceKind) -> None:
@@ -201,6 +281,9 @@ def _properties_of(raw: dict[str, Any]) -> dict[str, Any]:
 
 def _owner_of(properties: dict[str, Any]) -> str | None:
     owner = properties.get("sessionID")
+    if not isinstance(owner, str):
+        nested = properties.get("info") or properties.get("part")
+        owner = nested.get("sessionID") if isinstance(nested, dict) else None
     return owner if isinstance(owner, str) else None
 
 

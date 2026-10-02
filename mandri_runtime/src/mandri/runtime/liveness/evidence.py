@@ -16,6 +16,7 @@ class LivenessEvidenceKind(enum.StrEnum):
     APPROVAL_OPENED = "approval_opened"
     APPROVAL_CLOSED = "approval_closed"
     STATE_UNCERTAIN = "state_uncertain"
+    STATE_SYNCED = "state_synced"
 
 
 @dataclasses.dataclass(frozen=True)

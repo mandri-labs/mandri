@@ -4,6 +4,7 @@ from typing import Any
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
 from mandri.core.ids import SessionId
+from mandri.runtime.liveness.degradation import is_stream_degradation
 from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
 from mandri.runtime.liveness.port import LivenessPort
 
@@ -68,6 +69,9 @@ class PiLivenessAdapter:
             return
         raw = payload.get("raw")
         if not isinstance(raw, dict):
+            return
+        if is_stream_degradation(payload):
+            self._emit(LivenessEvidenceKind.STATE_UNCERTAIN)
             return
         if payload.get("type") == "approval.resolved":
             reference = self._approval_refs.pop(str(raw.get("approval_id")), None)

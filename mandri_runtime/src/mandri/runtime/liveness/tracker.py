@@ -55,8 +55,9 @@ class WorkingStateTracker:
             prompts = prompts - {evidence.prompt_id}
         elif kind is LivenessEvidenceKind.STATE_UNCERTAIN:
             uncertain = True
-        else:
+        elif kind is LivenessEvidenceKind.STATE_SYNCED:
             uncertain = False
+        else:
             if kind is LivenessEvidenceKind.TURN_ENDED:
                 prompts = frozenset()
             added = _REASON_ADDED_BY_KIND.get(kind)

@@ -79,8 +79,8 @@ async def resolve_worktree_conflicts(
 
 @router.post("/finish", operation_id="finish_worktree", responses=NOT_FOUND_CONFLICT)
 async def finish_worktree(
-    session_id: ApiSessionId, runtime: Runtime, service: Sessions
+    session_id: ApiSessionId, runtime: Runtime, service: Sessions, discard_ignored: bool = False
 ) -> SessionOut:
     async with worktree_errors():
-        await runtime.finish_worktree(str(session_id))
+        await runtime.finish_worktree(str(session_id), discard_ignored=discard_ignored)
     return session_out(await service.get_session(SessionId(session_id)), service)

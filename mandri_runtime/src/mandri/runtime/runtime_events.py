@@ -8,6 +8,7 @@ from mandri.core.hub import Hub, Topic
 from mandri.core.ids import HarnessKind, SessionId, SessionState, SessionStopCause
 from mandri.core.types.approvals import ApprovalRequest
 from mandri.runtime.adapters import EventSource
+from mandri.runtime.control.codex import CodexControlAdapter
 from mandri.runtime.control.errors import ControlError
 from mandri.runtime.launch_preparation import harness_kind
 from mandri.runtime.liveness import (
@@ -18,7 +19,7 @@ from mandri.runtime.liveness import (
 )
 from mandri.runtime.liveness.agy import AgyLivenessAdapter
 from mandri.runtime.liveness.pi import PiLivenessAdapter
-from mandri.runtime.registry import LIVE, SessionRegistry
+from mandri.runtime.registry import SessionRegistry
 from mandri.runtime.session_feed import session_topic
 from mandri.runtime.session_state import LivenessAdapter, RuntimeStates
 from mandri.runtime.translators.base import EventPublisher
@@ -87,6 +88,7 @@ class RuntimeEvents:
         elif kind is HarnessKind.CLAUDE:
             adapter = ClaudeLivenessAdapter(hub, topic, port, native_session_id, since=since)
         elif kind is HarnessKind.CODEX:
+            control = self._session_state(session_id).control
             adapter = CodexLivenessAdapter(
                 hub,
                 topic,
@@ -94,9 +96,20 @@ class RuntimeEvents:
                 native_session_id,
                 native_identity=lambda: self._session_state(session_id).native_id,
                 since=since,
+                read_queue=control.read_queue if isinstance(control, CodexControlAdapter) else None,
+                read_state=control.read_liveness
+                if isinstance(control, CodexControlAdapter)
+                else None,
             )
         else:
-            adapter = OpencodeLivenessAdapter(hub, topic, port, native_session_id, since=since)
+            adapter = OpencodeLivenessAdapter(
+                hub,
+                topic,
+                port,
+                native_session_id,
+                since=since,
+                native_identity=lambda: self._session_state(session_id).native_id,
+            )
         port.register(native_session_id)
         adapter.start()
         self._session_state(session_id).liveness_adapter = adapter
@@ -113,15 +126,6 @@ class RuntimeEvents:
         finally:
             if self._liveness is not None:
                 self._liveness.forget(SessionId(session_id))
-
-    def emit_unexpected_end_signals(self, session_id: str) -> None:
-        kind = harness_kind(self._registry.harness_of(session_id) or "")
-        if kind is None or self._registry.status(session_id) != LIVE:
-            return
-        if not self._registry.claim_stopped_signal(session_id):
-            return
-        self.publish_control_lost(session_id, kind)
-        self.publish_both(session_id, _stopped_payload(session_id, kind, SessionStopCause.CRASH))
 
     def start_event_pump(self, session_id: str, events: EventSource | None) -> None:
         if self._hub is None or events is None:
@@ -198,6 +202,7 @@ def _resolved_payload(request: ApprovalRequest) -> dict[str, Any]:
     raw: dict[str, Any] = {
         "approval_id": str(request.id),
         "outcome": request.status.value,
+        "native_request_ref": request.native_request_ref,
     }
     if decision is not None:
         raw["decision"] = decision

@@ -46,10 +46,69 @@ async def test_squash_review_integrate_clean_keeps_session(tmp_path, repository)
     await sessions.delete_session(session.id)
 
 
+@pytest.mark.parametrize("strategy", ["squash", "merge"])
+@pytest.mark.parametrize("after_integration", [False, True])
+async def test_cleanup_requires_explicit_ignored_file_discard(
+    tmp_path, repository, strategy, after_integration
+):
+    sessions = await service(tmp_path)
+    session, worktree = await create(sessions, repository, "feature")
+    path = Path(worktree.path)
+    (path / "file.txt").write_text("changed\n")
+    cache = path / ".pytest_cache"
+    if after_integration:
+        await integrate(sessions, session, "main", strategy)
+    cache.mkdir()
+    (cache / ".gitignore").write_text("*\n")
+    (cache / "nodeids").write_text("cached tests\n")
+    if not after_integration:
+        await integrate(sessions, session, "main", strategy)
+    with pytest.raises(ProtectionError) as error:
+        await sessions.worktrees.finish(session.id)
+    assert error.value.code == "worktree_ignored_files"
+    assert (cache / "nodeids").read_text() == "cached tests\n"
+    assert (await sessions.worktrees.get(session.id)).state == "ready"
+    with pytest.raises(ProtectionError):
+        await sessions.delete_session(session.id)
+    closed = await sessions.worktrees.finish(session.id, discard_ignored=True)
+    assert closed.state == "closed"
+    assert not path.exists()
+    assert not git(repository, "branch", "--list", "feature")
+    assert (repository / "file.txt").read_text() == "changed\n"
+
+
+@pytest.mark.parametrize("change", ["tracked", "untracked", "commit", "destination"])
+async def test_ignored_file_discard_preserves_unintegrated_work(tmp_path, repository, change):
+    sessions = await service(tmp_path)
+    session, worktree = await create(sessions, repository)
+    path = Path(worktree.path)
+    (path / "file.txt").write_text("integrated\n")
+    await integrate(sessions, session, "main")
+    cache = path / ".pytest_cache"
+    cache.mkdir()
+    (cache / ".gitignore").write_text("*\n")
+    (cache / "nodeids").write_text("keep\n")
+    if change == "untracked":
+        (path / "new.txt").write_text("not integrated\n")
+    elif change == "destination":
+        git(repository, "update-ref", "refs/heads/main", worktree.base_commit)
+    else:
+        (path / "file.txt").write_text("not integrated\n")
+        if change == "commit":
+            git(path, "commit", "-am", "New work")
+    with pytest.raises(ProtectionError) as error:
+        await sessions.worktrees.finish(session.id, discard_ignored=True)
+    assert error.value.code == "worktree_has_changes"
+    assert (cache / "nodeids").read_text() == "keep\n"
+    assert (await sessions.worktrees.get(session.id)).state == "ready"
+    assert git(repository, "branch", "--list", worktree.branch)
+
+
 async def test_remote_default_and_ambiguous_local_branches(tmp_path, repository):
     sessions = await service(tmp_path)
     git(repository, "branch", "trunk")
     _session, worktree = await create(sessions, repository)
+    worktree = dataclasses.replace(worktree, base_ref=worktree.base_commit)
     assert worktree_integration.branches(worktree)[1] is None
     git(repository, "remote", "add", "origin", str(tmp_path / "remote.git"))
     git(repository, "update-ref", "refs/remotes/origin/trunk", "HEAD")
@@ -87,12 +146,15 @@ async def test_dirty_target_and_conflicts_leave_target_untouched(tmp_path, repos
     path = Path(worktree.path)
     (path / "file.txt").write_text("feature\n")
     (repository / "untracked").write_text("keep")
+    (path / "untracked").write_text("source")
     preview = await sessions.worktrees.preview(session.id, "main", "squash")
     assert preview.target_dirty
     with pytest.raises(ProtectionError) as error:
         await integrate(sessions, session, "main")
-    assert error.value.code == "worktree_target_dirty"
+    assert error.value.code == "worktree_target_conflicts"
+    assert (repository / "untracked").read_text() == "keep"
     (repository / "untracked").unlink()
+    (path / "untracked").unlink()
     (repository / "file.txt").write_text("target\n")
     git(repository, "commit", "-am", "Target change")
     head = git(repository, "rev-parse", "HEAD")
@@ -168,7 +230,8 @@ async def test_recover_integration_after_target_update(tmp_path, repository):
     await sessions.worktrees.finish(session.id)
 
 
-async def test_cleanup_preserves_ignored_and_staged_only_content(tmp_path, repository):
+@pytest.mark.parametrize("discard_ignored", [False, True])
+async def test_cleanup_preserves_staged_only_content(tmp_path, repository, discard_ignored):
     sessions = await service(tmp_path)
     session, worktree = await create(sessions, repository)
     path = Path(worktree.path)
@@ -177,7 +240,7 @@ async def test_cleanup_preserves_ignored_and_staged_only_content(tmp_path, repos
     (path / "file.txt").write_text("final\n")
     await integrate(sessions, session, "main")
     with pytest.raises(ProtectionError):
-        await sessions.worktrees.finish(session.id)
+        await sessions.worktrees.finish(session.id, discard_ignored=discard_ignored)
     assert git(path, "show", ":file.txt") == "staged"
 
 
@@ -287,6 +350,7 @@ async def test_initial_branch_config_is_not_a_repository_default(tmp_path, repos
     git(repository, "branch", "develop")
     sessions = await service(tmp_path)
     _session, worktree = await create(sessions, repository)
+    worktree = dataclasses.replace(worktree, base_ref=worktree.base_commit)
     assert worktree_integration.branches(worktree)[1] is None
 
 
@@ -298,4 +362,6 @@ async def test_default_follows_local_branch_tracking_remote_head(tmp_path, repos
     git(repository, "branch", "--set-upstream-to", "origin/trunk", "local-default")
     sessions = await service(tmp_path)
     _session, worktree = await create(sessions, repository)
+    assert worktree_integration.branches(worktree)[1] == "main"
+    worktree = dataclasses.replace(worktree, base_ref=worktree.base_commit)
     assert worktree_integration.branches(worktree)[1] == "local-default"

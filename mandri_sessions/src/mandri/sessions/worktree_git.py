@@ -67,22 +67,30 @@ def random_id() -> str:
     return "-".join(secrets.choice(words) for words in (_ADJECTIVES, _COLORS, _NOUNS))
 
 
+def environment(index: str | None = None) -> dict[str, str]:
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    if index is not None:
+        env["GIT_INDEX_FILE"] = index
+    return env
+
+
 def git(
     cwd: str | Path,
     *args: str,
     check: bool = True,
     index: str | None = None,
+    input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    if index is not None:
-        env["GIT_INDEX_FILE"] = index
+    env = environment(index)
     try:
         result = subprocess.run(
             ["git", "-c", f"core.hooksPath={os.devnull}", "-C", str(cwd), *args],
             env=env,
             capture_output=True,
             text=True,
+            input=input,
             timeout=120,
         )
     except (OSError, subprocess.TimeoutExpired) as error:

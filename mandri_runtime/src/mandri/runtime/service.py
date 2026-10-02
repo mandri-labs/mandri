@@ -744,6 +744,10 @@ class RuntimeService:
                     raise SessionRunningError("Stop the session before changing its worktree")
                 if record.native_id is not None:
                     owner = await self._sessions.native_ownership(SessionId(session_id))
+                    if owner.owner is SessionOwner.UNKNOWN:
+                        raise ProtectionError(
+                            "session_ownership_unknown", "Cannot verify native session ownership"
+                        )
                     if owner.owner is not SessionOwner.UNOWNED:
                         raise SessionRunningError(
                             "Stop the native writer before changing its worktree"
@@ -781,9 +785,9 @@ class RuntimeService:
         async with self._worktree_operation(session_id) as sessions:
             await sessions.worktrees.resolve(SessionId(session_id), target, strategy, token)
 
-    async def finish_worktree(self, session_id: str) -> None:
+    async def finish_worktree(self, session_id: str, *, discard_ignored: bool = False) -> None:
         async with self._worktree_operation(session_id) as sessions:
-            await sessions.worktrees.finish(SessionId(session_id))
+            await sessions.worktrees.finish(SessionId(session_id), discard_ignored=discard_ignored)
 
     async def _rollback_worktree(self, session_id: str) -> None:
         if self._sessions is not None:
@@ -1550,7 +1554,10 @@ class RuntimeService:
             checkpoint = self._session_state(session_id).pi_checkpoint
             if checkpoint is not None:
                 await asyncio.to_thread(checkpoint.recover)
-            await self._persist_execution_exit(session_id, ExecutionPhase.STOPPED, process=process)
+            terminal_phase = (
+                ExecutionPhase.FAILED if cause is SessionStopCause.CRASH else ExecutionPhase.STOPPED
+            )
+            await self._persist_execution_exit(session_id, terminal_phase, process=process)
             await self._cancel_session_tasks(session_id)
             await self._close_approvals(session_id)
             await self._close_control(session_id)
@@ -1749,14 +1756,20 @@ class RuntimeService:
             await asyncio.shield(stdout_task)
         except asyncio.CancelledError:
             return
+        except Exception:
+            _logger.warning("session %s stdout feed failed", session_id, exc_info=True)
         state = self._session_state(session_id)
-        if not state.stopping and not state.resuming:
-            self._events.emit_unexpected_end_signals(session_id)
+        if state.stopping or state.resuming or self._registry.status(session_id) != LIVE:
+            return
+        kind = harness_kind(self._registry.harness_of(session_id) or "")
+        if kind is not None:
+            self._events.publish_control_lost(session_id, kind)
         process = self._registry.process(session_id)
-        if state.agy is not None and process is not None and process.returncode is None:
-            await process.stop(grace=1.0)
-        await self._close_control(session_id)
-        await self._events.stop_liveness_adapter(session_id)
+        if process is not None:
+            with contextlib.suppress(SessionNotRunningError):
+                await self.stop_session(
+                    session_id, grace=1.0, cause=SessionStopCause.CRASH, restore_native=False
+                )
 
     def _attach_control(
         self,

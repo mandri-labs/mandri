@@ -303,16 +303,40 @@ async def test_unowned_session_integrates_with_a_fresh_runtime(
     runtime._spawn_harness.assert_not_called()
 
 
+async def test_finish_worktree_forwards_ignored_file_discard(repository, sessions):
+    session = await sessions.create_session(HarnessKind.CLAUDE, initial_state=SessionState.STOPPED)
+    worktree = await sessions.worktrees.prepare(session.id, str(repository), "feature")
+    path = Path(worktree.path)
+    (path / "file.txt").write_text("changed\n")
+    cache = path / ".pytest_cache"
+    cache.mkdir()
+    (cache / ".gitignore").write_text("*\n")
+    runtime = runtime_for(sessions)
+    plan = await runtime.preview_worktree(str(session.id), "main", "squash")
+    await runtime.integrate_worktree(str(session.id), "main", "squash", plan.token, "Feature")
+    with pytest.raises(ProtectionError) as error:
+        await runtime.finish_worktree(str(session.id))
+    assert error.value.code == "worktree_ignored_files"
+    assert cache.exists()
+    await runtime.finish_worktree(str(session.id), discard_ignored=True)
+    assert (await sessions.get_session(session.id)).worktree.state == "closed"
+    assert not path.exists()
+
+
 @pytest.mark.parametrize("owner", [SessionOwner.EXTERNAL, SessionOwner.UNKNOWN])
-async def test_stale_live_worktree_still_requires_proven_absence_of_a_writer(
-    repository, sessions, owner
+@pytest.mark.parametrize("stored_state", [SessionState.LIVE, SessionState.STOPPED])
+async def test_worktree_requires_proven_absence_of_a_writer(
+    repository, sessions, owner, stored_state
 ):
-    session = await sessions.create_session(HarnessKind.CLAUDE, initial_state=SessionState.LIVE)
+    session = await sessions.create_session(HarnessKind.CLAUDE, initial_state=stored_state)
     await sessions.worktrees.prepare(session.id, str(repository), "feature")
     await sessions.reveal_native_id(session.id, HarnessSessionId("synthetic-native-session"))
     sessions.native_ownership = AsyncMock(return_value=NativeOwnership(owner))
     runtime = runtime_for(sessions)
-    with pytest.raises(SessionRunningError):
+    expected_error = ProtectionError if owner is SessionOwner.UNKNOWN else SessionRunningError
+    with pytest.raises(expected_error) as error:
         await runtime.preview_worktree(str(session.id), "main", "squash")
-    assert (await sessions.get_session(session.id)).state is SessionState.LIVE
+    if owner is SessionOwner.UNKNOWN:
+        assert error.value.code == "session_ownership_unknown"
+    assert (await sessions.get_session(session.id)).state is stored_state
     runtime._spawn_harness.assert_not_called()

@@ -33,3 +33,20 @@ def test_handled_extension_command_does_not_wait_for_nonexistent_agent_run():
         }
     )
     assert not tracker.working_state(session).busy
+
+
+def test_root_state_does_not_clear_uncertainty_about_missing_dialog_events():
+    tracker = WorkingStateTracker()
+    session = SessionId("managed")
+    tracker.register(session)
+    adapter = PiLivenessAdapter(Hub(), Topic("pi-test"), tracker, session)
+    adapter._absorb({"type": "gap"})
+    adapter._observe(
+        {
+            "type": "response",
+            "command": "get_state",
+            "success": True,
+            "data": {"isStreaming": False, "pendingMessageCount": 0},
+        }
+    )
+    assert tracker.working_state(session).uncertain

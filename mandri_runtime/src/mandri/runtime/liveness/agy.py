@@ -4,6 +4,7 @@ from typing import Any
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
 from mandri.core.ids import SessionId
+from mandri.runtime.liveness.degradation import is_stream_degradation
 from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
 from mandri.runtime.liveness.port import LivenessPort
 
@@ -70,6 +71,10 @@ class AgyLivenessAdapter:
                 return
             self._seq = seq
         payload = frame.get("payload")
+        if isinstance(payload, dict) and is_stream_degradation(payload):
+            self._uncertain = True
+            self._emit(LivenessEvidenceKind.STATE_UNCERTAIN)
+            return
         if not isinstance(payload, dict) or payload.get("source") != "agy" or "type" in payload:
             return
         raw = payload.get("raw")
@@ -186,3 +191,4 @@ class AgyLivenessAdapter:
         self._sync_background()
         if self._root_idle and not self._children:
             self._uncertain = False
+            self._emit(LivenessEvidenceKind.STATE_SYNCED)

@@ -14,6 +14,9 @@ class IntegrationPreview:
     files: list[str] = field(default_factory=list)
     conflicts: list[str] = field(default_factory=list)
     target_dirty: bool = False
+    target_conflicts: list[str] = field(default_factory=list)
+    target_path: str | None = None
+    target_error: str | None = None
     source_head: str = ""
     source_tree: str = ""
     target_head: str = ""

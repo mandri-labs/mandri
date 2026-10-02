@@ -13,6 +13,7 @@ from mandri.core.types.prompt import UserPrompt
 from mandri.runtime.codex_request_ids import request_reference
 from mandri.runtime.control.agents.codex import CodexAgentControl
 from mandri.runtime.control.codex_commands import CodexCommands
+from mandri.runtime.control.codex_liveness import CodexLivenessSnapshot, read_queue, read_snapshot
 from mandri.runtime.control.errors import (
     ControlError,
     ControlTransportError,
@@ -259,6 +260,12 @@ class CodexControlAdapter:
 
     async def read_usage_limits(self) -> dict[str, Any]:
         return await self.read_account_rate_limits()
+
+    async def read_queue(self) -> bool:
+        return await read_queue(self._call, self._require_thread())
+
+    async def read_liveness(self) -> CodexLivenessSnapshot:
+        return await read_snapshot(self._call, self._require_thread())
 
     async def read_account_rate_limits(self) -> dict[str, Any]:
         message = await self._call("account/rateLimits/read", {})

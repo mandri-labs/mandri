@@ -98,6 +98,20 @@ def test_integration_review_requires_no_assumed_main_and_forwards_strategy(make_
     )
 
 
+def test_integration_review_reports_unverified_ownership(make_client):
+    runtime = SimpleNamespace(
+        preview_worktree=AsyncMock(
+            side_effect=ProtectionError(
+                "session_ownership_unknown", "Cannot verify native session ownership"
+            )
+        )
+    )
+    client = make_client({runtime_service: lambda: runtime})
+    response = client.get(f"/v1/sessions/{SESSION_ID}/worktree/integration")
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "session_ownership_unknown"
+
+
 def test_integration_and_cleanup_report_protection_failures(make_client):
     runtime = SimpleNamespace(
         integrate_worktree=AsyncMock(
@@ -119,6 +133,19 @@ def test_integration_and_cleanup_report_protection_failures(make_client):
     response = client.post(f"/v1/sessions/{SESSION_ID}/worktree/finish")
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "worktree_has_changes"
+    runtime.finish_worktree.assert_awaited_once_with(SESSION_ID, discard_ignored=False)
+    runtime.finish_worktree.reset_mock()
+    runtime.finish_worktree.side_effect = ProtectionError("worktree_ignored_files", "Ignored")
+    response = client.post(f"/v1/sessions/{SESSION_ID}/worktree/finish?discard_ignored=true")
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "worktree_ignored_files"
+    runtime.finish_worktree.assert_awaited_once_with(SESSION_ID, discard_ignored=True)
+    assert (
+        client.post(
+            f"/v1/sessions/{SESSION_ID}/worktree/finish?discard_ignored=invalid"
+        ).status_code
+        == 422
+    )
     response = client.post(f"/v1/sessions/{SESSION_ID}/worktree/resolve", json=body)
     assert response.status_code == 204
     runtime.resolve_worktree.assert_awaited_once_with(SESSION_ID, "trunk", "merge", "a" * 64)

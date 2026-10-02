@@ -6,6 +6,7 @@ from pathlib import Path
 from mandri.core.types.execution import ProtectionError
 from mandri.core.types.worktree_integration import IntegrationPreview, IntegrationStrategy
 from mandri.core.types.worktrees import Worktree
+from mandri.sessions import worktree_projection, worktree_transaction
 from mandri.sessions.worktree_git import branch_exists, git, registered, validate
 
 
@@ -22,6 +23,9 @@ def branches(worktree: Worktree) -> tuple[list[str], str | None]:
         worktree.repository, "for-each-ref", "--format=%(refname:strip=2)", "refs/heads"
     ).stdout.splitlines()
     names = [name for name in names if name != worktree.branch]
+    base_branch = worktree.base_ref.removeprefix("refs/heads/")
+    if worktree.base_ref.startswith("refs/heads/") and base_branch in names:
+        return names, base_branch
     remotes = git(worktree.repository, "remote").stdout.splitlines()
     preferred = "origin" if "origin" in remotes else remotes[0] if len(remotes) == 1 else None
     if preferred:
@@ -75,9 +79,12 @@ def snapshot(worktree: Worktree) -> tuple[str, str, str]:
     if current != f"refs/heads/{worktree.branch}":
         fail("worktree_unavailable", "The session branch changed")
     head = git(worktree.path, "rev-parse", "HEAD").stdout.strip()
-    index_tree = git(worktree.path, "write-tree").stdout.strip()
     with tempfile.TemporaryDirectory(prefix="mandri-index-") as directory:
-        index = str(Path(directory) / "index")
+        index_file = Path(directory) / "index"
+        index_file.write_bytes(worktree_projection.index_path(worktree.path).read_bytes())
+        index = str(index_file)
+        index_tree = git(worktree.path, "write-tree", index=index).stdout.strip()
+        index_file.unlink()
         git(worktree.path, "read-tree", index_tree, index=index)
         git(worktree.path, "add", "--all", "--", ".", index=index)
         tree = git(worktree.path, "write-tree", index=index).stdout.strip()
@@ -108,15 +115,17 @@ def temporary_commit(worktree: Worktree, head: str, tree: str) -> str:
     ).stdout.strip()
 
 
-def preview(
+def _preview(
     worktree: Worktree,
     target: str | None,
     strategy: IntegrationStrategy,
-) -> IntegrationPreview:
+) -> tuple[IntegrationPreview, worktree_projection.DestinationPlan]:
     names, default = branches(worktree)
     target = target or default
     if not target:
-        return IntegrationPreview(branches=names, default_branch=default, strategy=strategy)
+        return IntegrationPreview(
+            branches=names, default_branch=default, strategy=strategy
+        ), worktree_projection.DestinationPlan(None)
     if target not in names:
         fail("worktree_invalid_target", "Select an existing local destination branch")
     head, tree, index_tree = snapshot(worktree)
@@ -151,15 +160,31 @@ def preview(
     result_tree = fields[0]
     conflicts = fields[1 : fields.index("", 1)] if result.returncode else []
     location = checkout(worktree, target)
-    dirty = False
-    if location:
-        dirty = bool(git(location, "status", "--porcelain", "--untracked-files=all").stdout)
-        try:
+    target_error = None
+    try:
+        if location:
             idle_git(location)
-        except ProtectionError as error:
-            if error.code != "worktree_git_busy":
-                raise
-            dirty = True
+            if worktree_projection.index_path(location).with_name("index.lock").exists():
+                fail("worktree_git_busy", "The destination index is locked")
+            if git(location, "rev-parse", "HEAD").stdout.strip() != target_head:
+                fail("worktree_target_changed", "The destination checkout changed")
+        destination = worktree_projection.project(
+            location, result_tree, source_conflicts=bool(conflicts)
+        )
+        dirty = destination.dirty
+    except ProtectionError as error:
+        if not location or error.code not in {"worktree_target_unsupported", "worktree_git_busy"}:
+            raise
+        target_error = error.code
+        destination = worktree_projection.DestinationPlan(
+            location,
+            git(location, "symbolic-ref", "-q", "HEAD").stdout.strip(),
+            target_head,
+            index_fingerprint=hashlib.sha256(
+                worktree_projection.index_path(location).read_bytes()
+            ).hexdigest(),
+        )
+        dirty = bool(git(location, "status", "--porcelain", "--untracked-files=all").stdout)
     fingerprint = [
         target,
         strategy,
@@ -168,6 +193,8 @@ def preview(
         index_tree,
         target_head,
         conflicts if conflicts else result_tree,
+        destination.fingerprint(),
+        target_error,
     ]
     token = hashlib.sha256(json.dumps(fingerprint).encode()).hexdigest()
     diff_base = git(worktree.repository, "merge-base", head, target_head).stdout.strip()
@@ -202,12 +229,21 @@ def preview(
         files=[name for name in files if name],
         conflicts=conflicts,
         target_dirty=dirty,
+        target_conflicts=destination.conflicts,
+        target_path=location,
+        target_error=target_error,
         source_head=head,
         source_tree=tree,
         target_head=target_head,
         result_tree=result_tree,
         strategy=strategy,
-    )
+    ), destination
+
+
+def preview(
+    worktree: Worktree, target: str | None, strategy: IntegrationStrategy
+) -> IntegrationPreview:
+    return _preview(worktree, target, strategy)[0]
 
 
 def reviewed(
@@ -227,10 +263,18 @@ def create_commit(worktree: Worktree, plan: IntegrationPreview, message: str) ->
         fail("worktree_commit_message", "Enter a commit message")
     if plan.conflicts:
         fail("worktree_conflicts", "Resolve conflicts in the session worktree first")
-    if plan.target_dirty:
-        fail("worktree_target_dirty", "The destination checkout has local changes")
+    if plan.target_conflicts:
+        fail(
+            "worktree_target_conflicts",
+            "Destination local changes conflict: " + ", ".join(plan.target_conflicts),
+        )
     if not plan.files:
         fail("worktree_no_changes", "There are no changes to integrate")
+    if plan.target_error:
+        fail(
+            plan.target_error,
+            "Choose another destination branch or resolve its Git state",
+        )
     parents = ["-p", plan.target_head]
     if plan.strategy == "merge":
         source = plan.source_head
@@ -257,20 +301,11 @@ def create_commit(worktree: Worktree, plan: IntegrationPreview, message: str) ->
 
 
 def apply(worktree: Worktree, plan: IntegrationPreview, commit: str) -> None:
-    reviewed(worktree, plan.target or "", plan.strategy, plan.token or "")
-    location = checkout(worktree, plan.target or "")
-    if location:
-        if git(location, "status", "--porcelain", "--untracked-files=all").stdout:
-            fail("worktree_target_dirty", "The destination checkout has local changes")
-        git(
-            location,
-            "merge",
-            "--ff-only",
-            "--no-edit",
-            "--no-autostash",
-            "--no-overwrite-ignore",
-            commit,
-        )
+    current, destination = _preview(worktree, plan.target or "", plan.strategy)
+    if current.token != plan.token:
+        fail("worktree_preview_changed", "Changes detected since review; refresh the preview")
+    if destination.path:
+        worktree_transaction.apply(worktree, destination, commit, plan.target_head)
     else:
         git(
             worktree.repository,
@@ -300,7 +335,13 @@ def integrated(worktree: Worktree) -> bool:
     )
 
 
-def can_clean(worktree: Worktree) -> bool:
+def has_ignored_files(worktree: Worktree) -> bool:
+    return bool(
+        git(worktree.path, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").stdout
+    )
+
+
+def can_clean(worktree: Worktree, *, discard_ignored: bool = False) -> bool:
     if not integrated(worktree):
         return False
     if not registered(worktree):
@@ -313,11 +354,10 @@ def can_clean(worktree: Worktree) -> bool:
             == worktree.integrated_head
         )
     head, tree, index_tree = snapshot(worktree)
-    ignored = git(worktree.path, "ls-files", "--others", "--ignored", "--exclude-standard").stdout
     head_tree = git(worktree.path, "rev-parse", f"{head}^{{tree}}").stdout.strip()
     if index_tree not in {head_tree, tree}:
         return False
-    return not ignored and (head, tree, index_tree) == (
+    return (discard_ignored or not has_ignored_files(worktree)) and (head, tree, index_tree) == (
         worktree.integrated_head,
         worktree.integrated_tree,
         worktree.integrated_index,

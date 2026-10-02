@@ -127,10 +127,26 @@ def test_resynced_evidence_resolves_uncertainty() -> None:
     tracker.observe(LivenessEvidence(session_id=sid, kind=LivenessEvidenceKind.TURN_STARTED))
     state = tracker.working_state(sid)
     assert state.busy
-    assert not state.uncertain
-    assert state.reasons == frozenset({BusyReason.TURN_ACTIVE})
+    assert state.uncertain
+    tracker.observe(LivenessEvidence(session_id=sid, kind=LivenessEvidenceKind.STATE_SYNCED))
+    assert not tracker.working_state(sid).uncertain
     tracker.observe(LivenessEvidence(session_id=sid, kind=LivenessEvidenceKind.TURN_ENDED))
     assert tracker.working_state(sid) == WorkingState()
+
+
+def test_partial_approval_resolution_does_not_clear_gap_uncertainty():
+    tracker = WorkingStateTracker()
+    sid = SessionId("session")
+    tracker.register(sid)
+    for kind in (
+        LivenessEvidenceKind.STATE_UNCERTAIN,
+        LivenessEvidenceKind.APPROVAL_OPENED,
+        LivenessEvidenceKind.APPROVAL_CLOSED,
+        LivenessEvidenceKind.TURN_ENDED,
+    ):
+        tracker.observe(LivenessEvidence(sid, kind))
+    assert tracker.working_state(sid).busy
+    assert tracker.working_state(sid).uncertain
 
 
 def test_forget_drops_state_until_reregistered() -> None:

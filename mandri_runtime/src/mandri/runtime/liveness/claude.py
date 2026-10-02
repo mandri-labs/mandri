@@ -7,6 +7,7 @@ from typing import Any, final
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
 from mandri.core.ids import SessionId
+from mandri.runtime.liveness.degradation import is_stream_degradation
 from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
 from mandri.runtime.liveness.port import LivenessPort
 
@@ -36,6 +37,8 @@ class ClaudeLivenessAdapter:
         self._last_seq = since
         self._turn_active = False
         self._stopped = False
+        self._background_tasks: set[str] = set()
+        self._pending_approvals: set[str] = set()
 
     def start(self) -> None:
         self._stopped = False
@@ -112,7 +115,16 @@ class ClaudeLivenessAdapter:
         if isinstance(seq, int):
             self._last_seq = seq
         payload = frame.get("payload")
-        if not isinstance(payload, dict) or "type" in payload:
+        if not isinstance(payload, dict):
+            return False
+        raw = payload.get("raw")
+        if payload.get("type") == "approval.resolved" and isinstance(raw, dict):
+            self._close_approval(raw.get("native_request_ref"))
+            return False
+        if "type" in payload:
+            return False
+        if is_stream_degradation(payload):
+            self._observe_uncertain()
             return False
         if payload.get("source") != CLAUDE_SOURCE:
             return False
@@ -146,24 +158,54 @@ class ClaudeLivenessAdapter:
             self._translate_system(raw)
             return
         if frame_type == "control_request":
-            if raw.get("subtype") == "can_use_tool":
+            request = raw.get("request")
+            details = request if isinstance(request, dict) else raw
+            if details.get("subtype") == "can_use_tool":
+                request_id = raw.get("request_id")
+                if not isinstance(request_id, str):
+                    self._observe_uncertain()
+                    return
+                self._pending_approvals.add(request_id)
                 self._emit(LivenessEvidenceKind.APPROVAL_OPENED)
             return
         if frame_type == "control_response":
+            response = raw.get("response")
+            details = response if isinstance(response, dict) else raw
+            self._close_approval(details.get("request_id"))
+
+    def _close_approval(self, reference: Any) -> None:
+        if not isinstance(reference, str) or reference not in self._pending_approvals:
+            return
+        self._pending_approvals.discard(reference)
+        if not self._pending_approvals:
             self._emit(LivenessEvidenceKind.APPROVAL_CLOSED)
 
     def _translate_system(self, raw: dict[str, Any]) -> None:
         subtype = raw.get("subtype")
         if subtype == "task_started":
+            task_id = raw.get("task_id")
+            if not isinstance(task_id, str):
+                self._observe_uncertain()
+                return
+            self._background_tasks.add(task_id)
             self._emit(LivenessEvidenceKind.BACKGROUND_STARTED)
             return
         if subtype == "task_progress":
             return
         if subtype == "task_notification":
             if raw.get("status") in _TERMINAL_TASK_NOTIFICATION_STATUSES:
-                self._emit(LivenessEvidenceKind.BACKGROUND_ENDED)
+                self._close_task(raw)
             return
         if subtype == "task_updated" and raw.get("status") in _TERMINAL_TASK_UPDATED_STATUSES:
+            self._close_task(raw)
+
+    def _close_task(self, raw: dict[str, Any]) -> None:
+        task_id = raw.get("task_id")
+        if not isinstance(task_id, str):
+            self._observe_uncertain()
+            return
+        self._background_tasks.discard(task_id)
+        if not self._background_tasks:
             self._emit(LivenessEvidenceKind.BACKGROUND_ENDED)
 
     def _observe_turn_started(self) -> None:

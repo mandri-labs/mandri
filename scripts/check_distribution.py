@@ -21,7 +21,7 @@ RESOURCE_FILES = {
     "core/resources/pi_managed.ts",
     "core/resources/pi_permissions.ts",
     "core/resources/pi_usage.ts",
-    "daemon/usage_price_catalog.NOTICE",
+    "daemon/usage_catalog_sources.NOTICE",
     "gateway/tokenizers/9b5ad71b2ce5302211f9c61530b329a4922fc6a4",
     "gateway/tokenizers/LICENSE",
     "runtime/security/worker-seccomp.json",

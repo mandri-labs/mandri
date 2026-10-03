@@ -9,7 +9,14 @@ from mandri.runtime.liveness.codex import CodexLivenessAdapter
 from mandri.runtime.liveness.opencode import OpencodeLivenessAdapter
 from mandri.runtime.liveness.pi import PiLivenessAdapter
 from mandri.runtime.liveness.port import LivenessPort
-from mandri.runtime.session_state import LivenessAdapter
+
+LivenessAdapter = (
+    ClaudeLivenessAdapter
+    | CodexLivenessAdapter
+    | OpencodeLivenessAdapter
+    | AgyLivenessAdapter
+    | PiLivenessAdapter
+)
 
 
 def liveness_adapter(

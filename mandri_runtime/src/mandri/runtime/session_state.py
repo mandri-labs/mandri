@@ -8,24 +8,11 @@ from mandri.core.types.model_selection import ModelSource
 from mandri.runtime.agy_launch import AgyLaunch
 from mandri.runtime.approvals.watcher import ApprovalWatcher
 from mandri.runtime.control.agy_commands import AgyCommandRunner
-from mandri.runtime.liveness import (
-    ClaudeLivenessAdapter,
-    CodexLivenessAdapter,
-    OpencodeLivenessAdapter,
-)
-from mandri.runtime.liveness.agy import AgyLivenessAdapter
-from mandri.runtime.liveness.pi import PiLivenessAdapter
+from mandri.runtime.liveness.factory import LivenessAdapter as LivenessAdapter
 from mandri.runtime.pi_session_paths import PiSessionCheckpoint
 from mandri.runtime.session_feed import SessionFeed
 from mandri.sessions.usage.types import NativeUsageContext
 
-LivenessAdapter = (
-    ClaudeLivenessAdapter
-    | CodexLivenessAdapter
-    | OpencodeLivenessAdapter
-    | AgyLivenessAdapter
-    | PiLivenessAdapter
-)
 ModelSelection = tuple[ModelSource, str, str | None]
 
 

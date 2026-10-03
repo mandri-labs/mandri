@@ -239,7 +239,7 @@ async def test_git_filters_must_roundtrip_affected_destination_files(
     if roundtrip:
         assert preview.target_error is None
         await sessions.worktrees.integrate(session.id, "main", "squash", preview.token, "Feature")
-        assert (repository / "file.txt").read_bytes() == b"INCOMING\n"
+        assert (repository / "file.txt").read_bytes() == before.replace(b"INITIAL", b"INCOMING")
         assert git(repository, "show", "HEAD:file.txt") == "incoming"
     else:
         assert preview.target_error == "worktree_target_unsupported"

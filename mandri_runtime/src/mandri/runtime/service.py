@@ -1815,6 +1815,7 @@ class RuntimeService:
                 on_identity=None
                 if kind is HarnessKind.PI
                 else self._on_identity(session_id, resume_native_id),
+                native_session_id=str(resume_native_id) if resume_native_id is not None else None,
                 on_conversation_reset=self._on_conversation_reset(session_id, process),
                 on_session_path=remember_session_path,
                 on_model_selection=lambda model, effort: self._observe_pi_selection(

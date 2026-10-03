@@ -224,6 +224,7 @@ def _stdio_adapters(context: AdapterContext) -> HarnessAdapters | None:
             stdin=stdin,
             on_identity=context.on_identity,
             on_conversation_reset=context.on_conversation_reset,
+            resumed=context.native_session_id is not None,
         )
         delivery = ClaudeApprovalMessenger(stdin=stdin)
     elif context.kind is HarnessKind.PI:

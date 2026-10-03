@@ -52,7 +52,7 @@ class ClaudeSdkFetchSessionsAdapter(FetchSessionsPort):
             id=SessionId(info.session_id),
             harness=HarnessKind.CLAUDE,
             native_id=HarnessSessionId(info.session_id),
-            native_title=SessionTitle(info.custom_title or info.summary),
+            native_title=SessionTitle(info.custom_title or info.first_prompt or "untitled"),
             title_overlay=None,
             project_path=ProjectPath(info.cwd or ""),
             created_at=EpochMs(

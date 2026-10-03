@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, final
@@ -10,7 +11,7 @@ from typing import Any, final
 from mandri.core.ids import ApprovalDecision, ApprovalStatus, HarnessSessionId, ModeApplication
 from mandri.core.ports.control import ControlRequest, ControlSink, PromptOutcome, PromptState
 from mandri.core.types.approvals import ApprovalRequest
-from mandri.core.types.prompt import UserPrompt
+from mandri.core.types.prompt import UserPrompt, prompt_text
 from mandri.runtime.control.agents.claude import ClaudeAgentControl
 from mandri.runtime.control.claude_commands import ClaudeCommands
 from mandri.runtime.control.errors import (
@@ -27,6 +28,7 @@ _ACK_TIMEOUT_S = 5.0
 _REQUEST_TIMEOUT_S = 15.0
 _DENY_MESSAGE = "User denied this action in Mandri"
 _MISSING_INPUT: dict[str, Any] = {}
+_logger = logging.getLogger(__name__)
 
 
 @final
@@ -39,6 +41,7 @@ class ClaudeControlAdapter:
         stdin: ControlSink,
         on_identity: Callable[[HarnessSessionId], None] | None = None,
         on_conversation_reset: Callable[[HarnessSessionId], Awaitable[None] | None] | None = None,
+        resumed: bool = False,
     ) -> None:
         self._stdout_pump = stdout_pump
         self._stderr_pump = stderr_pump
@@ -56,6 +59,8 @@ class ClaudeControlAdapter:
         self._commands = ClaudeCommands()
         self._command_discovery_lock = asyncio.Lock()
         self._turn_active = False
+        self._title_requested = resumed
+        self._title_task: asyncio.Task[None] | None = None
 
     async def list_commands(self) -> list[dict[str, Any]]:
         async with self._command_discovery_lock:
@@ -164,7 +169,34 @@ class ClaudeControlAdapter:
             await self._send(frame)
         except ControlTransportError:
             return PromptOutcome(state=PromptState.ERROR, code="prompt_delivery_failed")
+        description = prompt_text(content).strip()
+        if not self._title_requested and description and not description.startswith("/"):
+            self._title_requested = True
+            self._title_task = asyncio.create_task(self._generate_title(description))
         return PromptOutcome(state=PromptState.QUEUED)
+
+    async def _generate_title(self, description: str) -> None:
+        try:
+            await self._identity_set.wait()
+            if self._session_id is None:
+                return
+            request_id = _new_request_id()
+            response = await self._await_ack(
+                request_id,
+                {
+                    "type": "control_request",
+                    "request_id": request_id,
+                    "request": {
+                        "subtype": "generate_session_title",
+                        "description": description,
+                        "persist": True,
+                    },
+                },
+            )
+            if response.get("subtype") != "success":
+                _logger.debug("Claude session title request was rejected")
+        except ControlTransportError:
+            _logger.debug("Claude session title request did not complete")
 
     async def interrupt(self) -> bool:
         self._require_identity()
@@ -181,7 +213,10 @@ class ClaudeControlAdapter:
         self._stdout_pump.close()
         self._stderr_pump.close()
         self._commands.fail("Claude control stream closed; command outcome is unknown")
-        tasks = [task for task in (self._pump_task, self._stderr_task) if task is not None]
+        tasks = [
+            task for task in (self._pump_task, self._stderr_task, self._title_task)
+            if task is not None
+        ]
         for task in tasks:
             task.cancel()
         for task in tasks:
@@ -189,6 +224,7 @@ class ClaudeControlAdapter:
                 await task
         self._pump_task = None
         self._stderr_task = None
+        self._title_task = None
 
     def _approval_payload(
         self, native_request_ref: str, decision: ApprovalDecision
@@ -255,6 +291,9 @@ class ClaudeControlAdapter:
         if kind == "conversation_reset":
             new_id = frame.get("new_conversation_id")
             if isinstance(new_id, str) and new_id and new_id != self._session_id:
+                if self._title_task is not None:
+                    self._title_task.cancel()
+                self._title_requested = False
                 self._session_id = HarnessSessionId(new_id)
                 if self._on_conversation_reset is not None:
                     self._on_conversation_reset(self._session_id)

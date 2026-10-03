@@ -30,7 +30,7 @@ def docker_title(session: Session) -> SessionTitle | None:
         reader = DockerClaudeReader(context)
         lite = _read_session_lite(reader._resolve(context.reference(session)))
         info = _parse_session_info_from_lite(str(session.native_id), lite) if lite else None
-        title = (info.custom_title or info.summary) if info else None
+        title = (info.custom_title or info.first_prompt) if info else None
         return SessionTitle(title) if title else None
     if session.harness is HarnessKind.CODEX:
         home = context.state_root / ".codex"

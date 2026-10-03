@@ -213,7 +213,7 @@ async def test_conditional_policies_of_two_projects_remain_distinct(
             ("user.signingkey", str(signing_key) if signed else str(tmp_path / "missing key")),
         ]:
             git(tmp_path, "config", "--file", str(config), key, value)
-        git(project, "config", f"includeIf.gitdir:{project}/.path", str(config))
+        git(project, "config", f"includeIf.gitdir:{project.as_posix()}/.path", str(config))
         session, worktree = await create(sessions, project, f"agent{number}")
         source = Path(worktree.path)
         assert not source.is_relative_to(project)

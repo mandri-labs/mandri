@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -79,7 +80,7 @@ async def test_live_toggle_preserves_execution_and_reuses_scope(store, backend):
     assert (await routes.get(RouteId("route"))).privacy_mode is PrivacyMode.NONE
     reenabled = await runtime.set_session_privacy("session", PrivacyMode.SURROGATE)
     assert reenabled.privacy_scope_id == "scope" and reenabled.policy_revision == 4
-    scopes.create.assert_awaited_once_with("/workspace")
+    scopes.create.assert_awaited_once_with(str(Path("/workspace")))
     scopes.validate.assert_awaited_once_with("scope")
     scopes.delete.assert_not_called()
     assert runtime._session_state("session").policy == reenabled.policy

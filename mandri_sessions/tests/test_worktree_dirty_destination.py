@@ -44,7 +44,7 @@ async def test_dirty_destination_keeps_each_local_layer_out_of_commit(
     target_index = index_path(str(repository)).read_bytes()
     preview = await sessions.worktrees.preview(session.id, None, strategy)
     assert preview.target == "main"
-    assert preview.target_path == str(repository)
+    assert Path(preview.target_path) == repository
     assert preview.target_dirty
     assert not preview.target_conflicts
     assert index_path(str(repository)).read_bytes() == target_index

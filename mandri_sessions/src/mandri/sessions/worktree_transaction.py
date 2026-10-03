@@ -1,9 +1,11 @@
 import contextlib
+import ctypes
 import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -20,6 +22,9 @@ from mandri.sessions.worktree_projection import (
     tree_entries,
     worktree_tree,
 )
+
+_MOVEFILE_REPLACE_EXISTING = 0x1
+_MOVEFILE_WRITE_THROUGH = 0x8
 
 
 def directory(worktree: Worktree) -> Path:
@@ -40,7 +45,18 @@ def durable_write(path: Path, data: bytes) -> None:
         stream.write(data)
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    durable_replace(temporary, path)
+
+
+def durable_replace(source: Path, path: Path) -> None:
+    if sys.platform == "win32":
+        move = ctypes.WinDLL("kernel32", use_last_error=True).MoveFileExW
+        move.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong]
+        move.restype = ctypes.c_int
+        if not move(str(source), str(path), _MOVEFILE_REPLACE_EXISTING | _MOVEFILE_WRITE_THROUGH):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return
+    os.replace(source, path)
     descriptor = os.open(path.parent, os.O_RDONLY)
     try:
         os.fsync(descriptor)
@@ -192,7 +208,7 @@ def install_index(path: str, lock: Path, data: bytes) -> None:
         stream.write(data)
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(lock, index_path(path))
+    durable_replace(lock, index_path(path))
 
 
 def apply(worktree: Worktree, plan: DestinationPlan, commit: str, old: str) -> None:

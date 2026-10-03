@@ -55,7 +55,7 @@ async def test_special_destination_index_is_reviewable_but_never_changed(
     before = index_path(str(repository)).read_bytes()
     review = await sessions.worktrees.preview(session.id, "main", "squash")
     assert review.branches == ["alternate", "main"]
-    assert review.target_path == str(repository)
+    assert Path(review.target_path) == repository
     assert review.target_error == "worktree_target_unsupported"
     with pytest.raises(ProtectionError) as error:
         await sessions.worktrees.integrate(session.id, "main", "squash", review.token, "Feature")
@@ -114,6 +114,8 @@ async def test_destination_changes_invalidate_review_without_touching_any_work(
 async def test_file_modes_and_links_integrate_without_committing_local_content(
     tmp_path, repository, kind, strategy
 ):
+    if kind == "executable" and os.name == "nt":
+        pytest.skip("Windows filesystems do not expose POSIX executable mode changes")
     git(repository, "config", "core.filemode", "true")
     sessions = await service(tmp_path)
     session, worktree = await create(sessions, repository, "feature")

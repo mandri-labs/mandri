@@ -46,6 +46,13 @@ class ChatGptAdapter:
         payload = {key: value for key, value in body.items() if key in _ALLOWED}
         if isinstance(payload.get("input"), str):
             payload["input"] = [{"role": "user", "content": payload["input"]}]
+        if isinstance(payload.get("input"), list):
+            payload["input"] = [
+                {**item, "role": "developer"}
+                if isinstance(item, dict) and item.get("role") == "system"
+                else item
+                for item in payload["input"]
+            ]
         payload.setdefault("instructions", "")
         payload.update(store=False, stream=True)
         headers = dict(request.headers)

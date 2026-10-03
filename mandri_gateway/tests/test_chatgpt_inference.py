@@ -106,7 +106,7 @@ def completed(text):
 
 
 @pytest.mark.parametrize("sparse_terminal", [False, True])
-@pytest.mark.parametrize("model", ["gpt-5.4", "gpt-5.6-luna"])
+@pytest.mark.parametrize("model", ["gpt-5.4", "gpt-5.6-luna", "gpt-6.1-sol"])
 @pytest.mark.parametrize("protected", [False, True])
 @pytest.mark.parametrize("protocol", ["responses", "chat", "anthropic", "gemini"])
 async def test_sdk_bridge_collects_complete_chatgpt_response(
@@ -119,6 +119,7 @@ async def test_sdk_bridge_collects_complete_chatgpt_response(
     guard = EgressGuard(resolved, guard.engine)
     private = "owner-128@example.invalid"
     alias = guard.engine.protect_text(private) if protected else private
+    system = f"Synthetic system context: {alias}"
     consumed = []
     closed = []
     seen = []
@@ -151,6 +152,12 @@ async def test_sdk_bridge_collects_complete_chatgpt_response(
         assert payload["stream"] is True
         assert payload["store"] is False
         assert payload["model"] == model
+        if protocol == "gemini":
+            assert payload["instructions"] == system
+        else:
+            assert payload["input"][0]["role"] == "developer"
+            assert system in json.dumps(payload["input"][0]["content"])
+        assert all(item.get("role") != "system" for item in payload["input"])
         assert request.headers["ChatGPT-Account-ID"] == "synthetic-account"
         assert request.headers["Authorization"] == f"Bearer {token()}"
         if protected:
@@ -164,19 +171,49 @@ async def test_sdk_bridge_collects_complete_chatgpt_response(
     kwargs = {"guard": guard} if protected else {}
     if protocol == "responses":
         result = await ResponsesHandler().responses(
-            resolved, {"input": alias, "stream": False}, **kwargs
+            resolved,
+            {
+                "input": [
+                    {"type": "message", "role": "system", "content": system},
+                    {"role": "user", "content": alias},
+                ],
+                "stream": False,
+            },
+            **kwargs,
         )
     elif protocol == "chat":
         result = await OpenAIHandler().chat_completions(
-            resolved, {"messages": [{"role": "user", "content": alias}]}, **kwargs
+            resolved,
+            {
+                "messages": [
+                    {"role": "system", "content": [{"type": "text", "text": system}]},
+                    {"role": "user", "content": alias},
+                ]
+            },
+            **kwargs,
         )
     elif protocol == "anthropic":
         result = await AnthropicHandler().messages(
-            resolved, {"messages": [{"role": "user", "content": alias}], "max_tokens": 64}, **kwargs
+            resolved,
+            {
+                "system": [{"type": "text", "text": system}],
+                "messages": [
+                    {"role": "system", "content": [{"type": "text", "text": system}]},
+                    {"role": "user", "content": alias},
+                ],
+                "max_tokens": 64,
+            },
+            **kwargs,
         )
     else:
         result = await GeminiHandler().generate_content(
-            resolved, {"contents": [{"role": "user", "parts": [{"text": alias}]}]}, False, **kwargs
+            resolved,
+            {
+                "systemInstruction": {"parts": [{"text": system}]},
+                "contents": [{"role": "user", "parts": [{"text": alias}]}],
+            },
+            False,
+            **kwargs,
         )
     value = result if isinstance(result, dict) else result.model_dump(mode="json")
     assert len(consumed) == len(range(0, len(body), 7))

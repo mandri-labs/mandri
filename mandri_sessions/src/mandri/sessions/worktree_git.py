@@ -2,6 +2,7 @@ import os
 import re
 import secrets
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from mandri.core.types.execution import ProtectionError
@@ -100,6 +101,32 @@ def git(
             "worktree_unavailable", result.stderr.strip() or "Git operation failed"
         )
     return result
+
+
+def commit_tree(worktree: Worktree, tree: str, parents: Sequence[str], message: str) -> str:
+    context = worktree.source_path
+    original = git(context, "rev-parse", "--path-format=absolute", "--git-common-dir", check=False)
+    expected = git(worktree.repository, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if (
+        original.returncode
+        or Path(original.stdout.strip()).resolve() != Path(expected.stdout.strip()).resolve()
+    ):
+        raise ProtectionError(
+            "worktree_unavailable", "The original project Git context is unavailable or changed"
+        )
+    signing = git(context, "config", "--includes", "--bool", "--get", "commit.gpgsign", check=False)
+    if signing.returncode not in (0, 1):
+        raise ProtectionError("worktree_unavailable", signing.stderr.strip())
+    signature = ["-S"] if signing.stdout.strip() == "true" else []
+    return git(
+        context,
+        "commit-tree",
+        tree,
+        *signature,
+        *(argument for parent in parents for argument in ("-p", parent)),
+        "-m",
+        message,
+    ).stdout.strip()
 
 
 def validate_id(value: str) -> str:

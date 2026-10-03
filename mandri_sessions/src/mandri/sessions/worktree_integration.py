@@ -7,7 +7,7 @@ from mandri.core.types.execution import ProtectionError
 from mandri.core.types.worktree_integration import IntegrationPreview, IntegrationStrategy
 from mandri.core.types.worktrees import Worktree
 from mandri.sessions import worktree_projection, worktree_transaction
-from mandri.sessions.worktree_git import branch_exists, git, registered, validate
+from mandri.sessions.worktree_git import branch_exists, commit_tree, git, registered, validate
 
 
 def fail(code: str, message: str) -> None:
@@ -275,29 +275,14 @@ def create_commit(worktree: Worktree, plan: IntegrationPreview, message: str) ->
             plan.target_error,
             "Choose another destination branch or resolve its Git state",
         )
-    parents = ["-p", plan.target_head]
+    parents = [plan.target_head]
     if plan.strategy == "merge":
         source = plan.source_head
         head_tree = git(worktree.path, "rev-parse", f"{source}^{{tree}}").stdout.strip()
         if plan.source_tree != head_tree:
-            source = git(
-                worktree.path,
-                "commit-tree",
-                plan.source_tree,
-                "-p",
-                source,
-                "-m",
-                message,
-            ).stdout.strip()
-        parents.extend(["-p", source])
-    return git(
-        worktree.path,
-        "commit-tree",
-        plan.result_tree,
-        *parents,
-        "-m",
-        message,
-    ).stdout.strip()
+            source = commit_tree(worktree, plan.source_tree, [source], message)
+        parents.append(source)
+    return commit_tree(worktree, plan.result_tree, parents, message)
 
 
 def apply(worktree: Worktree, plan: IntegrationPreview, commit: str) -> None:
@@ -369,12 +354,23 @@ def prepare_resolution(worktree: Worktree, plan: IntegrationPreview) -> None:
         fail("worktree_no_changes", "There are no conflicts to prepare")
     reviewed(worktree, plan.target or "", plan.strategy, plan.token or "")
     head_tree = git(worktree.path, "rev-parse", "HEAD^{tree}").stdout.strip()
-    index_tree = git(worktree.path, "write-tree").stdout.strip()
+    _, _, index_tree = snapshot(worktree)
     if index_tree not in {head_tree, plan.source_tree}:
         fail("worktree_has_changes", "Commit staged changes before preparing conflict resolution")
     if head_tree != plan.source_tree:
+        message = "Save work before resolving integration conflicts"
+        commit = commit_tree(worktree, plan.source_tree, [plan.source_head], message)
+        reviewed(worktree, plan.target or "", plan.strategy, plan.token or "")
         git(worktree.path, "add", "--all", "--", ".")
-        git(worktree.path, "commit", "-m", "Save work before resolving integration conflicts")
+        git(
+            worktree.path,
+            "update-ref",
+            "-m",
+            "commit: " + message,
+            "HEAD",
+            commit,
+            plan.source_head,
+        )
     result = git(worktree.path, "merge", "--no-commit", "--no-ff", plan.target_head, check=False)
     if result.returncode and not git(worktree.path, "ls-files", "--unmerged").stdout:
         fail("worktree_unavailable", result.stderr.strip())

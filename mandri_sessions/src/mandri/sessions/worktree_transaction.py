@@ -76,7 +76,6 @@ class RefTransaction:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
         )
         self._committed = False
         try:
@@ -93,9 +92,9 @@ class RefTransaction:
             raise ProtectionError(
                 "worktree_unavailable", "Git reference transaction is unavailable"
             )
-        process.stdin.write(command)
+        process.stdin.write(command.encode("utf-8"))
         process.stdin.flush()
-        if process.stdout.readline().strip() != expected:
+        if process.stdout.readline().strip() != expected.encode("utf-8"):
             process.wait(timeout=120)
             raise ProtectionError(
                 "worktree_target_changed", "The destination branch could not be locked"

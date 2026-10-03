@@ -6,6 +6,11 @@ from mandri.core.types.usage import UsageObservation
 from mandri.database.usage_serialization import observation
 
 
+class CoverageIndex:
+    def __init__(self) -> None:
+        self.gateways: dict[tuple[str | None, str | None], dict[str, UsageObservation]] = {}
+
+
 def shared_scope(left: UsageObservation, right: UsageObservation) -> bool:
     if left.session_id is not None and right.session_id is not None:
         return left.session_id == right.session_id
@@ -30,6 +35,18 @@ def gateway_facts(db: sqlite3.Connection, value: UsageObservation) -> list[Usage
         ),
     ).fetchall()
     return [observation(row["payload"]) for row in rows]
+
+
+def cached_gateway_facts(
+    db: sqlite3.Connection, value: UsageObservation, index: CoverageIndex | None
+) -> list[UsageObservation]:
+    scope = value.session_id, value.root_session_id
+    if index is not None and scope in index.gateways:
+        return [item for item in index.gateways[scope].values() if shared_scope(value, item)]
+    result = gateway_facts(db, value)
+    if index is not None:
+        index.gateways[scope] = {item.fact_key: item for item in result}
+    return [item for item in result if shared_scope(value, item)]
 
 
 def scoped_facts(db: sqlite3.Connection, value: UsageObservation) -> list[UsageObservation]:
@@ -169,14 +186,18 @@ def gap(db: sqlite3.Connection, value: UsageObservation, ambiguous: bool) -> Non
         )
 
 
-def select_coverage(db: sqlite3.Connection, fact: UsageObservation) -> bool:
+def select_coverage(
+    db: sqlite3.Connection, fact: UsageObservation, index: CoverageIndex | None = None
+) -> bool:
     if fact.source.startswith("native"):
         natives = [fact]
     elif fact.source == "gateway":
+        if index is not None:
+            index.gateways.clear()
         natives = scoped_facts(db, fact)
     else:
         return True
-    scopes: dict[tuple[str | None, str | None], dict[str, UsageObservation]] = {}
+    scopes = index.gateways if index is not None else {}
     keep = True
     for native in natives:
         scope = native.session_id, native.root_session_id

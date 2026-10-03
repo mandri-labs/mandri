@@ -2,6 +2,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from mandri.core.hub import Hub, Topic
 from mandri.core.ids import ApprovalKind, ApprovalStatus, HarnessKind, RawEvent, SessionId
 from mandri.core.types.agents import Agent, AgentState
@@ -70,4 +71,42 @@ async def test_child_approval_pending_resolved_and_replay_remain_scoped():
     assert parent.queue.get_nowait()["payload"]["type"] == "approval.resolved"
     assert other.queue.empty()
     for handle in (child, other, parent):
+        hub.unsubscribe(handle)
+
+
+@pytest.mark.parametrize("kind", ["permission.replied", "question.replied", "question.rejected"])
+async def test_opencode_child_resolution_reaches_parent_watcher(kind):
+    hub = Hub()
+    history = AsyncMock()
+    history.list.return_value = [
+        Agent(
+            "child",
+            "parent",
+            HarnessKind.OPENCODE,
+            "child-native",
+            "Child",
+            AgentState.WAITING,
+            1,
+            2,
+        )
+    ]
+    sessions = AsyncMock()
+    sessions.get_session.return_value = SimpleNamespace(
+        id="parent", native_id="parent-native", harness=HarnessKind.OPENCODE
+    )
+    router = AgentEventRouter(hub, history, sessions)
+    child = hub.subscribe(Topic("agent.child"))
+    parent = hub.subscribe(Topic("session.parent"))
+    payload = {
+        "source": "opencode",
+        "ts": 1,
+        "raw": {
+            "type": kind,
+            "properties": {"sessionID": "child-native", "requestID": "permission"},
+        },
+    }
+    await router.publish(Topic("session.parent"), payload)
+    assert child.queue.get_nowait()["payload"] == payload
+    assert parent.queue.get_nowait()["payload"] == {**payload, "agent_id": "child"}
+    for handle in (child, parent):
         hub.unsubscribe(handle)

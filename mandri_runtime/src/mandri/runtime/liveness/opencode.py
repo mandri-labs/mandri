@@ -7,10 +7,11 @@ from collections.abc import Callable
 from typing import Any, final
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
-from mandri.core.ids import SessionId
+from mandri.core.ids import HarnessKind, SessionId
 from mandri.runtime.liveness.degradation import is_stream_degradation
 from mandri.runtime.liveness.errors import UnknownSessionError
-from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
+from mandri.runtime.liveness.evidence import LivenessEvidenceKind
+from mandri.runtime.liveness.observation import WorkEventContext
 from mandri.runtime.liveness.port import LivenessPort
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ class OpencodeLivenessAdapter:
         self._topic = topic
         self._port = port
         self._session_id = session_id
+        self._work_context = WorkEventContext(HarnessKind.OPENCODE)
         self._native_identity = native_identity
         self._handle: SubscriberHandle | None = None
         self._task: asyncio.Task[None] | None = None
@@ -136,6 +138,11 @@ class OpencodeLivenessAdapter:
             return
         if not isinstance(raw, dict):
             return
+        owner = _owner_of(_properties_of(raw))
+        root = self._native_identity() if self._native_identity else self._root
+        self._work_context.observe(
+            raw, payload.get("ts"), root=owner is None or root is None or owner == root
+        )
         for kind in self._translate(raw):
             self._emit(kind)
 
@@ -245,7 +252,7 @@ class OpencodeLivenessAdapter:
 
     def _emit(self, kind: LivenessEvidenceKind) -> None:
         try:
-            self._port.observe(LivenessEvidence(session_id=self._session_id, kind=kind))
+            self._port.observe(self._work_context.evidence(self._session_id, kind))
         except UnknownSessionError as error:
             logger.debug(
                 "opencode liveness evidence discarded for session %s: %s", self._session_id, error

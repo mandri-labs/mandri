@@ -4,6 +4,7 @@ import dataclasses
 import enum
 
 from mandri.core.ids import SessionId
+from mandri.core.types.conversation_status import WorkOutcome
 
 
 class LivenessEvidenceKind(enum.StrEnum):
@@ -24,3 +25,6 @@ class LivenessEvidence:
     session_id: SessionId
     kind: LivenessEvidenceKind
     prompt_id: str | None = None
+    event_key: str | None = None
+    content_key: str | None = None
+    outcome: WorkOutcome | None = None

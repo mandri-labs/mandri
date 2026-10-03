@@ -14,6 +14,7 @@ from mandri.api.errors import (
 from mandri.core.ids import HarnessKind, PageToken, SessionId, SessionState, SessionTitle
 from mandri.core.protocol.types import SessionId as ApiSessionId
 from mandri.core.types.availability import SessionAvailability
+from mandri.core.types.conversation_status import ConversationStatus
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode, ProtectionError
 from mandri.core.types.model_selection import ModelSource
 from mandri.core.types.sessions import InteractionMode, Session
@@ -57,6 +58,7 @@ class SessionOut(BaseModel):
     privacy_mode: PrivacyMode = PrivacyMode.NONE
     policy_revision: int = 1
     worktree: Worktree | None = None
+    status: ConversationStatus | None = None
 
 
 class PrivacyEntryOut(BaseModel):
@@ -108,6 +110,8 @@ def session_out(session: Session, service: SessionsService) -> SessionOut:
     if activity is not None:
         values["activity"] = activity.state.value
         values["last_activity_at"] = int(activity.last_activity_at)
+    if service.statuses is not None:
+        values["status"] = service.statuses.get(f"session:{session.id}")
     return SessionOut(**values)
 
 

@@ -2,14 +2,17 @@
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from mandri.core.ids import PageToken
 from mandri.core.ports.transcripts import SessionRef, TranscriptPage
+from mandri.core.types.conversation_status import WorkDelta
 from mandri.sessions.transcripts.errors import TranscriptNotFoundError, TranscriptStoreError
 from mandri.sessions.transcripts.jsonl import page_from_jsonl
 from mandri.sessions.transcripts.recent import recent_jsonl
 from mandri.sessions.transcripts.record_download import RecordDownload, open_record
 from mandri.sessions.transcripts.status import jsonl_status
+from mandri.sessions.transcripts.work_delta import jsonl_work_delta
 
 
 class CodexTranscriptReader:
@@ -57,6 +60,9 @@ class CodexTranscriptReader:
 
     def record(self, session: SessionRef, reference: PageToken) -> RecordDownload:
         return open_record(self._resolve(session), reference)
+
+    def work_delta(self, session: SessionRef, checkpoint: dict[str, Any] | None) -> WorkDelta:
+        return jsonl_work_delta(self._resolve(session), session, checkpoint)
 
     def revision(self, session: SessionRef) -> tuple[str, int, int]:
         path = self._resolve(session)

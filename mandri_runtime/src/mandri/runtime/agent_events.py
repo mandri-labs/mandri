@@ -80,6 +80,11 @@ class AgentEventRouter:
                         )
                     )
                     or detect(parent.harness, json.dumps(raw)) is not None
+                    or (
+                        parent.harness is HarnessKind.OPENCODE
+                        and raw.get("type")
+                        in {"permission.replied", "question.replied", "question.rejected"}
+                    )
                 ):
                     self._hub.publish(topic, {**payload, "agent_id": child.id})
                 return

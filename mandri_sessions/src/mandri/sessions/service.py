@@ -27,6 +27,7 @@ from mandri.core.ports.executions import ExecutionRepositoryPort
 from mandri.core.ports.native_sessions import PiSessionIdentityPort
 from mandri.core.ports.privacy import PrivacyScopePort
 from mandri.core.types.availability import SessionOwner
+from mandri.core.types.conversation_status import WorkDelta
 from mandri.core.types.execution import (
     ExecutionBackend,
     PrivacyMode,
@@ -41,6 +42,7 @@ from mandri.core.types.sessions import (
     can_transition,
 )
 from mandri.sessions.activity import SessionActivity
+from mandri.sessions.conversation_status import ConversationStatuses
 from mandri.sessions.errors import (
     SessionConflictError,
     SessionNotFoundError,
@@ -93,6 +95,7 @@ class SessionsService:
         privacy_scopes: PrivacyScopePort | None = None,
         worktrees_dir: Path | None = None,
         pi_identities: PiSessionIdentityPort | None = None,
+        statuses: ConversationStatuses | None = None,
     ) -> None:
         self.worktrees = SessionWorktrees(
             db, worktrees_dir or Path.home() / ".mandri" / "worktrees"
@@ -103,6 +106,7 @@ class SessionsService:
         self._executions = executions
         self._privacy_scopes = privacy_scopes
         self._pi_identities = pi_identities
+        self.statuses = statuses
         self._pi_processes: Callable[[], Mapping[int, str | None]] = dict
 
     def set_pi_processes(self, callback: Callable[[], Mapping[int, str | None]]) -> None:
@@ -232,6 +236,19 @@ class SessionsService:
         ref = transcript_reference(session)
         version = await asyncio.to_thread(revision, ref)
         return version, await self.native_ownership(session_id)
+
+    async def work_delta(
+        self, session_id: SessionId, checkpoint: dict[str, typing.Any] | None
+    ) -> WorkDelta:
+        session = await self.get_session(session_id)
+        reader = self._transcripts.for_session(session) if self._transcripts else None
+        observe = getattr(reader, "work_delta", None)
+        if observe is None or session.native_id is None:
+            raise HarnessStoreUnavailableError("Work observation is unavailable")
+        result: WorkDelta = await asyncio.to_thread(
+            observe, transcript_reference(session), checkpoint
+        )
+        return result
 
     async def external_busy(self, session_id: SessionId) -> bool:
         busy, _ = await self.external_status(session_id)

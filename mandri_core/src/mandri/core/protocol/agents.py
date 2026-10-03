@@ -1,6 +1,7 @@
 from mandri.core.ids import HarnessKind
 from mandri.core.protocol.types import SessionId
 from mandri.core.types.agents import AgentCapabilities, AgentState
+from mandri.core.types.conversation_status import ConversationStatus
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -44,6 +45,7 @@ class AgentView(BaseModel):
     harness: HarnessKind
     title: str
     state: AgentState
+    status: ConversationStatus | None = None
     delegation_id: str | None
     task_id: str | None = None
     capabilities: AgentCapabilities
@@ -62,6 +64,8 @@ class AgentListResult(BaseModel):
 
 
 class AgentHistoryResult(BaseModel):
+    completion_revision: int | None = None
+    completion_target: str | None = None
     entries: list[str]
     next_cursor: str | None
     has_more: bool

@@ -150,7 +150,11 @@ def _resolve_opencode(mode: str | None, defaults: SessionModeConfig) -> LaunchMo
         return LaunchMode()
     rules = OPENCODE_PERMISSION_RULES.get(effective)
     if rules is not None:
-        return LaunchMode(mode=effective, opencode_config={_OPENCODE_PERMISSION_KEY: dict(rules)})
+        return LaunchMode(
+            mode=effective,
+            auto_approve=effective == "auto",
+            opencode_config={_OPENCODE_PERMISSION_KEY: dict(rules)},
+        )
     validate_opencode_agent(effective)
     return LaunchMode(mode=effective, opencode_config={_OPENCODE_AGENT_KEY: effective})
 

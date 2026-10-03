@@ -11,17 +11,21 @@ from mandri.core.protocol.agents import (
 from mandri.core.protocol.errors import ProtocolError, ProtocolErrorCode
 from mandri.core.protocol.registry import ActionRegistry
 from mandri.core.types.sessions import SessionError
+from mandri.core.work_content import contains_completed_content
 from mandri.runtime.agents import AgentService
 from mandri.runtime.control.agents.base import UnsupportedAgentOperation
 from mandri.runtime.control.errors import ControlError
+from mandri.sessions.service import SessionsService
 from mandri.sessions.transcripts.errors import PageTokenInvalidError
 from pydantic import BaseModel
 
 
-def register_agent_actions(registry: ActionRegistry, agents: AgentService) -> None:
+def register_agent_actions(
+    registry: ActionRegistry, agents: AgentService, sessions: SessionsService | None = None
+) -> None:
     async def handle(params: BaseModel) -> dict[str, Any]:
         try:
-            return await _dispatch(agents, params)
+            return await _dispatch(agents, params, sessions)
         except UnsupportedAgentOperation as error:
             raise ProtocolError(ProtocolErrorCode.AGENT_UNSUPPORTED, str(error)) from error
         except ControlError as error:
@@ -39,21 +43,52 @@ def register_agent_actions(registry: ActionRegistry, agents: AgentService) -> No
         registry.register(action, handle)
 
 
-async def _dispatch(agents: AgentService, params: BaseModel) -> dict[str, Any]:
+async def _dispatch(
+    agents: AgentService, params: BaseModel, sessions: SessionsService | None = None
+) -> dict[str, Any]:
+    statuses = sessions.statuses if sessions is not None else None
+    if statuses is not None:
+        await statuses.flush()
     if isinstance(params, AgentListParams):
         async with agents.history_store.cache_lock:
             rows, capabilities = await agents.list(
                 str(params.session_id) if params.session_id else None
             )
             classified = await agents.history_store.classified()
+        views = []
+        for agent in rows:
+            view = AgentView.model_validate(agent)
+            if statuses is not None:
+                agent_target = f"session:{agent.session_id}" if agent.session_id else f"agent:{agent.id}"
+                view.status = statuses.get(agent_target)
+            views.append(view.model_dump(mode="json"))
         return {
-            "agents": [AgentView.model_validate(agent).model_dump(mode="json") for agent in rows],
+            "agents": views,
             "parent_capabilities": capabilities,
             "classified_session_ids": classified,
         }
     if isinstance(params, AgentHistoryParams):
+        completion_revision = None
+        status = None
+        target = None
+        if statuses is not None and params.cursor is None:
+            agent = await agents.history_store.get(params.agent_id)
+            target = f"session:{agent.session_id}" if agent.session_id else f"agent:{agent.id}"
+            status = statuses.get(target)
+            if status.work_state == "idle":
+                completion_revision = status.completion_revision
         page = await agents.history(params.agent_id, params.cursor, params.limit)
-        return {"entries": page.entries, "next_cursor": page.next_token, "has_more": page.has_more}
+        if completion_revision is not None and status is not None and not contains_completed_content(
+            agent.harness, list(page.entries), status.completion_content_key
+        ):
+            completion_revision = None
+        return {
+            "entries": page.entries,
+            "next_cursor": page.next_token,
+            "has_more": page.has_more,
+            "completion_revision": completion_revision,
+            "completion_target": target,
+        }
     if isinstance(params, AgentCreateParams):
         agent = await agents.create(str(params.session_id), params.content, params.title)
         return {"agent": AgentView.model_validate(agent).model_dump(mode="json")}

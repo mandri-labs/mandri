@@ -3,8 +3,14 @@ from typing import Any
 
 import httpx
 from mandri.core.ids import ProviderKind
+from mandri.gateway.chatgpt_continuation import combine_responses, commentary_response
 from mandri.gateway.chatgpt_conversion import chat_request, chat_response
 from mandri.gateway.errors.upstream import UpstreamError
+from mandri.gateway.provider_adapter import ProviderSend
+from mandri.gateway.usage import CURRENT_USAGE
+from mandri.gateway.usage_payload import observe_payload
+
+_MAX_COMMENTARY_CONTINUATIONS = 8
 
 _ALLOWED = frozenset(
     {
@@ -53,11 +59,46 @@ class ChatGptAdapter:
             extensions=request.extensions,
         )
 
-    async def response(self, response: httpx.Response, request: httpx.Request) -> httpx.Response:
+    async def response(
+        self, response: httpx.Response, request: httpx.Request, send: ProviderSend
+    ) -> httpx.Response:
         if response.is_error:
             return response
+        upstream = response.request
+        payload = json.loads(upstream.content)
+        responses: list[dict[str, Any]] = []
         try:
-            completed = await complete_response(response)
+            while True:
+                completed = await complete_response(response)
+                responses.append(completed)
+                if not commentary_response(completed):
+                    break
+                if len(responses) > _MAX_COMMENTARY_CONTINUATIONS:
+                    raise UpstreamError(
+                        502,
+                        "ChatGPT returned commentary without completing the turn",
+                        ProviderKind.CHATGPT,
+                    )
+                payload["input"] = [*payload.get("input", []), *completed["output"]]
+                await response.aclose()
+                headers = dict(upstream.headers)
+                headers.pop("content-length", None)
+                upstream = httpx.Request(
+                    "POST",
+                    upstream.url,
+                    json=payload,
+                    headers=headers,
+                    extensions=upstream.extensions,
+                )
+                response = await send(upstream)
+                if response.is_error:
+                    return response
+            completed = combine_responses(responses)
+            collector = CURRENT_USAGE.get()
+            if collector is not None and len(responses) > 1:
+                if completed.get("usage") is None:
+                    collector.observation_incomplete = True
+                await observe_payload(collector, completed)
             if request.url.path.endswith("/chat/completions"):
                 completed = chat_response(completed)
             headers = {
@@ -68,7 +109,8 @@ class ChatGptAdapter:
             }
             return httpx.Response(200, json=completed, headers=headers, request=request)
         finally:
-            await response.aclose()
+            if not response.is_error:
+                await response.aclose()
 
 
 async def complete_response(response: httpx.Response) -> dict[str, Any]:
@@ -115,8 +157,17 @@ def _event(data: str, items: dict[int, dict[str, Any]]) -> dict[str, Any] | None
     result = event.get("response")
     if not isinstance(result, dict) or not isinstance(result.get("output"), list):
         raise UpstreamError(502, "Incomplete ChatGPT response object", ProviderKind.CHATGPT)
-    if not result["output"] and items:
-        if sorted(items) != list(range(len(items))):
+    if items:
+        merged = dict(items)
+        indices = {item.get("id"): index for index, item in items.items()}
+        for index, item in enumerate(result["output"]):
+            if not isinstance(item, dict):
+                raise UpstreamError(502, "Invalid ChatGPT output item", ProviderKind.CHATGPT)
+            slot = indices.get(item.get("id"), index)
+            if slot in merged and merged[slot].get("id") != item.get("id"):
+                slot = max(merged) + 1
+            merged[slot] = item
+        if sorted(merged) != list(range(len(merged))):
             raise UpstreamError(502, "Missing ChatGPT output item", ProviderKind.CHATGPT)
-        result = {**result, "output": [items[index] for index in sorted(items)]}
+        result = {**result, "output": [merged[index] for index in sorted(merged)]}
     return result

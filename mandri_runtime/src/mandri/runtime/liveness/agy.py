@@ -3,22 +3,31 @@ import contextlib
 from typing import Any
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
-from mandri.core.ids import SessionId
+from mandri.core.ids import HarnessKind, SessionId
 from mandri.runtime.liveness.degradation import is_stream_degradation
-from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
+from mandri.runtime.liveness.evidence import LivenessEvidenceKind
+from mandri.runtime.liveness.observation import WorkEventContext
 from mandri.runtime.liveness.port import LivenessPort
 
 
 class AgyLivenessAdapter:
     def __init__(
-        self, hub: Hub, topic: Topic, port: LivenessPort, session_id: SessionId, *, since: int = 0
+        self,
+        hub: Hub,
+        topic: Topic,
+        port: LivenessPort,
+        session_id: SessionId,
+        *,
+        since: int = 0,
+        native_id: str | None = None,
     ) -> None:
         self._hub, self._topic, self._port, self._session = hub, topic, port, session_id
+        self._work_context = WorkEventContext(HarnessKind.AGY)
         self._handle: SubscriberHandle | None = None
         self._task: asyncio.Task[None] | None = None
         self._seq = since
         self._closed = False
-        self._native_id: str | None = None
+        self._native_id = native_id
         self._children: set[str] = set()
         self._completed_children: set[str] = set()
         self._background = False
@@ -58,7 +67,7 @@ class AgyLivenessAdapter:
                 self._handle = self._hub.subscribe(self._topic, since=self._seq, internal=True)
 
     def _emit(self, kind: LivenessEvidenceKind) -> None:
-        self._port.observe(LivenessEvidence(self._session, kind))
+        self._port.observe(self._work_context.evidence(self._session, kind))
 
     def _absorb(self, frame: dict[str, Any]) -> None:
         if frame.get("type") == "gap":
@@ -80,7 +89,7 @@ class AgyLivenessAdapter:
         raw = payload.get("raw")
         if not isinstance(raw, dict):
             return
-        self._observe(raw)
+        self._observe(raw, payload.get("ts"))
         if self._uncertain:
             self._emit(LivenessEvidenceKind.STATE_UNCERTAIN)
 
@@ -91,11 +100,18 @@ class AgyLivenessAdapter:
             else LivenessEvidenceKind.BACKGROUND_ENDED
         )
 
-    def _observe(self, raw: dict[str, Any]) -> None:
+    def _observe(self, raw: dict[str, Any], timestamp: object = None) -> None:
+        details = raw.get("data", raw.get("step_update", raw.get("result", raw)))
+        owner = details.get("conversationId", details.get("conversation_id")) if isinstance(details, dict) else None
+        self._work_context.observe(
+            raw, timestamp, root=owner is None or owner == self._native_id
+        )
         event = raw.get("event")
         if event == "init":
             native_id = raw.get("conversation_id")
-            if isinstance(native_id, str) and native_id:
+            if isinstance(native_id, str) and native_id and (
+                self._native_id is None or self._native_id == native_id
+            ):
                 self._native_id = native_id
             return
         if event == "step_update":

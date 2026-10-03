@@ -34,6 +34,100 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "ConversationStatus": {
+        "properties": {
+          "completion_content_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Content Key"
+          },
+          "completion_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Key"
+          },
+          "completion_revision": {
+            "default": 0,
+            "title": "Completion Revision",
+            "type": "integer"
+          },
+          "cycle_active": {
+            "default": false,
+            "title": "Cycle Active",
+            "type": "boolean"
+          },
+          "observation_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "live",
+                  "native"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Source"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "read_revision": {
+            "default": 0,
+            "title": "Read Revision",
+            "type": "integer"
+          },
+          "revision": {
+            "default": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "work_state": {
+            "$ref": "#/components/schemas/WorkState",
+            "default": "idle"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "ConversationStatus",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -1560,6 +1654,16 @@
             "title": "State",
             "type": "string"
           },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -2596,6 +2700,23 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WorkOutcome": {
+        "enum": [
+          "completed",
+          "failed",
+          "interrupted"
+        ],
+        "type": "string"
+      },
+      "WorkState": {
+        "enum": [
+          "idle",
+          "working",
+          "waiting",
+          "unknown"
+        ],
+        "type": "string"
       },
       "Worktree": {
         "properties": {

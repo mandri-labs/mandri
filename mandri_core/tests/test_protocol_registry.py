@@ -66,6 +66,7 @@ def test_lifecycle_payload_rejects_unknown_type() -> None:
 
 def test_topics_registry_contents() -> None:
     assert set(TOPICS) == {
+        "conversations.all",
         "executions.all",
         "execution.{id}",
         "sessions.all",
@@ -114,6 +115,7 @@ def test_parse_params_invalid_params_raises_protocol_error() -> None:
 
 def test_actions_registry_covers_session_and_approval_actions() -> None:
     assert set(ACTIONS) == {
+        "conversation.read",
         "command.catalogs", "command.catalog",
         "session.commands", "command.invoke", "command.get", "command.list", "command.cancel",
         "session.history",

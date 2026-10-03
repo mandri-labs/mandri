@@ -1,7 +1,9 @@
 import asyncio
+from collections import Counter
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from mandri.core.types.usage import UsageAccount, UsageFilters, UsageObservation, UsagePrice
@@ -792,3 +794,31 @@ async def test_same_millisecond_after_zero_baseline_and_later_timestamp(reposito
     revision = await repository.record(later)
     assert await repository.record(replace(first, input_tokens=100)) == revision
     assert (await repository.overview())["summary"]["input_tokens"] == 30
+
+
+@pytest.mark.parametrize(
+    ("zone", "start"),
+    [
+        ("Europe/Paris", "2026-03-28T00:00:00+00:00"),
+        ("Europe/Paris", "2026-10-24T00:00:00+00:00"),
+        ("America/Santiago", "2026-09-05T00:00:00+00:00"),
+        ("Pacific/Apia", "2011-12-29T00:00:00+00:00"),
+        ("Asia/Kathmandu", "2026-09-28T00:00:00+00:00"),
+    ],
+)
+async def test_day_buckets_preserve_calendar_boundaries_during_transitions(repository, zone, start):
+    instants = [datetime.fromisoformat(start) + timedelta(minutes=30 * i) for i in range(144)]
+    expected = Counter(
+        instant.astimezone(ZoneInfo(zone)).date().isoformat() for instant in instants
+    )
+    for index, instant in enumerate(reversed(instants)):
+        await repository.record(
+            usage(
+                source_key=str(index),
+                fact_key=str(index),
+                occurred_at=int(instant.timestamp() * 1000),
+                input_tokens=1,
+            )
+        )
+    result = await repository.overview(UsageFilters(timezone=zone))
+    assert {row["date"]: row["fact_count"] for row in result["timeseries"]} == dict(expected)

@@ -1,6 +1,7 @@
 """In-memory derivation of WorkingState from neutral liveness evidence."""
 
 import typing
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from mandri.core.ids import SessionId
@@ -32,8 +33,11 @@ class _SessionEvidence:
 class WorkingStateTracker:
     """In-memory liveness port deriving working states with fail-toward-busy."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, observer: Callable[[LivenessEvidence, WorkingState], None] | None = None
+    ) -> None:
         self._sessions: dict[SessionId, _SessionEvidence] = {}
+        self._observer = observer
 
     def register(self, session_id: SessionId) -> None:
         self._sessions.setdefault(session_id, _SessionEvidence())
@@ -69,6 +73,8 @@ class WorkingStateTracker:
         self._sessions[evidence.session_id] = _SessionEvidence(
             reasons=frozenset(reasons), uncertain=uncertain, prompts=prompts
         )
+        if self._observer is not None:
+            self._observer(evidence, self.working_state(evidence.session_id))
 
     def working_state(self, session_id: SessionId) -> WorkingState:
         state = self._sessions.get(session_id)

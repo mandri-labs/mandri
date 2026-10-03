@@ -33,11 +33,29 @@ async def _async_send(client: httpx.AsyncClient, request: httpx.Request) -> http
     if adapter is not None:
         request = adapter.request(request)
     scope = _CURRENT.get()
+    response = await _provider_send(client, request, scope, adapter is not None)
+    if adapter is not None:
+
+        async def send(continuation: httpx.Request) -> httpx.Response:
+            return await _provider_send(client, continuation, scope, True, continuation=True)
+
+        response = await adapter.response(response, original, send)
+    return response
+
+
+async def _provider_send(
+    client: httpx.AsyncClient,
+    request: httpx.Request,
+    scope: TransportScope | None,
+    complete_response: bool,
+    *,
+    continuation: bool = False,
+) -> httpx.Response:
     if scope is not None:
         _require_active(scope)
         try:
             request.headers["accept-encoding"] = "identity"
-            await scope.guard.check(request, complete_response=adapter is not None)
+            await scope.guard.check(request, complete_response=complete_response)
         except ProtectionError as error:
             scope.failure = error
             raise
@@ -52,9 +70,7 @@ async def _async_send(client: httpx.AsyncClient, request: httpx.Request) -> http
             )
             scope.failure = encoding_error
             raise encoding_error
-    await observe_response(response)
-    if adapter is not None:
-        response = await adapter.response(response, original)
+    await observe_response(response, continuation=continuation)
     return response
 
 

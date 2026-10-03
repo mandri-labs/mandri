@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
@@ -92,10 +92,20 @@ def aggregate(
         " UNION ALL SELECT 'observed',NULL,CAST(MAX(observed_at) AS TEXT),0 FROM facts"
     )
 
+    day_start = day_end = 0
+    day_label: str | None = None
+
     def day(timestamp: int | None) -> str | None:
+        nonlocal day_start, day_end, day_label
         if timestamp is None:
             return None
-        return datetime.fromtimestamp(timestamp / 1000, UTC).astimezone(zone).date().isoformat()
+        if not day_start <= timestamp < day_end:
+            local = datetime.fromtimestamp(timestamp / 1000, UTC).astimezone(zone)
+            midnight = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
+            day_start = int(midnight.timestamp() * 1000)
+            day_end = int((midnight + timedelta(days=1)).timestamp() * 1000)
+            day_label = local.date().isoformat()
+        return day_label
 
     connection.create_function("usage_day", 1, day, deterministic=True)
     register = cast(

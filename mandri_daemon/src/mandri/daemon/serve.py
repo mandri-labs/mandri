@@ -42,6 +42,7 @@ from mandri.core.version import __version__
 from mandri.daemon.agent_cache import backfill_agents, discover_agents
 from mandri.daemon.chatgpt import build_chatgpt, build_resolver
 from mandri.daemon.command_catalogs import create_command_catalog_cache
+from mandri.daemon.conversation_status import ConversationStatusObserver, observe_liveness
 from mandri.daemon.daemonctl import remove_pid_file, write_pid_file
 from mandri.daemon.desktop import install_controls
 from mandri.daemon.docker import docker_config
@@ -51,6 +52,7 @@ from mandri.daemon.usage import UsageCoordinator
 from mandri.daemon.usage_accounts import NativeQuotaSync
 from mandri.daemon.usage_history import UsageHistorySync
 from mandri.daemon.usage_prices import PriceCatalogSync
+from mandri.database.conversation_status import ConversationStatusRepository
 from mandri.database.executions import ExecutionRepository
 from mandri.database.native_sessions import NativePiSessionIdentities
 from mandri.database.sqlite_adapter import AiosqliteDatabase
@@ -101,6 +103,7 @@ from mandri.sessions.adapters.opencode_mutations import (
 from mandri.sessions.adapters.pi_sessions import PiSessionsAdapter
 from mandri.sessions.agents.bootstrap import build_agent_history
 from mandri.sessions.agy_profiles import default_agy_root
+from mandri.sessions.conversation_status import ConversationStatuses
 from mandri.sessions.docker_titles import docker_title
 from mandri.sessions.errors import (
     SessionDeleteError,
@@ -301,6 +304,9 @@ class RuntimeResources:
         self.agents: AgentService | None = None
         self.agent_tasks: list[asyncio.Task[None]] = []
         self.usage: UsageCoordinator | None = None
+        self.statuses: ConversationStatuses | None = None
+        self.status_observer: ConversationStatusObserver | None = None
+        self.status_task: asyncio.Task[None] | None = None
 
 
 class HarnessSessionsBackend:
@@ -481,6 +487,9 @@ async def wire_runtime(
         db,
         lambda: (provider.api_key for provider in TomlConfigAdapter(base_dir).load().providers),
     )
+    statuses = ConversationStatuses(ConversationStatusRepository(db), hub)
+    await statuses.start()
+    resources.statuses = statuses
     resources.sessions = SessionsService(
         db,
         engine,
@@ -489,6 +498,7 @@ async def wire_runtime(
         pi_identities=NativePiSessionIdentities(db),
         privacy_scopes=privacy.scopes,
         worktrees_dir=base_dir / "worktrees",
+        statuses=statuses,
     )
     await resources.sessions.worktrees.recover()
     events = HubGatewayEventSink(hub)
@@ -525,7 +535,9 @@ async def wire_runtime(
         approval_timeout_seconds=config.approvals.timeout_seconds,
         mode_defaults=config.sessions.mode,
         idle_release_seconds=config.sessions.idle_release_seconds,
-        liveness=WorkingStateTracker(),
+        liveness=WorkingStateTracker(
+            lambda evidence, state: observe_liveness(statuses, evidence, state)
+        ),
         agy_home=Path(config.sessions.agy_home) if config.sessions.agy_home else None,
         agy_profiles_dir=Path(config.sessions.agy_profiles_dir)
         if config.sessions.agy_profiles_dir
@@ -580,6 +592,10 @@ async def wire_runtime(
         resources.runtime,
         resources.sessions,
     )
+    resources.status_observer = ConversationStatusObserver(
+        statuses, resources.sessions, resources.runtime, resources.agents, hub
+    )
+    resources.status_task = asyncio.create_task(resources.status_observer.run())
     resources.actions = build_action_registry(
         resources.runtime, resources.sessions, resources.agents
     )
@@ -641,6 +657,14 @@ async def stop_background_tasks(
                 await resources.runtime.stop_session(
                     session_id, grace=2.0, cause=SessionStopCause.DAEMON_STOP
                 )
+    if resources.status_observer is not None:
+        await resources.status_observer.drain_lifecycle()
+    if resources.status_task is not None:
+        resources.status_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await resources.status_task
+    if resources.statuses is not None:
+        await resources.statuses.close()
     if resources.usage is not None:
         resources.usage.close()
     if resources.chatgpt is not None and resources.chatgpt.login is not None:

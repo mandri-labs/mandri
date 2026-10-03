@@ -1,7 +1,9 @@
 from pathlib import Path
+from typing import Any
 
 from mandri.core.ids import PageToken
 from mandri.core.ports.transcripts import SessionRef, TranscriptPage
+from mandri.core.types.conversation_status import WorkDelta
 from mandri.sessions.native_activity import native_model, native_turn_busy
 from mandri.sessions.pi_leaf import read_pi_leaf
 from mandri.sessions.pi_store import PiSessionStore
@@ -10,6 +12,7 @@ from mandri.sessions.transcripts.pi_branches import PiBranchIndex
 from mandri.sessions.transcripts.pi_pages import pi_page
 from mandri.sessions.transcripts.record_download import RecordDownload, open_record
 from mandri.sessions.transcripts.status import MAX_STATUS_RECORD_BYTES, MAX_STATUS_RECORDS
+from mandri.sessions.transcripts.work_delta import jsonl_work_delta
 
 
 class PiTranscriptReader:
@@ -65,6 +68,11 @@ class PiTranscriptReader:
 
     def record(self, session: SessionRef, reference: PageToken) -> RecordDownload:
         return open_record(self._resolve(session), reference)
+
+    def work_delta(self, session: SessionRef, checkpoint: dict[str, Any] | None) -> WorkDelta:
+        path = self._resolve(session)
+        spans = {(span.start, span.end) for span in self._branches.spans(path)}
+        return jsonl_work_delta(path, session, checkpoint, lambda start, end: (start, end) in spans)
 
     def revision(self, session: SessionRef) -> tuple[str, int, int, str | None]:
         path = self._resolve(session)

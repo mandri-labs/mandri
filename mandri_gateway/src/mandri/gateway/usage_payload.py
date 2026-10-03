@@ -44,6 +44,19 @@ _DETAILS = frozenset(
 )
 
 
+def sum_usage(*values: dict[str, Any]) -> dict[str, Any]:
+    total: dict[str, Any] = {}
+    for value in values:
+        for key, count in value.items():
+            if type(count) is int and count >= 0:
+                previous = total.get(key, 0)
+                total[key] = (previous if type(previous) is int else 0) + count
+            elif isinstance(count, dict):
+                nested = total.get(key, {})
+                total[key] = sum_usage(nested if isinstance(nested, dict) else {}, count)
+    return total
+
+
 def _count(value: Any) -> int | None:
     return value if type(value) is int and 0 <= value <= 2**63 - 1 else None
 

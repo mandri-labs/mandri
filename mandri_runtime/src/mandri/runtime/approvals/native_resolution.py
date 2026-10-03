@@ -28,9 +28,13 @@ def matches_resolution(request: ApprovalRequest, event: dict[str, Any]) -> bool:
             and request_reference(params.get("requestId")) == request.native_request_ref
         )
     if request.harness is HarnessKind.OPENCODE:
-        if event.get("type") not in {"question.replied", "question.rejected"}:
-            return False
-        if original.get("type") != "question.asked":
+        permission = original.get("type") in {"permission.asked", "permission.v2.asked"}
+        expected = (
+            {"permission.replied"} if permission else {"question.replied", "question.rejected"}
+        )
+        if event.get("type") not in expected or (
+            not permission and original.get("type") != "question.asked"
+        ):
             return False
         properties = event.get("properties")
         initial = original.get("properties")

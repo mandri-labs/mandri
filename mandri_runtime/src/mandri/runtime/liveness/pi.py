@@ -3,9 +3,10 @@ import contextlib
 from typing import Any
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
-from mandri.core.ids import SessionId
+from mandri.core.ids import HarnessKind, SessionId
 from mandri.runtime.liveness.degradation import is_stream_degradation
-from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
+from mandri.runtime.liveness.evidence import LivenessEvidenceKind
+from mandri.runtime.liveness.observation import WorkEventContext
 from mandri.runtime.liveness.port import LivenessPort
 
 
@@ -14,6 +15,7 @@ class PiLivenessAdapter:
         self, hub: Hub, topic: Topic, port: LivenessPort, session_id: SessionId, *, since: int = 0
     ) -> None:
         self._hub, self._topic, self._port, self._session = hub, topic, port, session_id
+        self._work_context = WorkEventContext(HarnessKind.PI)
         self._handle: SubscriberHandle | None = None
         self._task: asyncio.Task[None] | None = None
         self._seq = since
@@ -87,9 +89,10 @@ class PiLivenessAdapter:
                 self._approval_refs[approval_id] = identifier
             return
         if "type" not in payload:
-            self._observe(raw)
+            self._observe(raw, payload.get("ts"))
 
-    def _observe(self, raw: dict[str, Any]) -> None:
+    def _observe(self, raw: dict[str, Any], timestamp: object = None) -> None:
+        self._work_context.observe(raw, timestamp)
         event = raw.get("type")
         if event in {"agent_start", "message_update", "tool_execution_start"}:
             self._running = True
@@ -136,4 +139,4 @@ class PiLivenessAdapter:
         )
 
     def _emit(self, kind: LivenessEvidenceKind) -> None:
-        self._port.observe(LivenessEvidence(self._session, kind))
+        self._port.observe(self._work_context.evidence(self._session, kind))

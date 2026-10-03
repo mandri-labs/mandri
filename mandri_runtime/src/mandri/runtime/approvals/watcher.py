@@ -9,7 +9,8 @@ from typing import Any, final
 
 from mandri.core.clock import system_now_ms
 from mandri.core.hub import Hub, SubscriberHandle
-from mandri.core.ids import HarnessKind, RawEvent, SessionId
+from mandri.core.ids import ApprovalKind, HarnessKind, RawEvent, SessionId
+from mandri.core.types.approvals import ApprovalRequest
 from mandri.runtime.approvals.errors import DuplicateApprovalRequestError
 from mandri.runtime.approvals.native_resolution import matches_resolution
 from mandri.runtime.approvals.recognition import ApprovalDescriptor, detect, with_approval_metadata
@@ -62,6 +63,24 @@ class ApprovalWatcher:
         if task is not None:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+    async def set_auto_answer(self, answer: Callable[[str], Awaitable[None]] | None) -> None:
+        self._auto_answer = answer
+        for request in self._service.pending_for_session(self._session_id):
+            await self._try_auto_answer(request)
+
+    async def _try_auto_answer(self, request: ApprovalRequest) -> bool:
+        if self._auto_answer is None or request.kind in {
+            ApprovalKind.USER_INPUT,
+            ApprovalKind.ELICITATION,
+        }:
+            return False
+        try:
+            await self._auto_answer(str(request.id))
+        except ControlError:
+            _logger.exception("Automatic approval delivery failed for %s", request.id)
+            return False
+        return True
 
     async def _consume(self) -> None:
         handle = self._handle
@@ -124,11 +143,7 @@ class ApprovalWatcher:
             )
         except DuplicateApprovalRequestError:
             return
-        if self._auto_answer is not None:
-            try:
-                await self._auto_answer(str(request.id))
-            except ControlError:
-                _logger.exception("Automatic approval delivery failed for %s", request.id)
+        if await self._try_auto_answer(request):
             return
         envelope = {"source": self._harness.value, "raw": raw, "ts": system_now_ms()}
         payload = {**with_approval_metadata(envelope, request), "type": PENDING_FRAME_TYPE}

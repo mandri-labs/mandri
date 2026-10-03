@@ -5,14 +5,20 @@ from typing import Any
 
 import httpx
 from mandri.gateway.usage import CURRENT_USAGE, UsageCollector
-from mandri.gateway.usage_payload import observe_payload
+from mandri.gateway.usage_payload import observe_payload, sum_usage
 
 _MAX_BUFFER = 1024 * 1024
 
 
 class UsageDecoder:
-    def __init__(self, collector: UsageCollector, content_type: str):
+    def __init__(
+        self,
+        collector: UsageCollector,
+        content_type: str,
+        prior_usage: dict[str, Any] | None = None,
+    ):
         self.collector = collector
+        self.prior_usage = prior_usage
         self.sse = "text/event-stream" in content_type
         self.lines = self.sse or "ndjson" in content_type
         self.buffer = bytearray()
@@ -28,6 +34,10 @@ class UsageDecoder:
         except (ValueError, UnicodeError, RecursionError):
             self.collector.observation_incomplete = True
             return
+        if self.prior_usage is not None and isinstance(payload, dict):
+            envelope = payload.get("response", payload)
+            if isinstance(envelope, dict) and isinstance(envelope.get("usage"), dict):
+                envelope["usage"] = sum_usage(self.prior_usage, envelope["usage"])
         await observe_payload(self.collector, payload)
 
     async def _line(self, line: bytes) -> None:
@@ -79,16 +89,17 @@ class UsageDecoder:
                 self.event.clear()
 
 
-async def observe_response(response: httpx.Response) -> None:
+async def observe_response(response: httpx.Response, *, continuation: bool = False) -> None:
     collector = CURRENT_USAGE.get()
     if collector is None:
         return
     await _observe_request(collector, response)
     collector.upstream_failed = response.is_error
     await collector.publish(transport_attempts=collector.record.transport_attempts + 1)
-    if collector.record.transport_attempts > 1:
+    if collector.record.transport_attempts > 1 and not continuation:
         collector.observation_incomplete = True
-    decoder = UsageDecoder(collector, response.headers.get("content-type", ""))
+    prior_usage = sum_usage(collector.raw_usage) if continuation else None
+    decoder = UsageDecoder(collector, response.headers.get("content-type", ""), prior_usage)
     if response.is_stream_consumed:
         await decoder.feed(response.content, final=True)
         return

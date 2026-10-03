@@ -6,6 +6,7 @@ from typing import Any
 from mandri.core.types.usage import UsageObservation, UsagePrice
 from mandri.core.usage_normalization import normalize_usage
 from mandri.database.usage_accounting import validate
+from mandri.database.usage_coverage import CoverageIndex
 from mandri.database.usage_prices import PriceIndex
 from mandri.database.usage_queries import advance, revision
 from mandri.database.usage_serialization import encode, observation
@@ -16,7 +17,9 @@ def stage_history(
     values: Sequence[UsageObservation],
     source_key: str,
     cursor: dict[str, Any],
-    record: Callable[[sqlite3.Connection, UsageObservation, Sequence[UsagePrice] | None], int],
+    record: Callable[
+        [sqlite3.Connection, UsageObservation, Sequence[UsagePrice] | None, CoverageIndex], int
+    ],
     *,
     reset: bool,
     complete: bool,
@@ -63,11 +66,12 @@ def stage_history(
             )
         db.execute("DELETE FROM usage_gap WHERE session_id=?", (session_id,))
         prices = PriceIndex()
+        coverage = CoverageIndex()
         for index, row in enumerate(rows):
             if index >= 100000:
                 raise ValueError("History rebuild exceeds 100000 requests per session")
             value = normalize_usage(observation(row[0]))
-            record(db, value, prices.for_fact(db, value))
+            record(db, value, prices.for_fact(db, value), coverage)
         db.execute("DELETE FROM usage_history_stage WHERE source_key=?", (source_key,))
         checkpoint["authoritative"] = 1
     old = db.execute(
@@ -81,4 +85,14 @@ def stage_history(
         " DO UPDATE SET payload=excluded.payload",
         (source_key, session_id, payload),
     )
+    if not complete and old:
+        previous = json.loads(old[0])
+        fields = ("status", "phase", "authoritative")
+        previous_reasons = json.loads(previous.get("state_json", "{}")).get("discard_reasons", {})
+        current_reasons = json.loads(checkpoint.get("state_json", "{}")).get("discard_reasons", {})
+        if (
+            all(previous.get(key) == checkpoint.get(key) for key in fields)
+            and previous_reasons == current_reasons
+        ):
+            return revision(db)
     return advance(db)

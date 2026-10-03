@@ -43,6 +43,7 @@ from mandri.core.protocol.commands import (
 from mandri.core.protocol.errors import ProtocolError, ProtocolErrorCode
 from mandri.core.protocol.frames import RequestFrame, ResponseError, ResponseFrame
 from mandri.core.protocol.types import RouteId, SessionId
+from mandri.core.types.conversation_status import ConversationStatus
 from mandri.core.types.execution import (
     ExecutionBackend,
     ExecutionPhase,
@@ -53,6 +54,19 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 Direction = Literal["send", "receive"]
 logger = logging.getLogger(__name__)
+
+
+class ConversationStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["conversation_status"] = "conversation_status"
+    status: ConversationStatus
+
+
+class ConversationReadParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: str = Field(pattern=r"^(session|agent):.+$")
+    through_revision: int = Field(ge=1, strict=True)
+    completion_key: str = Field(min_length=1)
 
 
 class SessionLifecyclePayload(BaseModel):
@@ -128,6 +142,12 @@ class TopicSpec:
 
 
 TOPICS: dict[str, TopicSpec] = {
+    "conversations.all": TopicSpec(
+        "conversations.all",
+        ConversationStatusPayload,
+        "send",
+        "Committed conversation work and read revisions.",
+    ),
     "usage.changed": TopicSpec(
         name="usage.changed",
         payload=UsageChangedPayload,
@@ -260,6 +280,12 @@ class ActionSpec:
 
 
 ACTIONS: dict[str, ActionSpec] = {
+    "conversation.read": ActionSpec(
+        "conversation.read",
+        ConversationReadParams,
+        "Acknowledge a specific completion revision.",
+        ConversationStatus,
+    ),
     "command.catalogs": ActionSpec(
         "command.catalogs",
         CommandCatalogsParams,

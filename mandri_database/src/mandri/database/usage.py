@@ -12,6 +12,8 @@ from mandri.core.usage_pricing import value_usage
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage_accounting import advances, contribution, validate
 from mandri.database.usage_coverage import (
+    CoverageIndex,
+    cached_gateway_facts,
     scoped_facts,
     select_coverage,
 )
@@ -55,6 +57,7 @@ class UsageRepository:
         db: sqlite3.Connection,
         value: UsageObservation,
         prices: Sequence[UsagePrice] | None = None,
+        coverage: CoverageIndex | None = None,
     ) -> int:
         value = normalize_usage(value)
         current = revision(db)
@@ -144,11 +147,15 @@ class UsageRepository:
             for native in scoped_facts(db, fact):
                 fact = recover_gateway(fact, native)
         elif fact is not None and fact.source.startswith("native:"):
-            for gateway in scoped_facts(db, fact):
+            for gateway in cached_gateway_facts(db, fact, coverage):
                 recovered = recover_gateway(gateway, fact)
                 if recovered != gateway:
                     self._save_fact(db, recovered)
-        if fact is not None and select_coverage(db, fact):
+                    if coverage is not None:
+                        coverage.gateways[fact.session_id, fact.root_session_id][
+                            gateway.fact_key
+                        ] = recovered
+        if fact is not None and select_coverage(db, fact, coverage):
             self._save_fact(db, fact, prices)
         elif fact is None and value.kind == "delta":
             db.execute(
@@ -287,11 +294,16 @@ class UsageRepository:
             rejected = False
             new_gap = False
             prices = PriceIndex()
+            coverage = (
+                CoverageIndex()
+                if all(value.source.startswith("native:") for value in observations)
+                else None
+            )
             for value in observations:
                 db.execute("SAVEPOINT usage_event")
                 try:
                     validate(value)
-                    self._record(db, value, prices.for_fact(db, normalize_usage(value)))
+                    self._record(db, value, prices.for_fact(db, normalize_usage(value)), coverage)
                 except ValueError as error:
                     db.execute("ROLLBACK TO usage_event")
                     if not skip_invalid:

@@ -41,7 +41,7 @@ async def test_codex_profiles_reach_native_thread(profile, policy, sandbox, revi
 async def test_opencode_permissions_reach_native_session(mode, action):
     launch = resolve_launch("opencode", mode, SessionModeConfig())
     assert launch.opencode_config == {"permission": {"*": action}}
-    assert not launch.auto_approve
+    assert launch.auto_approve is (mode == "auto")
     adapter = OpencodeControlAdapter("http://localhost", "s1")
     adapter._request = AsyncMock(return_value=SimpleNamespace(status_code=200))
     try:

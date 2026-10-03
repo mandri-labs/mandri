@@ -97,6 +97,15 @@
         "control_lost": {
           "$ref": "#/components/messages/control_lost"
         },
+        "conversation.read": {
+          "$ref": "#/components/messages/conversation.read"
+        },
+        "conversation.read.response": {
+          "$ref": "#/components/messages/conversation.read.response"
+        },
+        "conversationsAll": {
+          "$ref": "#/components/messages/conversationsAll"
+        },
         "error": {
           "$ref": "#/components/messages/error"
         },
@@ -1509,6 +1518,143 @@
         },
         "title": "ControlLostFrame"
       },
+      "conversation.read": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Acknowledge a specific completion revision.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "conversation.read",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/ConversationReadParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "conversation.read",
+          "type": "object"
+        },
+        "title": "conversation.read"
+      },
+      "conversation.read.response": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ResponseError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "ok": {
+              "title": "Ok",
+              "type": "boolean"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ConversationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "response",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "ok"
+          ],
+          "title": "ResponseFrame",
+          "type": "object"
+        }
+      },
+      "conversationsAll": {
+        "description": "Committed conversation work and read revisions.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "raw": {
+              "$ref": "#/components/schemas/ConversationStatusPayload"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "topic",
+            "seq",
+            "source",
+            "raw",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "conversations.all"
+      },
       "error": {
         "payload": {
           "$ref": "#/components/schemas/ErrorFrame"
@@ -2390,6 +2536,30 @@
       },
       "AgentHistoryResult": {
         "properties": {
+          "completion_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completion Revision"
+          },
+          "completion_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completion Target"
+          },
           "entries": {
             "items": {
               "type": "string"
@@ -2617,6 +2787,17 @@
           },
           "state": {
             "$ref": "#/components/schemas/AgentState"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "task_id": {
             "anyOf": [
@@ -3393,6 +3574,151 @@
           "ts"
         ],
         "title": "ControlLostFrame",
+        "type": "object"
+      },
+      "ConversationReadParams": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_key": {
+            "minLength": 1,
+            "title": "Completion Key",
+            "type": "string"
+          },
+          "target": {
+            "pattern": "^(session|agent):.+$",
+            "title": "Target",
+            "type": "string"
+          },
+          "through_revision": {
+            "minimum": 1,
+            "title": "Through Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target",
+          "through_revision",
+          "completion_key"
+        ],
+        "title": "ConversationReadParams",
+        "type": "object"
+      },
+      "ConversationStatus": {
+        "properties": {
+          "completion_content_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completion Content Key"
+          },
+          "completion_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completion Key"
+          },
+          "completion_revision": {
+            "default": 0,
+            "title": "Completion Revision",
+            "type": "integer"
+          },
+          "cycle_active": {
+            "default": false,
+            "title": "Cycle Active",
+            "type": "boolean"
+          },
+          "observation_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "live",
+                  "native"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Observation Source"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "pending_outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "read_revision": {
+            "default": 0,
+            "title": "Read Revision",
+            "type": "integer"
+          },
+          "revision": {
+            "default": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "work_state": {
+            "$ref": "#/components/schemas/WorkState",
+            "default": "idle"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "ConversationStatus",
+        "type": "object"
+      },
+      "ConversationStatusPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ConversationStatus"
+          },
+          "type": {
+            "const": "conversation_status",
+            "default": "conversation_status",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ConversationStatusPayload",
         "type": "object"
       },
       "ErrorFrame": {
@@ -4322,6 +4648,13 @@
             "title": "Sessions",
             "type": "array"
           },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationStatus"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
           "topic": {
             "title": "Topic",
             "type": "string"
@@ -4462,6 +4795,23 @@
         ],
         "title": "UsageChangedPayload",
         "type": "object"
+      },
+      "WorkOutcome": {
+        "enum": [
+          "completed",
+          "failed",
+          "interrupted"
+        ],
+        "type": "string"
+      },
+      "WorkState": {
+        "enum": [
+          "idle",
+          "working",
+          "waiting",
+          "unknown"
+        ],
+        "type": "string"
       }
     }
   },
@@ -4818,6 +5168,53 @@
         ]
       },
       "title": "command.list"
+    },
+    "conversation.read": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Acknowledge a specific completion revision.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/conversation.read"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/conversation.read.response"
+          }
+        ]
+      },
+      "title": "conversation.read"
+    },
+    "conversationsAll.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/conversationsAll"
+        }
+      ],
+      "title": "conversations.all events"
+    },
+    "conversationsAll.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to conversations.all"
     },
     "execution.events": {
       "action": "send",

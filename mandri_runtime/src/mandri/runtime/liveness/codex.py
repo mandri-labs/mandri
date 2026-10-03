@@ -8,11 +8,12 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
-from mandri.core.ids import SessionId
+from mandri.core.ids import HarnessKind, SessionId
 from mandri.runtime.codex_request_ids import request_reference
 from mandri.runtime.control.codex_liveness import CodexLivenessSnapshot
 from mandri.runtime.liveness.degradation import is_stream_degradation
-from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
+from mandri.runtime.liveness.evidence import LivenessEvidenceKind
+from mandri.runtime.liveness.observation import WorkEventContext
 from mandri.runtime.liveness.port import LivenessPort
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ class CodexLivenessAdapter:
         self._topic = topic
         self._port = port
         self._session_id = session_id
+        self._work_context = WorkEventContext(HarnessKind.CODEX)
         self._native_identity = native_identity
         self._task: asyncio.Task[None] | None = None
         self._handle: SubscriberHandle | None = None
@@ -166,6 +168,7 @@ class CodexLivenessAdapter:
             return
         if isinstance(raw.get("method"), str):
             self._revision += 1
+        self._work_context.observe(raw, payload.get("ts"))
         try:
             kind = self._evidence_kind(raw)
         except Exception:
@@ -372,6 +375,7 @@ class CodexLivenessAdapter:
                 snapshot = await self._read_state()
                 if revision != self._revision:
                     continue
+                self._work_context.observe({"method": "state/snapshot", "status": snapshot.status})
                 kind = self._status_kind({"status": snapshot.status})
                 if kind is not None:
                     self._emit(kind)
@@ -392,7 +396,7 @@ class CodexLivenessAdapter:
 
     def _emit(self, kind: LivenessEvidenceKind) -> None:
         try:
-            self._port.observe(LivenessEvidence(session_id=self._session_id, kind=kind))
+            self._port.observe(self._work_context.evidence(self._session_id, kind))
         except Exception:
             logger.debug(
                 "codex liveness evidence %s dropped for session %s",

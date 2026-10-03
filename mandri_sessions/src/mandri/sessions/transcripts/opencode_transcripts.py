@@ -1,5 +1,6 @@
 """Opencode sqlite transcript reader with rowid keyset pagination."""
 
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -9,6 +10,7 @@ from mandri.core.ids import PageToken, RawEvent
 from mandri.core.opencode_messages import message_events, message_record
 from mandri.core.ports.transcripts import SessionRef, TranscriptPage
 from mandri.core.types.agents import AgentState
+from mandri.core.types.conversation_status import WorkDelta, WorkObservation
 from mandri.sessions.native_activity import native_model, native_turn_busy
 from mandri.sessions.opencode_store import message_table
 from mandri.sessions.transcripts.errors import TranscriptStoreError
@@ -21,6 +23,7 @@ from mandri.sessions.transcripts.tokens import (
     encode_page_token,
     now_ms,
 )
+from mandri.sessions.work_observation import native_work_observations
 
 SQLITE_TIMEOUT_S = 2.0
 
@@ -157,6 +160,72 @@ class OpencodeTranscriptReader:
                 connection.close()
         except sqlite3.Error as error:
             raise TranscriptStoreError(f"cannot observe opencode store: {error}") from error
+
+    def work_delta(self, session: SessionRef, checkpoint: dict[str, Any] | None) -> WorkDelta:
+        stat = self._db_path.stat()
+        identity = f"{stat.st_dev}:{stat.st_ino}"
+        uri = f"{self._db_path.resolve().as_uri()}?mode=ro"
+        try:
+            connection = sqlite3.connect(uri, uri=True, timeout=SQLITE_TIMEOUT_S)
+            try:
+                connection.execute("BEGIN")
+                table = message_table(connection, str(session.native_id))
+                latest = connection.execute(
+                    f"SELECT coalesce(max(rowid),0),coalesce(max(time_updated),0)"
+                    f" FROM {table} WHERE session_id=?", (str(session.native_id),)
+                ).fetchone()
+                if checkpoint is not None and (
+                    checkpoint.get("identity") != identity
+                    or int(checkpoint.get("rowid", 0)) > int(latest[0])
+                    or int(checkpoint.get("updated", 0)) > int(latest[1])
+                ):
+                    checkpoint = None
+                boundary = int(checkpoint.get("updated", 0)) if checkpoint else int(latest[1])
+                rowid = int(checkpoint.get("rowid", 0)) if checkpoint else int(latest[0])
+                metadata = _projected_metadata_sql() if table == "session_message" else (
+                    "CASE WHEN length(CAST(data AS BLOB)) <= 65536 THEN data END"
+                )
+                type_column = ",type" if table == "session_message" else ""
+                rows = connection.execute(
+                    f"SELECT rowid,{metadata},id,time_updated{type_column} FROM {table}"
+                    " WHERE session_id=? AND (rowid>? OR time_updated>=?)"
+                    " ORDER BY time_updated,rowid", (str(session.native_id), rowid, boundary)
+                ).fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error as error:
+            raise TranscriptStoreError(f"cannot observe opencode work: {error}") from error
+        versions: dict[str, str] = {}
+        previous = checkpoint.get("versions", {}) if checkpoint else {}
+        observations: list[WorkObservation] = []
+        for row in rows:
+            fingerprint = hashlib.sha256(str(row[1]).encode()).hexdigest()
+            if int(row[3]) == int(latest[1]):
+                versions[str(row[2])] = fingerprint
+            if checkpoint is None or previous.get(str(row[2])) == fingerprint:
+                continue
+            if row[1] is None:
+                observations.append(WorkObservation(state="unknown"))
+                continue
+            try:
+                data = json.loads(str(row[1]))
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid OpenCode record")
+                if table == "session_message":
+                    data = {**data, "type": row[4], "id": str(row[2])}
+                    events = message_events(data, str(session.native_id))
+                else:
+                    events = [{"type": "message.updated", "properties": {
+                        "info": {**data, "id": str(row[2]), "sessionID": str(session.native_id)}
+                    }}]
+                for event in events:
+                    observations.extend(native_work_observations(
+                        session.harness, event, str(session.native_id)
+                    ))
+            except (ValueError, TypeError, RecursionError):
+                observations.append(WorkObservation(state="unknown"))
+        return WorkDelta({"identity": identity, "rowid": int(latest[0]), "updated": int(latest[1]),
+                          "versions": versions}, tuple(observations), checkpoint is None)
 
     def _read_rows(
         self,

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 from mandri.core.types.usage import UsageObservation, UsagePrice
+from mandri.database import usage_coverage
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
 from mandri.database.usage_migrations import migrate_usage
@@ -236,3 +237,52 @@ async def test_ingestion_excludes_total_failures_from_valuation(
     assert result["breakdown"] == []
     assert result["timeseries"] == []
     assert (await repository.revalue_unpriced(all_facts=True))["updated"] == 0
+
+
+async def test_staging_progress_only_invalidates_visible_changes(repository):
+    cursor = {"session_id": "s", "status": "backfill", "offset": 100}
+    first = await repository.stage_history([request("a", 20)], "history", cursor, reset=True)
+    second = await repository.stage_history(
+        [request("b", 30)], "history", {**cursor, "offset": 200}
+    )
+    assert second == first
+    assert (await repository.read_cursor("history"))["offset"] == 200
+    partial = await repository.stage_history([], "history", {**cursor, "status": "partial"})
+    assert partial > second
+    completed = await repository.stage_history(
+        [], "history", {**cursor, "status": "ready"}, complete=True
+    )
+    assert completed > partial
+    assert (await repository.overview())["summary"]["input_tokens"] == 50
+
+
+async def test_rebuild_loads_gateway_coverage_once_and_refreshes_it_next_transaction(
+    repository, monkeypatch
+):
+    calls = []
+    original = usage_coverage.gateway_facts
+
+    def track(db, value):
+        calls.append(value.session_id)
+        return original(db, value)
+
+    monkeypatch.setattr(usage_coverage, "gateway_facts", track)
+    values = [request(f"r{i}", 20, model="m") for i in range(100)]
+    cursor = {"session_id": "s", "status": "ready"}
+    await repository.stage_history(values, "history", cursor, reset=True, complete=True)
+    assert calls == ["s"]
+    gateway = replace(
+        request("gateway", 30, model="m"),
+        source="gateway",
+        occurred_at=900,
+        observed_at=1100,
+        complete=True,
+        pricing_context={},
+    )
+    await repository.record(gateway)
+    calls.clear()
+    await repository.stage_history(values, "history", cursor, reset=True, complete=True)
+    assert calls == ["s"]
+    summary = (await repository.overview())["summary"]
+    assert summary["fact_count"] == 1
+    assert summary["input_tokens"] == 30

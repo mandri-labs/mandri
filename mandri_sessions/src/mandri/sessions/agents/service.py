@@ -8,6 +8,7 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 from mandri.core.ids import (
     ActivityState,
@@ -21,6 +22,7 @@ from mandri.core.ids import (
 from mandri.core.ports.agents import AgentDiscovery
 from mandri.core.ports.transcripts import SessionRef, TranscriptPage
 from mandri.core.types.agents import Agent, AgentState
+from mandri.core.types.conversation_status import WorkDelta
 from mandri.core.types.execution import ExecutionBackend
 from mandri.core.types.sessions import Session, SessionError
 from mandri.sessions.agents.docker import contextual_agent, discover_docker_agents
@@ -33,6 +35,7 @@ from mandri.sessions.service import SessionsService
 from mandri.sessions.transcripts.errors import HarnessStoreUnavailableError
 from mandri.sessions.transcripts.recent import recent_jsonl
 from mandri.sessions.transcripts.resolver import TranscriptResolver
+from mandri.sessions.transcripts.work_delta import jsonl_work_delta
 
 logger = logging.getLogger(__name__)
 
@@ -280,3 +283,26 @@ class AgentHistory:
         )
         await self.save(agent)
         return agent
+
+    async def work_delta(self, agent_id: str, checkpoint: dict[str, Any] | None) -> WorkDelta:
+        agent = await self.get(agent_id)
+        parent = await self._sessions.get_session(SessionId(agent.parent_session_id))
+        if parent.execution_backend is ExecutionBackend.DOCKER:
+            agent = contextual_agent(agent, parent)
+        if agent.session_id:
+            return await self._sessions.work_delta(SessionId(agent.session_id), checkpoint)
+        ref = SessionRef(
+            agent.harness, HarnessSessionId(agent.native_id),
+            transcript_reference(parent).project_path,
+            FsPath(agent.transcript_path) if agent.transcript_path else None,
+        )
+        if agent.harness is HarnessKind.CLAUDE and agent.transcript_path:
+            return await asyncio.to_thread(
+                jsonl_work_delta, Path(agent.transcript_path), ref, checkpoint
+            )
+        reader = self._readers.for_session(parent)
+        observe = getattr(reader, "work_delta", None)
+        if observe is None:
+            raise HarnessStoreUnavailableError("Agent work observation is unavailable")
+        result: WorkDelta = await asyncio.to_thread(observe, ref, checkpoint)
+        return result

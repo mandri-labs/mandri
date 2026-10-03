@@ -6,9 +6,10 @@ import logging
 from typing import Any, final
 
 from mandri.core.hub import Hub, SubscriberHandle, Topic
-from mandri.core.ids import SessionId
+from mandri.core.ids import HarnessKind, SessionId
 from mandri.runtime.liveness.degradation import is_stream_degradation
-from mandri.runtime.liveness.evidence import LivenessEvidence, LivenessEvidenceKind
+from mandri.runtime.liveness.evidence import LivenessEvidenceKind
+from mandri.runtime.liveness.observation import WorkEventContext
 from mandri.runtime.liveness.port import LivenessPort
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class ClaudeLivenessAdapter:
         self._topic = topic
         self._port = port
         self._session_id = session_id
+        self._work_context = WorkEventContext(HarnessKind.CLAUDE)
         self._handle: SubscriberHandle | None = None
         self._task: asyncio.Task[None] | None = None
         self._last_seq = since
@@ -131,6 +133,8 @@ class ClaudeLivenessAdapter:
         raw = payload.get("raw")
         if not isinstance(raw, dict):
             return False
+        if raw.get("parent_tool_use_id") is None:
+            self._work_context.observe(raw, payload.get("ts"))
         self._translate(raw)
         return False
 
@@ -226,6 +230,6 @@ class ClaudeLivenessAdapter:
 
     def _emit(self, kind: LivenessEvidenceKind) -> None:
         try:
-            self._port.observe(LivenessEvidence(self._session_id, kind))
+            self._port.observe(self._work_context.evidence(self._session_id, kind))
         except Exception:
             logger.exception("liveness evidence rejected for session %s", self._session_id)

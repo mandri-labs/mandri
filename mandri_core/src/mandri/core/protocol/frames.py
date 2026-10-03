@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal
 
 from mandri.core.ids import CorrelationId
 from mandri.core.protocol.errors import ProtocolErrorCode
+from mandri.core.types.conversation_status import ConversationStatus
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 
@@ -114,6 +115,7 @@ class SnapshotFrame(BaseModel):
     type: Literal["snapshot"]
     topic: str
     sessions: list[dict[str, Any]]
+    statuses: list[ConversationStatus] = Field(default_factory=list)
     runtimes: list[dict[str, Any]]
 
 

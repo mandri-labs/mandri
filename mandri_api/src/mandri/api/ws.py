@@ -173,6 +173,8 @@ async def _snapshot(state: LifespanState) -> dict[str, Any]:
     sessions: list[dict[str, Any]] = []
     service = state.sessions
     if service is not None:
+        if service.statuses is not None:
+            await service.statuses.flush()
         rows = await service.list_sessions()
         sessions = [
             {
@@ -199,6 +201,10 @@ async def _snapshot(state: LifespanState) -> dict[str, Any]:
         "type": "snapshot",
         "topic": "sessions.all",
         "sessions": sessions,
+        "statuses": (
+            [row.model_dump() for row in service.statuses.all()]
+            if service is not None and service.statuses is not None else []
+        ),
         "runtimes": runtimes,
     }
 
@@ -234,7 +240,7 @@ async def _subscribe(
         websocket,
         SubscribedAck(op="subscribed", topic=frame.topic, from_seq=handle.from_seq).model_dump(),
     )
-    if frame.topic == "sessions.all":
+    if frame.topic in {"sessions.all", "conversations.all"}:
         await _send(websocket, await _snapshot(state))
     elif session_id is not None and state.runtime is not None:
         state.runtime.replay_pending_approvals(session_id)

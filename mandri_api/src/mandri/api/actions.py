@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 
 from mandri.api.agent_actions import register_agent_actions
 from mandri.api.command_actions import register_command_actions
+from mandri.api.conversation_actions import register_conversation_actions
 from mandri.api.routers.sessions import session_out
 from mandri.core.ids import ModeApplication, PageToken, SessionId
 from mandri.core.protocol.errors import ProtocolError, ProtocolErrorCode
@@ -26,6 +27,7 @@ from mandri.core.types.approvals import (
     DuplicateApprovalAnswerError,
 )
 from mandri.core.types.sessions import SessionError
+from mandri.core.work_content import contains_completed_content
 from mandri.runtime.agents import AgentService
 from mandri.runtime.attachments import AttachmentError, AttachmentStorageError
 from mandri.runtime.control import PromptState
@@ -59,10 +61,11 @@ def build_action_registry(
     registry.register("session.prompt", _make_prompt_handler(runtime))
     registry.register("session.interrupt", _make_interrupt_handler(runtime))
     if sessions is not None:
+        register_conversation_actions(registry, sessions, agents)
         registry.register("session.history", _make_history_handler(sessions, runtime))
         registry.register("session.list", _make_list_handler(sessions))
     if agents is not None:
-        register_agent_actions(registry, agents)
+        register_agent_actions(registry, agents, sessions)
     return registry
 
 
@@ -70,6 +73,8 @@ def _make_list_handler(
     sessions: SessionsService,
 ) -> Callable[[BaseModel], Awaitable[dict[str, typing.Any]]]:
     async def handle(params: BaseModel) -> dict[str, typing.Any]:
+        if sessions.statuses is not None:
+            await sessions.statuses.flush()
         rows = await sessions.list_sessions()
         return {
             "sessions": [session_out(row, sessions).model_dump(exclude_unset=True) for row in rows]
@@ -85,6 +90,13 @@ def _make_history_handler(
     async def handle(params: BaseModel) -> dict[str, typing.Any]:
         if not isinstance(params, SessionHistoryParams):
             raise ProtocolError(ProtocolErrorCode.INVALID_PARAMS, "invalid history params")
+        completion_revision = None
+        status = None
+        if params.cursor is None and sessions.statuses is not None:
+            await sessions.statuses.flush()
+            status = sessions.statuses.get(f"session:{params.session_id}")
+            if status.work_state == "idle":
+                completion_revision = status.completion_revision
         try:
             page = await sessions.history(
                 SessionId(str(params.session_id)),
@@ -108,7 +120,13 @@ def _make_history_handler(
         if runtime is not None and runtime.registry.status(str(params.session_id)) == "live":
             busy = False
             turn_active = runtime.is_busy(str(params.session_id))
+        if completion_revision is not None and status is not None:
+            session = await sessions.get_session(SessionId(str(params.session_id)))
+            if not contains_completed_content(session.harness, list(page.entries), status.completion_content_key):
+                completion_revision = None
         return {
+            "completion_revision": completion_revision,
+            "completion_target": f"session:{params.session_id}",
             "entries": page.entries,
             "next_cursor": page.next_token,
             "has_more": page.has_more,
@@ -216,9 +234,7 @@ def _make_prompt_handler(
                 else await runtime.send_session_prompt(str(params.session_id), params.content)
             )
         except AttachmentStorageError as exc:
-            raise ProtocolError(
-                ProtocolErrorCode.ATTACHMENT_STORAGE_UNAVAILABLE, str(exc)
-            ) from exc
+            raise ProtocolError(ProtocolErrorCode.ATTACHMENT_STORAGE_UNAVAILABLE, str(exc)) from exc
         except AttachmentError as exc:
             raise ProtocolError(ProtocolErrorCode.INVALID_PARAMS, str(exc)) from exc
         except SteerNoActiveTurnError as exc:

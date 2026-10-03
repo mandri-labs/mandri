@@ -1374,6 +1374,8 @@ class RuntimeService:
                 await self._restart_for_mode(session_id, mode)
                 application = ModeApplication.RESTARTED
             await self._persist_interaction_mode(session_id, mode, application)
+            if state.watcher is not None and self._registry.harness_of(session_id) == "opencode":
+                await state.watcher.set_auto_answer(self._approve_once if mode == "auto" else None)
             return application
 
     async def _restart_for_mode(self, session_id: str, mode: str) -> None:

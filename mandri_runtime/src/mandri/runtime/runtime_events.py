@@ -11,17 +11,11 @@ from mandri.runtime.adapters import EventSource
 from mandri.runtime.control.codex import CodexControlAdapter
 from mandri.runtime.control.errors import ControlError
 from mandri.runtime.launch_preparation import harness_kind
-from mandri.runtime.liveness import (
-    ClaudeLivenessAdapter,
-    CodexLivenessAdapter,
-    LivenessPort,
-    OpencodeLivenessAdapter,
-)
-from mandri.runtime.liveness.agy import AgyLivenessAdapter
-from mandri.runtime.liveness.pi import PiLivenessAdapter
+from mandri.runtime.liveness import LivenessPort
+from mandri.runtime.liveness.factory import liveness_adapter
 from mandri.runtime.registry import SessionRegistry
 from mandri.runtime.session_feed import session_topic
-from mandri.runtime.session_state import LivenessAdapter, RuntimeStates
+from mandri.runtime.session_state import RuntimeStates
 from mandri.runtime.translators.base import EventPublisher
 
 _RESOLVED_FRAME_TYPE = "approval.resolved"
@@ -80,36 +74,18 @@ class RuntimeEvents:
         native_session_id = SessionId(session_id)
         since = self._session_state(session_id).feed_start_seq
         topic = session_topic(session_id)
-        adapter: LivenessAdapter
-        if kind is HarnessKind.PI:
-            adapter = PiLivenessAdapter(hub, topic, port, native_session_id, since=since)
-        elif kind is HarnessKind.AGY:
-            adapter = AgyLivenessAdapter(hub, topic, port, native_session_id, since=since)
-        elif kind is HarnessKind.CLAUDE:
-            adapter = ClaudeLivenessAdapter(hub, topic, port, native_session_id, since=since)
-        elif kind is HarnessKind.CODEX:
-            control = self._session_state(session_id).control
-            adapter = CodexLivenessAdapter(
-                hub,
-                topic,
-                port,
-                native_session_id,
-                native_identity=lambda: self._session_state(session_id).native_id,
-                since=since,
-                read_queue=control.read_queue if isinstance(control, CodexControlAdapter) else None,
-                read_state=control.read_liveness
-                if isinstance(control, CodexControlAdapter)
-                else None,
-            )
-        else:
-            adapter = OpencodeLivenessAdapter(
-                hub,
-                topic,
-                port,
-                native_session_id,
-                since=since,
-                native_identity=lambda: self._session_state(session_id).native_id,
-            )
+        control = self._session_state(session_id).control
+        adapter = liveness_adapter(
+            kind,
+            hub,
+            topic,
+            port,
+            native_session_id,
+            since=since,
+            native_identity=lambda: self._session_state(session_id).native_id,
+            read_queue=control.read_queue if isinstance(control, CodexControlAdapter) else None,
+            read_state=control.read_liveness if isinstance(control, CodexControlAdapter) else None,
+        )
         port.register(native_session_id)
         adapter.start()
         self._session_state(session_id).liveness_adapter = adapter

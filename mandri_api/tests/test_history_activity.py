@@ -10,6 +10,7 @@ from mandri.core.protocol.registry import SessionHistoryParams
 @pytest.mark.parametrize("managed", [False, True])
 async def test_history_restores_working_state_independently_of_ownership(managed, busy):
     sessions = SimpleNamespace(
+        statuses=None,
         history=AsyncMock(
             return_value=SimpleNamespace(entries=[], next_token=None, has_more=False)
         ),

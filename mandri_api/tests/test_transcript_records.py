@@ -19,6 +19,7 @@ SESSION = "00000000-0000-0000-0000-000000000001"
 
 async def test_history_survives_status_store_failure():
     service = SimpleNamespace(
+        statuses=None,
         history=AsyncMock(
             return_value=SimpleNamespace(entries=['"message"'], next_token=None, has_more=False)
         ),
@@ -49,6 +50,7 @@ async def test_history_exposes_large_record_preview(tmp_path):
         + "\n"
     )
     service = SimpleNamespace(
+        statuses=None,
         history=AsyncMock(return_value=recent_jsonl(path, None, 10)),
         external_status=AsyncMock(return_value=(False, False)),
     )

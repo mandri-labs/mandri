@@ -1,12 +1,14 @@
 import copy
 import json
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import litellm
 import pytest
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from mandri.core.ids import ModelRef, ProviderKind, RouteId, SecretRef, Url
+from mandri.core.provider_headers import conversation_headers
 from mandri.core.types.config import PrivacySettings
 from mandri.core.types.execution import PrivacyMode, ProtectionError
 from mandri.database.privacy import PrivacyRepository
@@ -177,6 +179,17 @@ async def test_real_sdk_serialization_passes_guard_before_transport(
     def receive(request: httpx.Request) -> httpx.Response:
         assert guard.sends > len(observed), "SDK bypassed the mandatory egress guard"
         observed.append(request.content)
+        if kind in {ProviderKind.OPENCODE, ProviderKind.OPENCODE_GO}:
+            expected = conversation_headers(kind, "route:route-test")["x-opencode-session"]
+            assert request.headers["user-agent"] == "Mandri Gateway"
+            assert request.headers["x-opencode-client"] == "mandri"
+            assert request.headers["x-opencode-session"] == expected
+            assert request.headers["x-opencode-session-id"] == expected
+            assert UUID(request.headers["x-opencode-request"]).version == 4
+            for name, value in guard.headers.items():
+                assert request.headers[name] == value
+        else:
+            assert not any(name.startswith("x-opencode-") for name in request.headers)
         assert _EMAIL.encode() not in request.content
         assert _ROOT.encode() not in request.content
         alias = guard.engine.protect_text(_EMAIL)

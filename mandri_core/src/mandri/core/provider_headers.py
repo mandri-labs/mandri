@@ -12,3 +12,16 @@ def conversation_headers(kind: ProviderKind, context: str) -> dict[str, str]:
         "User-Agent": "mandri/0.1",
         "x-opencode-session": str(uuid.uuid5(_SESSION_NAMESPACE, context)),
     }
+
+
+def inference_headers(kind: ProviderKind, context: str) -> dict[str, str]:
+    headers = conversation_headers(kind, context)
+    if not headers:
+        return {}
+    return {
+        **headers,
+        "User-Agent": "Mandri Gateway",
+        "x-opencode-client": "mandri",
+        "x-opencode-session-id": headers["x-opencode-session"],
+        "x-opencode-request": str(uuid.uuid4()),
+    }

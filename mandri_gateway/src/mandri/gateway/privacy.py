@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from mandri.core.provider_headers import conversation_headers
+from mandri.core.provider_headers import inference_headers
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode, ProtectionError
 from mandri.gateway.privacy_egress import EgressGuard
 from mandri.gateway.privacy_known import KnownValues
@@ -43,7 +43,7 @@ class GatewayPrivacy:
             if route.conversation_id is not None
             else f"route:{route.route_id}"
         )
-        headers = conversation_headers(route.model.provider, context)
+        headers = inference_headers(route.model.provider, context)
 
         def transform(engine: SurrogateEngine) -> tuple[dict[str, Any], dict[str, str]]:
             credential = str(route.model.api_key)

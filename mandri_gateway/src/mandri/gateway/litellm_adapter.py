@@ -7,7 +7,7 @@ import httpx
 import litellm
 import litellm.anthropic_interface
 from mandri.core.ids import ProviderKind
-from mandri.core.provider_headers import conversation_headers
+from mandri.core.provider_headers import inference_headers
 from mandri.core.types.execution import PrivacyMode, ProtectionError
 from mandri.gateway.errors.upstream import UpstreamError
 from mandri.gateway.gemini_completion import generate_content
@@ -75,7 +75,7 @@ def _credentials(route: ResolvedRoute, guard: EgressGuard | None = None) -> dict
         else f"route:{route.route_id}"
     )
     headers = {
-        **(guard.headers if guard is not None else conversation_headers(model.provider, context)),
+        **(guard.headers if guard is not None else inference_headers(model.provider, context)),
         **identity_headers(model),
     }
     if headers:

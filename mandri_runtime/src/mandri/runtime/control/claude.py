@@ -19,6 +19,7 @@ from mandri.runtime.control.errors import (
     ControlTransportError,
     HarnessNotInitializedError,
     ModeRejectedError,
+    PromptDeliveryUnknownError,
 )
 from mandri.runtime.control.prompt import native_parts
 from mandri.runtime.pump import LineEventKind, LinePump
@@ -167,8 +168,8 @@ class ClaudeControlAdapter:
         }
         try:
             await self._send(frame)
-        except ControlTransportError:
-            return PromptOutcome(state=PromptState.ERROR, code="prompt_delivery_failed")
+        except ControlTransportError as error:
+            raise PromptDeliveryUnknownError(str(error)) from error
         description = prompt_text(content).strip()
         if not self._title_requested and description and not description.startswith("/"):
             self._title_requested = True

@@ -14,6 +14,7 @@ from mandri.runtime.control.errors import (
     ControlTransportError,
     ModeRejectedError,
     PromptDeliveryFailedError,
+    PromptDeliveryUnknownError,
 )
 from mandri.runtime.pump import LineEventKind, LinePump
 
@@ -89,7 +90,7 @@ class AgyControlAdapter:
             self._stdin.write((json.dumps(frame) + "\n").encode())
             await self._stdin.drain()
         except OSError as error:
-            raise PromptDeliveryFailedError("Antigravity input closed") from error
+            raise PromptDeliveryUnknownError("Antigravity input closed") from error
         return PromptOutcome(PromptState.QUEUED)
 
     async def list_commands(self) -> list[dict[str, Any]]:

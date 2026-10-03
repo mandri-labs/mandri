@@ -26,6 +26,7 @@ from mandri.runtime.control.errors import (
     ControlTransportError,
     ModeRejectedError,
     PromptDeliveryFailedError,
+    PromptDeliveryUnknownError,
 )
 from mandri.runtime.pump import LinePump
 
@@ -250,6 +251,6 @@ async def test_control_rejects_missing_or_replaced_identity(
 async def test_control_reports_closed_stdin(tmp_path: Path) -> None:
     control, sink = adapter(tmp_path, [{"event": "init", "conversation_id": "conversation"}])
     sink.closed = True
-    with pytest.raises(PromptDeliveryFailedError, match="input closed"):
+    with pytest.raises(PromptDeliveryUnknownError, match="input closed"):
         await control.send_prompt("message")
     await control.aclose()

@@ -6,6 +6,8 @@ import pytest
 from mandri.core.ids import HarnessSessionId
 from mandri.runtime.control.errors import (
     ControlTransportError,
+    PromptDeliveryFailedError,
+    PromptDeliveryUnknownError,
     ThreadOwnershipError,
 )
 from mandri.runtime.control.pi import PiControlAdapter
@@ -376,3 +378,31 @@ async def test_missing_permission_extension_never_sends_a_prompt():
     assert (await change).value == "requires_restart"
     assert transport.commands.empty()
     await control.aclose()
+
+
+@pytest.mark.parametrize("failure", ["rejected", "closed", "identity_closed"])
+async def test_prompt_response_failure_preserves_delivery_certainty(failure):
+    transport = PiTransport()
+    control = transport.adapter()
+    await initialize(transport, control)
+    task = asyncio.create_task(control.send_prompt("Synthetic message"))
+    try:
+        await transport.reply({"sessionId": "pi-session"})
+        if failure == "rejected":
+            command = await transport.reply(success=False)
+        else:
+            if failure == "identity_closed":
+                command = await transport.reply({"disposition": "handled"})
+                await transport.commands.get()
+            else:
+                command = await transport.commands.get()
+            transport.output.put_nowait(None)
+        assert command["type"] == "prompt"
+        expected = (
+            PromptDeliveryFailedError if failure == "rejected" else PromptDeliveryUnknownError
+        )
+        with pytest.raises(expected):
+            await task
+        assert transport.commands.empty()
+    finally:
+        await control.aclose()

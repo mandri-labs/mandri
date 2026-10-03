@@ -23,6 +23,10 @@ class PromptDeliveryFailedError(ControlError):
     """Raised when a prompt could not be delivered to the harness."""
 
 
+class PromptDeliveryUnknownError(ControlError):
+    """Raised when a submitted prompt has no confirmed outcome."""
+
+
 class ControlTransportError(ControlError):
     """Raised when the control channel fails or disconnects."""
 

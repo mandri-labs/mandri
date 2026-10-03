@@ -17,6 +17,7 @@ from mandri.runtime.control.errors import (
     HarnessNotInitializedError,
     ModeRejectedError,
     PromptDeliveryFailedError,
+    PromptDeliveryUnknownError,
     ThreadOwnershipError,
 )
 from mandri.runtime.control.pi_commands import PiCommands
@@ -131,10 +132,10 @@ class PiControlAdapter:
                 params["images"] = images
         try:
             result = await self._call("prompt", params)
-        except ControlTransportError as error:
-            raise PromptDeliveryFailedError(str(error)) from error
-        if result.get("disposition") in {None, "handled"}:
-            await self._update_identity(await self._call("get_state", {}))
+            if result.get("disposition") in {None, "handled"}:
+                await self._update_identity(await self._call("get_state", {}))
+        except (ControlTransportError, TimeoutError) as error:
+            raise PromptDeliveryUnknownError(str(error)) from error
         return PromptOutcome(
             state=PromptState.STEERED if state.get("isStreaming") else PromptState.QUEUED
         )
@@ -306,6 +307,12 @@ class PiControlAdapter:
             async with asyncio.timeout(timeout):
                 await self._send({**params, "type": command, "id": identifier})
                 record = await future
+            if (
+                command == "prompt"
+                and record.get("command") == command
+                and record.get("success") is False
+            ):
+                raise PromptDeliveryFailedError(str(record.get("error") or "Pi rejected prompt"))
             return response_data(record, command)
         finally:
             self._pending.pop(identifier, None)

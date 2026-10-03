@@ -28,6 +28,7 @@ from mandri.runtime.control.errors import (
     ControlTransportError,
     ModeRejectedError,
     PromptDeliveryFailedError,
+    PromptDeliveryUnknownError,
 )
 from mandri.runtime.control.modes import OPENCODE_PERMISSION_RULES
 from mandri.runtime.control.opencode_commands import OpencodeCommands
@@ -214,7 +215,14 @@ class OpencodeControlAdapter(HarnessControl):
         ]
         if files:
             body["files"] = files
-        response = await self._request("POST", f"/api/session/{self._session_id}/prompt", body)
+        try:
+            response = await self._request("POST", f"/api/session/{self._session_id}/prompt", body)
+        except (ControlTransportError, TimeoutError) as error:
+            raise PromptDeliveryUnknownError(str(error)) from error
+        if response.status_code >= 500:
+            raise PromptDeliveryUnknownError(
+                f"opencode prompt outcome unknown: status {response.status_code}"
+            )
         if not _is_ok(response.status_code):
             raise PromptDeliveryFailedError(
                 f"opencode prompt delivery failed: status {response.status_code}"

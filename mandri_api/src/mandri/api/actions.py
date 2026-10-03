@@ -37,6 +37,7 @@ from mandri.runtime.control.errors import (
     HarnessNotInitializedError,
     ModeRejectedError,
     PromptDeliveryFailedError,
+    PromptDeliveryUnknownError,
     SteerNoActiveTurnError,
     SteerUnsupportedError,
 )
@@ -241,6 +242,8 @@ def _make_prompt_handler(
             raise ProtocolError(ProtocolErrorCode.INVALID_PARAMS, str(exc)) from exc
         except SteerNoActiveTurnError as exc:
             raise ProtocolError(ProtocolErrorCode.STEER_NO_ACTIVE_TURN, str(exc)) from exc
+        except (PromptDeliveryUnknownError, TimeoutError) as exc:
+            raise ProtocolError(ProtocolErrorCode.DELIVERY_UNKNOWN, str(exc)) from exc
         except PromptDeliveryFailedError as exc:
             raise ProtocolError(ProtocolErrorCode.PROMPT_DELIVERY_FAILED, str(exc)) from exc
         except (ControlTransportError, HarnessNotInitializedError) as exc:

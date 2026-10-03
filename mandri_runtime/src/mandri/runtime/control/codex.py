@@ -20,6 +20,7 @@ from mandri.runtime.control.errors import (
     HarnessNotInitializedError,
     ModeRejectedError,
     PromptDeliveryFailedError,
+    PromptDeliveryUnknownError,
     SteerNoActiveTurnError,
     ThreadOwnershipError,
 )
@@ -231,9 +232,12 @@ class CodexControlAdapter:
 
     async def send_prompt(self, content: str | UserPrompt) -> PromptOutcome:
         thread_id = self._require_thread()
-        if self._active_turn_id is not None:
-            return await self._steer(thread_id, content)
-        return await self._start_turn(thread_id, content)
+        try:
+            if self._active_turn_id is not None:
+                return await self._steer(thread_id, content)
+            return await self._start_turn(thread_id, content)
+        except (ControlTransportError, TimeoutError) as error:
+            raise PromptDeliveryUnknownError(str(error)) from error
 
     async def list_commands(self) -> list[dict[str, Any]]:
         self._require_thread()

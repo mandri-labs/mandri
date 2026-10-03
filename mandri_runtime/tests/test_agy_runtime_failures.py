@@ -8,7 +8,11 @@ from mandri.core.ids import HarnessKind, HarnessSessionId, SessionId
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode
 from mandri.core.types.model_selection import ModelSource
 from mandri.runtime.control.agy import AgyControlAdapter
-from mandri.runtime.control.errors import ControlTransportError, PromptDeliveryFailedError
+from mandri.runtime.control.errors import (
+    ControlTransportError,
+    PromptDeliveryFailedError,
+    PromptDeliveryUnknownError,
+)
 from mandri.runtime.launch_preparation import PreparedLaunch
 from mandri.runtime.liveness.tracker import WorkingStateTracker
 from mandri.runtime.pump import LinePump
@@ -18,7 +22,7 @@ from mandri.sessions.errors import SessionRunningError
 
 
 @pytest.mark.parametrize("failure_stage", ["identity", "stdin"])
-async def test_failed_agy_delivery_releases_pending_prompt(
+async def test_agy_delivery_preserves_uncertainty_after_write(
     monkeypatch: pytest.MonkeyPatch, failure_stage: str
 ) -> None:
     async def chunks() -> AsyncIterator[bytes]:
@@ -36,9 +40,12 @@ async def test_failed_agy_delivery_releases_pending_prompt(
     )
     service._session_state(str(sid)).control = control
     monkeypatch.setattr(service, "_apply_pending_model", AsyncMock())
-    with pytest.raises(PromptDeliveryFailedError):
+    expected = (
+        PromptDeliveryFailedError if failure_stage == "identity" else PromptDeliveryUnknownError
+    )
+    with pytest.raises(expected):
         await service.send_session_prompt(str(sid), "Synthetic prompt")
-    assert not tracker.working_state(sid).busy
+    assert tracker.working_state(sid).busy == (failure_stage == "stdin")
     if failure_stage == "identity":
         sink.write.assert_not_called()
     else:

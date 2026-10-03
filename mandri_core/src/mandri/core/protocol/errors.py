@@ -17,6 +17,7 @@ class ProtocolErrorCode(enum.StrEnum):
     STEER_NO_ACTIVE_TURN = "steer_no_active_turn"
     MODE_REQUIRES_RESTART = "mode_requires_restart"
     MODE_REJECTED = "mode_rejected"
+    DELIVERY_UNKNOWN = "delivery_unknown"
     PROMPT_DELIVERY_FAILED = "prompt_delivery_failed"
     CONTROL_DELIVERY_FAILED = "control_delivery_failed"
     INVALID_PARAMS = "invalid_params"

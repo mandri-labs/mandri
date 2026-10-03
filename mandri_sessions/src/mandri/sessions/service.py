@@ -26,6 +26,7 @@ from mandri.core.ports.database import DatabasePort
 from mandri.core.ports.executions import ExecutionRepositoryPort
 from mandri.core.ports.native_sessions import PiSessionIdentityPort
 from mandri.core.ports.privacy import PrivacyScopePort
+from mandri.core.ports.session_privacy import SessionPrivacyPort
 from mandri.core.types.availability import SessionOwner
 from mandri.core.types.conversation_status import WorkDelta
 from mandri.core.types.execution import (
@@ -96,6 +97,7 @@ class SessionsService:
         worktrees_dir: Path | None = None,
         pi_identities: PiSessionIdentityPort | None = None,
         statuses: ConversationStatuses | None = None,
+        session_privacy: SessionPrivacyPort | None = None,
     ) -> None:
         self.worktrees = SessionWorktrees(
             db, worktrees_dir or Path.home() / ".mandri" / "worktrees"
@@ -105,6 +107,7 @@ class SessionsService:
         self._transcripts = transcripts
         self._executions = executions
         self._privacy_scopes = privacy_scopes
+        self._session_privacy = session_privacy
         self._pi_identities = pi_identities
         self.statuses = statuses
         self._pi_processes: Callable[[], Mapping[int, str | None]] = dict
@@ -170,6 +173,33 @@ class SessionsService:
                 raise ProtectionError("privacy_state_unavailable", "Privacy state is unavailable")
             return session
         return _row_to_session(await SessionLineage(self._db).ensure(str(session_id)))
+
+    async def set_session_privacy(self, expected: Session, mode: PrivacyMode) -> Session:
+        if expected.model_source is not ModelSource.GATEWAY:
+            raise ProtectionError(
+                "privacy_native_unsupported", "Pseudonymization requires a gateway model"
+            )
+        if mode is expected.privacy_mode:
+            return expected
+        if self._session_privacy is None:
+            raise ProtectionError("privacy_state_unavailable", "Privacy storage is unavailable")
+        scope_id = expected.privacy_scope_id
+        created = False
+        if mode is PrivacyMode.SURROGATE:
+            if self._privacy_scopes is None:
+                raise ProtectionError("privacy_state_unavailable", "Privacy state is unavailable")
+            if scope_id:
+                await self._privacy_scopes.validate(scope_id)
+            else:
+                scope_id = await self._privacy_scopes.create(str(expected.project_path))
+                created = True
+        try:
+            await self._session_privacy.set_privacy(expected, mode, scope_id)
+        except BaseException:
+            if created and self._privacy_scopes is not None and scope_id is not None:
+                await asyncio.shield(self._privacy_scopes.delete(scope_id))
+            raise
+        return await self.get_session(expected.id)
 
     async def ensure_no_pending_purge(self, session_id: SessionId) -> None:
         row = await self._db.fetch_one(
@@ -368,13 +398,13 @@ class SessionsService:
             "UPDATE session SET model = ?, model_source = ?,"
             " reasoning_effort = CASE WHEN ? THEN NULL ELSE reasoning_effort END,"
             " gateway_route_id = CASE WHEN ? = 'native' THEN NULL ELSE gateway_route_id END"
-            " WHERE id = ? AND deleted = 0" + condition + " RETURNING *",
-            (model, source.value, reset_effort, source.value, str(session_id), *selection),
+            " WHERE id = ? AND deleted = 0 AND policy_revision = ?"
+            + condition + " RETURNING *",
+            (model, source.value, reset_effort, source.value, str(session_id),
+             existing["policy_revision"], *selection),
         )
         if updated is None:
-            if expected is not None:
-                raise SessionConflictError("Session model selection changed during restoration")
-            raise SessionNotFoundError(f"unknown session {session_id}")
+            raise SessionConflictError("Session model selection changed or policy changed")
         return _row_to_session(updated)
 
     async def observe_native_selection(

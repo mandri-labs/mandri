@@ -14,6 +14,15 @@ _BASE = "http://127.0.0.1:8175/v1/gateway/llm/synthetic-route"
 
 
 @pytest.mark.parametrize("kind", list(HarnessKind))
+def test_gateway_launch_is_ready_for_privacy_toggle_without_relaunch(kind: HarnessKind) -> None:
+    preparation = LaunchPreparation(8175, lambda _: "token", {})
+    args = ([kind.value], kind, "chosen", None, False, "synthetic-route", None, None)
+    standard = preparation.prepare(*args, privacy_mode=PrivacyMode.NONE)
+    protected = preparation.prepare(*args, privacy_mode=PrivacyMode.SURROGATE)
+    assert standard == protected
+
+
+@pytest.mark.parametrize("kind", list(HarnessKind))
 def test_protected_launch_preserves_independent_plugin_credentials(kind: HarnessKind) -> None:
     parent = {
         "OPENROUTER_API_KEY": "synthetic-plugin-key",

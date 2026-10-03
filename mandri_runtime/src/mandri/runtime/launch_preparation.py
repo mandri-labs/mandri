@@ -87,8 +87,7 @@ class LaunchPreparation:
                 else None,
                 effort=effort,
             )
-            if privacy_mode is PrivacyMode.SURROGATE:
-                plan = protected_launch(plan, kind, self._gateway_port, route_id, token, model)
+            plan = protected_launch(plan, kind, self._gateway_port, route_id, token, model)
         if kind is HarnessKind.PI:
             command = [*command, "--extension", managed_extension_path()]
         env = self.child_env(plan, env_wiring)

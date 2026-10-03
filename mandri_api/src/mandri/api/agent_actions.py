@@ -59,7 +59,9 @@ async def _dispatch(
         for agent in rows:
             view = AgentView.model_validate(agent)
             if statuses is not None:
-                agent_target = f"session:{agent.session_id}" if agent.session_id else f"agent:{agent.id}"
+                agent_target = (
+                    f"session:{agent.session_id}" if agent.session_id else f"agent:{agent.id}"
+                )
                 view.status = statuses.get(agent_target)
             views.append(view.model_dump(mode="json"))
         return {
@@ -78,8 +80,12 @@ async def _dispatch(
             if status.work_state == "idle":
                 completion_revision = status.completion_revision
         page = await agents.history(params.agent_id, params.cursor, params.limit)
-        if completion_revision is not None and status is not None and not contains_completed_content(
-            agent.harness, list(page.entries), status.completion_content_key
+        if (
+            completion_revision is not None
+            and status is not None
+            and not contains_completed_content(
+                agent.harness, list(page.entries), status.completion_content_key
+            )
         ):
             completion_revision = None
         return {

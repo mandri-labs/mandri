@@ -55,6 +55,7 @@ from mandri.daemon.usage_prices import PriceCatalogSync
 from mandri.database.conversation_status import ConversationStatusRepository
 from mandri.database.executions import ExecutionRepository
 from mandri.database.native_sessions import NativePiSessionIdentities
+from mandri.database.session_privacy import SessionPrivacyRepository
 from mandri.database.sqlite_adapter import AiosqliteDatabase
 from mandri.database.usage import UsageRepository
 from mandri.database.usage_database import UsageDatabase
@@ -498,6 +499,7 @@ async def wire_runtime(
         executions=executions,
         pi_identities=NativePiSessionIdentities(db),
         privacy_scopes=privacy.scopes,
+        session_privacy=SessionPrivacyRepository(db),
         worktrees_dir=base_dir / "worktrees",
         statuses=statuses,
     )

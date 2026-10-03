@@ -303,6 +303,46 @@ class RuntimeService:
             return dataclasses.replace(availability, reason="native_restore_failed")
         return availability
 
+    async def set_session_privacy(self, session_id: str, mode: PrivacyMode) -> Session:
+        state = self._session_state(session_id)
+        async with state.mode_lock:
+            if state.resuming or state.stopping:
+                raise SessionRunningError("Session is already changing state")
+            state.resuming = True
+            operation = asyncio.create_task(self._set_session_privacy(session_id, mode))
+            try:
+                return await asyncio.shield(operation)
+            except asyncio.CancelledError:
+                await operation
+                raise
+            finally:
+                state.resuming = False
+
+    async def _set_session_privacy(self, session_id: str, mode: PrivacyMode) -> Session:
+        if self._sessions is None:
+            raise ProtectionError("privacy_state_unavailable", "Session storage is unavailable")
+        availability = await self._access.availability(session_id)
+        if availability.owner not in (SessionOwner.MANDRI, SessionOwner.UNOWNED):
+            raise ProtectionError("session_writer_conflict", "Session has an external writer")
+        record = await self._sessions.ensure_session_policy(SessionId(session_id))
+        state = self._session_state(session_id)
+        if (
+            self._registry.status(session_id) == LIVE
+            and state.launched_model is not None
+            and state.launched_model[0] is ModelSource.NATIVE
+        ):
+            raise ProtectionError(
+                "privacy_native_unsupported", "The running harness uses a native model"
+            )
+        updated = await self._sessions.set_session_privacy(record, mode)
+        state.policy = updated.policy
+        state.policy_revision = updated.policy_revision
+        self._events.publish_both(session_id, {
+            "type": "session_state", "session_id": session_id,
+            "harness": updated.harness.value, "state": updated.state.value,
+        })
+        return updated
+
     async def restore_native_model(self, session_id: str) -> SessionAvailability:
         state = self._session_state(session_id)
         if state.resuming or state.stopping:

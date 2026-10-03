@@ -122,7 +122,9 @@ def _make_history_handler(
             turn_active = runtime.is_busy(str(params.session_id))
         if completion_revision is not None and status is not None:
             session = await sessions.get_session(SessionId(str(params.session_id)))
-            if not contains_completed_content(session.harness, list(page.entries), status.completion_content_key):
+            if not contains_completed_content(
+                session.harness, list(page.entries), status.completion_content_key
+            ):
                 completion_revision = None
         return {
             "completion_revision": completion_revision,

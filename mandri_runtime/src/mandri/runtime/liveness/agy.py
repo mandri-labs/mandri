@@ -102,7 +102,11 @@ class AgyLivenessAdapter:
 
     def _observe(self, raw: dict[str, Any], timestamp: object = None) -> None:
         details = raw.get("data", raw.get("step_update", raw.get("result", raw)))
-        owner = details.get("conversationId", details.get("conversation_id")) if isinstance(details, dict) else None
+        owner = (
+            details.get("conversationId", details.get("conversation_id"))
+            if isinstance(details, dict)
+            else None
+        )
         self._work_context.observe(
             raw, timestamp, root=owner is None or owner == self._native_id
         )

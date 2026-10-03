@@ -1,3 +1,4 @@
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -57,7 +58,9 @@ class AgyTranscriptReader:
         updated: dict[str, Any] = {}
         observations: list[WorkObservation] = []
         baseline = checkpoint is None
-        context = NativeWorkContext(session.harness, str(session.native_id), cursors.get("context", {}))
+        context = NativeWorkContext(
+            session.harness, str(session.native_id), cursors.get("context", {})
+        )
         path = self._history_path(session, None)
         if path is not None:
             delta = jsonl_work_delta(path, session, cursors.get("transcript"), context=context)
@@ -70,10 +73,8 @@ class AgyTranscriptReader:
                 owner = None
                 metadata = root / "mandri-session.json"
                 if metadata.is_file() and metadata.stat().st_size <= 65536:
-                    try:
+                    with contextlib.suppress(ValueError, TypeError, OSError):
                         owner = json.loads(metadata.read_text()).get("native_id")
-                    except (ValueError, TypeError, OSError):
-                        pass
                 delta = jsonl_work_delta(journal, session, cursors.get(key), context=context,
                                         require_owner=True, default_owner=owner)
                 updated[key] = delta.checkpoint

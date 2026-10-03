@@ -49,6 +49,7 @@ class StubRuntime:
 class StubSessions:
     def __init__(self, record: Session | None) -> None:
         self.record = record
+        self.statuses = None
 
     async def get_session(self, session_id: SessionId) -> Session:
         if self.record is None:

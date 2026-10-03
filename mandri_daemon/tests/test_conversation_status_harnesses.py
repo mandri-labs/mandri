@@ -34,7 +34,9 @@ async def deliver(hub, statuses, harness, *raw):
 @pytest.mark.parametrize("harness", list(HarnessKind))
 async def test_managed_native_settlement_is_specific_to_each_harness(observed, harness):
     hub = Hub()
-    tracker = WorkingStateTracker(lambda evidence, state: observe_liveness(observed, evidence, state))
+    tracker = WorkingStateTracker(
+        lambda evidence, state: observe_liveness(observed, evidence, state)
+    )
     tracker.register(SessionId("s"))
     adapter = liveness_adapter(harness, hub, Topic("session.s"), tracker, SessionId("s"),
                                native_identity=lambda: "native")
@@ -88,7 +90,9 @@ async def test_managed_native_settlement_is_specific_to_each_harness(observed, h
 
 async def test_claude_queued_result_is_not_global_completion(observed):
     hub = Hub()
-    tracker = WorkingStateTracker(lambda evidence, state: observe_liveness(observed, evidence, state))
+    tracker = WorkingStateTracker(
+        lambda evidence, state: observe_liveness(observed, evidence, state)
+    )
     tracker.register(SessionId("s"))
     adapter = liveness_adapter(HarnessKind.CLAUDE, hub, Topic("session.s"), tracker, SessionId("s"))
     adapter.start()
@@ -105,7 +109,9 @@ async def test_claude_queued_result_is_not_global_completion(observed):
 
 async def test_pi_retry_updates_outcome_and_waits_for_settlement(observed):
     hub = Hub()
-    tracker = WorkingStateTracker(lambda evidence, state: observe_liveness(observed, evidence, state))
+    tracker = WorkingStateTracker(
+        lambda evidence, state: observe_liveness(observed, evidence, state)
+    )
     tracker.register(SessionId("s"))
     adapter = liveness_adapter(HarnessKind.PI, hub, Topic("session.s"), tracker, SessionId("s"))
     adapter.start()

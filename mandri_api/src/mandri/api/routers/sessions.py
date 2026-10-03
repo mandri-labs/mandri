@@ -75,9 +75,29 @@ class RenameIn(BaseModel):
     title: str
 
 
+class SessionPrivacyIn(BaseModel):
+    privacy_mode: PrivacyMode
+
+
 class SessionModelIn(BaseModel):
     model: str = Field(min_length=1)
     model_source: ModelSource | None = None
+
+
+@router.patch(
+    "/{session_id}/privacy", operation_id="set_session_privacy", responses=NOT_FOUND_CONFLICT,
+    response_model_exclude_unset=True,
+)
+async def set_session_privacy(
+    session_id: ApiSessionId, body: SessionPrivacyIn, runtime: Runtime, sessions: Sessions
+) -> SessionOut:
+    try:
+        session = await runtime.set_session_privacy(str(session_id), body.privacy_mode)
+    except ProtectionError as error:
+        raise ApiError(code=error.code, message=str(error), status=409) from None
+    except SessionRunningError as error:
+        raise ApiError(code="session_running", message=str(error), status=409) from None
+    return session_out(session, sessions)
 
 
 class HistoryPageOut(BaseModel):

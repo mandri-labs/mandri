@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from importlib.resources import files
@@ -51,6 +52,7 @@ assert.equal(statuses.length, 4);
             "-",
             str(files("mandri.core").joinpath("resources/pi_permissions.ts")),
         ],
+        env={**os.environ, "MANDRI_PI_PERMISSION_MODE": "default"},
         input=script,
         text=True,
         capture_output=True,

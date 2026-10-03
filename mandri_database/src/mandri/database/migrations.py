@@ -6,7 +6,7 @@ from mandri.database.errors import MigrationError
 from mandri.database.usage_migrations import USAGE_TABLES
 from mandri.database.usage_schema import USAGE_STATEMENTS
 
-LATEST_VERSION = 18
+LATEST_VERSION = 19
 
 
 class Migration(NamedTuple):
@@ -341,6 +341,12 @@ MIGRATIONS: tuple[Migration, ...] = (
             " checkpoint TEXT NOT NULL,PRIMARY KEY(target,source))",
             "CREATE TABLE conversation_completion (target TEXT NOT NULL,event_key TEXT NOT NULL,"
             " revision INTEGER,PRIMARY KEY(target,event_key))",
+        ),
+    ),
+    Migration(
+        version=19,
+        statements=(
+            "ALTER TABLE session ADD COLUMN privacy_override INTEGER NOT NULL DEFAULT 0",
         ),
     ),
 )

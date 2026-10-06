@@ -58,13 +58,17 @@ class TerminalProcess(ManagedProcess):
                 raise ProcessIOError("Terminal input is unavailable") from error
 
     def resize(self, size: TerminalSize) -> None:
-        if self._closed or self.returncode is not None:
-            return
-        fcntl.ioctl(
-            self._master, termios.TIOCSWINSZ, struct.pack("HHHH", size.rows, size.columns, 0, 0)
-        )
-        with contextlib.suppress(ProcessLookupError):
-            os.kill(self.process.pid, signal.SIGWINCH)
+        if sys.platform != "win32":
+            if self._closed or self.returncode is not None:
+                return
+            fcntl.ioctl(
+                self._master, termios.TIOCSWINSZ, struct.pack("HHHH", size.rows, size.columns, 0, 0)
+            )
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(self.process.pid, signal.SIGWINCH)
+
+        else:
+            raise ProtectionError("terminal_unavailable", "Managed terminals require a POSIX host")
 
     def close_terminal(self) -> None:
         if not self._closed:
@@ -92,43 +96,46 @@ async def spawn_terminal(
     cwd: str | Path | None = None,
     env: Mapping[str, str] | None = None,
 ) -> TerminalProcess:
-    if sys.platform == "win32":
+    if sys.platform != "win32":
+        master, slave = pty.openpty()
+        process = None
+        transport = None
+        try:
+            fcntl.ioctl(
+                slave, termios.TIOCSWINSZ, struct.pack("HHHH", size.rows, size.columns, 0, 0)
+            )
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "mandri.runtime.terminal_exec",
+                *argv,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                cwd=cwd,
+                env=dict(env) if env is not None else None,
+                start_new_session=True,
+            )
+            reader = TerminalReader()
+            protocol = asyncio.StreamReaderProtocol(reader)
+            transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+                lambda: protocol, os.fdopen(os.dup(master), "rb", buffering=0)
+            )
+            process.stdout = reader
+            os.set_blocking(master, False)
+            return TerminalProcess(process, master, transport)
+        except BaseException as error:
+            if process is not None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                await process.wait()
+            if transport is not None:
+                transport.close()
+            os.close(master)
+            if isinstance(error, (OSError, ValueError)):
+                raise ProcessSpawnError(f"Terminal spawn failed for {argv[0]!r}") from error
+            raise
+        finally:
+            os.close(slave)
+    else:
         raise ProtectionError("terminal_unavailable", "Managed terminals require a POSIX host")
-    master, slave = pty.openpty()
-    process = None
-    transport = None
-    try:
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", size.rows, size.columns, 0, 0))
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "mandri.runtime.terminal_exec",
-            *argv,
-            stdin=slave,
-            stdout=slave,
-            stderr=slave,
-            cwd=cwd,
-            env=dict(env) if env is not None else None,
-            start_new_session=True,
-        )
-        reader = TerminalReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        transport, _ = await asyncio.get_running_loop().connect_read_pipe(
-            lambda: protocol, os.fdopen(os.dup(master), "rb", buffering=0)
-        )
-        process.stdout = reader
-        os.set_blocking(master, False)
-        return TerminalProcess(process, master, transport)
-    except BaseException as error:
-        if process is not None:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
-            await process.wait()
-        if transport is not None:
-            transport.close()
-        os.close(master)
-        if isinstance(error, (OSError, ValueError)):
-            raise ProcessSpawnError(f"Terminal spawn failed for {argv[0]!r}") from error
-        raise
-    finally:
-        os.close(slave)

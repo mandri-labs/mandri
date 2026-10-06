@@ -7,8 +7,11 @@ if sys.platform != "win32":
 
 
 def main() -> None:
-    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-    os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
+    if sys.platform != "win32":
+        fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+        os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
+    else:
+        raise RuntimeError("This entry point requires a POSIX host")
 
 
 if __name__ == "__main__":

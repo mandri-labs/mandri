@@ -14,6 +14,8 @@ import time
 from types import FrameType
 from typing import cast
 
+assert sys.platform != "win32"
+
 
 def rule(tool: str, *args: str) -> None:
     subprocess.run([tool, "-w", "10", *args], check=True)

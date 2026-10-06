@@ -34,15 +34,18 @@ def mark_ready(future: asyncio.Future[None]) -> None:
 
 @contextmanager
 def raw_terminal() -> Iterator[None]:
-    fd = sys.stdin.fileno()
-    settings = termios.tcgetattr(fd) if os.isatty(fd) else None
-    try:
-        if settings is not None:
-            tty.setraw(fd)
-        yield
-    finally:
-        if settings is not None:
-            termios.tcsetattr(fd, termios.TCSADRAIN, settings)
+    if sys.platform != "win32":
+        fd = sys.stdin.fileno()
+        settings = termios.tcgetattr(fd) if os.isatty(fd) else None
+        try:
+            if settings is not None:
+                tty.setraw(fd)
+            yield
+        finally:
+            if settings is not None:
+                termios.tcsetattr(fd, termios.TCSADRAIN, settings)
+    else:
+        raise RunError("Managed terminals require a POSIX host")
 
 
 async def forward_input(connection: ClientConnection) -> None:
@@ -80,49 +83,52 @@ async def forward_output(connection: ClientConnection) -> int:
 
 
 async def run_terminal(url: str, spec: TerminalStart) -> int:
-    try:
-        async with connect(url, max_size=20 * 1024 * 1024, proxy=None) as connection:
-            await connection.send(spec.model_dump_json())
-            first = await connection.recv()
-            if not isinstance(first, str):
-                raise RunError("Invalid terminal startup response")
-            message = json.loads(first)
-            if message["type"] != "started":
-                raise RunError(message.get("message", "Terminal could not start"))
-            loop = asyncio.get_running_loop()
-            resized = asyncio.Event()
+    if sys.platform != "win32":
+        try:
+            async with connect(url, max_size=20 * 1024 * 1024, proxy=None) as connection:
+                await connection.send(spec.model_dump_json())
+                first = await connection.recv()
+                if not isinstance(first, str):
+                    raise RunError("Invalid terminal startup response")
+                message = json.loads(first)
+                if message["type"] != "started":
+                    raise RunError(message.get("message", "Terminal could not start"))
+                loop = asyncio.get_running_loop()
+                resized = asyncio.Event()
 
-            async def resize() -> None:
-                while True:
-                    await resized.wait()
-                    resized.clear()
-                    await connection.send(terminal_size().model_dump_json())
+                async def resize() -> None:
+                    while True:
+                        await resized.wait()
+                        resized.clear()
+                        await connection.send(terminal_size().model_dump_json())
 
-            loop.add_signal_handler(signal.SIGWINCH, resized.set)
-            resized.set()
-            with raw_terminal():
-                output = asyncio.create_task(forward_output(connection))
-                tasks: list[asyncio.Task[int] | asyncio.Task[None]] = [
-                    asyncio.create_task(forward_input(connection)),
-                    output,
-                    asyncio.create_task(resize()),
-                ]
-                try:
-                    pending = set(tasks)
-                    while output in pending:
-                        done, pending = await asyncio.wait(
-                            pending, return_when=asyncio.FIRST_COMPLETED
-                        )
-                        for task in done:
-                            task.result()
-                    return output.result()
-                finally:
-                    loop.remove_signal_handler(signal.SIGWINCH)
-                    for task in tasks:
-                        task.cancel()
-                    await asyncio.gather(*tasks, return_exceptions=True)
-    except (OSError, WebSocketException) as error:
-        raise RunError(f"Terminal connection failed: {error}") from error
+                loop.add_signal_handler(signal.SIGWINCH, resized.set)
+                resized.set()
+                with raw_terminal():
+                    output = asyncio.create_task(forward_output(connection))
+                    tasks: list[asyncio.Task[int] | asyncio.Task[None]] = [
+                        asyncio.create_task(forward_input(connection)),
+                        output,
+                        asyncio.create_task(resize()),
+                    ]
+                    try:
+                        pending = set(tasks)
+                        while output in pending:
+                            done, pending = await asyncio.wait(
+                                pending, return_when=asyncio.FIRST_COMPLETED
+                            )
+                            for task in done:
+                                task.result()
+                        return output.result()
+                    finally:
+                        loop.remove_signal_handler(signal.SIGWINCH)
+                        for task in tasks:
+                            task.cancel()
+                        await asyncio.gather(*tasks, return_exceptions=True)
+        except (OSError, WebSocketException) as error:
+            raise RunError(f"Terminal connection failed: {error}") from error
+    else:
+        raise RunError("Managed terminals require a POSIX host")
 
 
 class TerminalRunCommand(DaemonCommand):

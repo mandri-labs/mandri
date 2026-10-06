@@ -24,7 +24,7 @@ RUN mkdir -p /workspace /home/worker \
 ENV HOME=/home/worker PATH=/usr/local/bin:/usr/bin:/bin CI=1 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 OPENCODE_AUTOUPDATE=false AGY_CLI_DISABLE_AUTO_UPDATE=true
 LABEL io.mandri.worker.version="1" io.mandri.worker.harnesses="codex,claude,opencode,agy,pi"
 LABEL io.mandri.worker.workspace-identity="1"
-LABEL io.mandri.worker.terminal="1"
+LABEL io.mandri.worker.native-run="1"
 WORKDIR /workspace
 USER 1000:1000
 ENTRYPOINT ["python3", "/opt/mandri/worker.py", "run"]

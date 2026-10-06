@@ -29,10 +29,10 @@ from mandri.core.ids import (
     SessionState,
     SessionStopCause,
 )
+from mandri.core.native_run import NativeRunPlan, NativeRunStart
 from mandri.core.ports.control import HarnessControl, PromptOutcome, PromptState
 from mandri.core.ports.executions import ExecutionRepositoryPort
 from mandri.core.ports.privacy import PrivacyScopePort
-from mandri.core.terminal import TerminalSize, TerminalStart
 from mandri.core.types.approvals import ApprovalRequest
 from mandri.core.types.availability import SessionAvailability, SessionOwner
 from mandri.core.types.config import SessionModeConfig
@@ -78,6 +78,7 @@ from mandri.runtime.docker_backend import DockerBackend, DockerReadiness
 from mandri.runtime.docker_config import DockerConfig
 from mandri.runtime.docker_image import DockerImageOptions, image_options
 from mandri.runtime.docker_ingress import WorkerIngress
+from mandri.runtime.docker_process import DockerProcess
 from mandri.runtime.docker_workspace import translate_value
 from mandri.runtime.errors import (
     HarnessNotInstalledError,
@@ -111,7 +112,6 @@ from mandri.runtime.session_feed import SessionFeed, session_topic
 from mandri.runtime.session_lifetime import SessionLifetime
 from mandri.runtime.session_state import RuntimeStates, SessionRuntimeState
 from mandri.runtime.start_operations import StartOperations
-from mandri.runtime.terminal_process import spawn_terminal
 from mandri.runtime.translators.base import EventPublisher
 from mandri.runtime.usage import observe_usage
 from mandri.runtime.usage_accounts import NativeAccountReader
@@ -576,7 +576,7 @@ class RuntimeService:
         self._lifetime.viewers_zero(session_id)
 
     @contextlib.asynccontextmanager
-    async def terminal_session(self, spec: TerminalStart) -> AsyncIterator[RuntimeSession]:
+    async def native_run(self, spec: NativeRunStart) -> AsyncIterator[NativeRunPlan]:
         policy = SessionPolicy(spec.execution_backend, spec.privacy_mode)
         harness = spec.harness.value
         cwd = Path(spec.cwd).resolve(strict=True)
@@ -634,44 +634,56 @@ class RuntimeService:
                     self._agy_profiles, session_id, native=False, canonical_root=self._agy_home
                 )
                 prepared.argv.extend(["--gemini_dir", str(profile), "--add-dir", str(cwd)])
-            process = await self._spawn_execution(
-                session_id,
-                harness,
-                prepared,
-                cwd,
-                policy,
-                route_id,
-                spec.model,
-                None,
-                terminal=spec,
-            )
-            cleanup.push_async_callback(self._rollback_process, process)
+            process = None
+            argv, env = prepared.argv, prepared.env
+            if policy.execution_backend is ExecutionBackend.DOCKER:
+                process = await self._spawn_execution(
+                    session_id,
+                    harness,
+                    prepared,
+                    cwd,
+                    policy,
+                    route_id,
+                    spec.model,
+                    None,
+                    native=True,
+                )
+                cleanup.push_async_callback(self._rollback_process, process)
+                if not isinstance(process, DockerProcess):
+                    raise DockerExecutionError(
+                        "docker_unavailable", "Native Docker run is unavailable"
+                    )
+                argv = list(process.native_argv)
+                if spec.tty:
+                    argv.insert(3, "--tty")
+                env = {}
+                self._registry.mark_live(session_id, process, harness)
+                self.viewer_joined(session_id)
+                await self._executions.phase(session_id, ExecutionPhase.READY)
+            else:
+                argv[0] = require_spawn_executable(argv[0])
             await self._mark_db_state(session_id, SessionState.LIVE)
-            self._registry.mark_live(session_id, process, harness)
-            self.viewer_joined(session_id)
-            await self._executions.phase(session_id, ExecutionPhase.READY)
             cleanup.pop_all()
         try:
-            yield RuntimeSession(
-                id=session_id,
-                harness=harness,
-                process=process,
-                route_id=route_id,
-                project_path=str(cwd),
-                execution_backend=policy.execution_backend,
-                privacy_mode=policy.privacy_mode,
-                privacy_scope_id=scope_id,
-            )
+            yield NativeRunPlan(id=session_id, argv=argv, env=env)
         finally:
-            stopped = asyncio.create_task(self.stop_session(session_id, restore_native=False))
+
+            async def close() -> None:
+                try:
+                    if process is not None:
+                        with contextlib.suppress(SessionNotRunningError):
+                            await self.stop_session(session_id, restore_native=False)
+                    else:
+                        await self._mark_db_state(session_id, SessionState.STOPPED)
+                finally:
+                    await self._rollback_route(route_id)
+
+            stopped = asyncio.create_task(close())
             try:
                 await asyncio.shield(stopped)
             except asyncio.CancelledError:
-                with contextlib.suppress(SessionNotRunningError):
-                    await stopped
+                await stopped
                 raise
-            except SessionNotRunningError:
-                pass
 
     async def start_session(
         self,
@@ -2431,9 +2443,9 @@ class RuntimeService:
         model: str,
         launch_mode: modes.LaunchMode | None,
         resume_native_id: HarnessSessionId | None = None,
-        terminal: TerminalSize | None = None,
+        native: bool = False,
     ) -> ManagedProcess:
-        if harness == "opencode" and terminal is None:
+        if harness == "opencode" and not native:
             password = secrets.token_urlsafe(32)
             prepared.env["OPENCODE_SERVER_PASSWORD"] = password
             prepared.env["OPENCODE_PASSWORD"] = password
@@ -2454,17 +2466,8 @@ class RuntimeService:
         )
         if policy.execution_backend is ExecutionBackend.HOST:
             await self._executions.phase(session_id, ExecutionPhase.STARTING)
-            host_process = (
-                await spawn_terminal(
-                    [require_spawn_executable(prepared.argv[0]), *prepared.argv[1:]],
-                    terminal,
-                    cwd=cwd,
-                    env=prepared.env,
-                )
-                if terminal is not None
-                else await self._spawn_harness(prepared.argv, cwd=cwd, env=prepared.env)
-            )
-            if harness == "agy" and terminal is None:
+            host_process = await self._spawn_harness(prepared.argv, cwd=cwd, env=prepared.env)
+            if harness == "agy" and not native:
 
                 async def spawn_host_command(argv: list[str]) -> ManagedProcess:
                     return await self._spawn_harness(argv, cwd=cwd, env=prepared.env)
@@ -2486,7 +2489,7 @@ class RuntimeService:
             await self._executions.phase(session_id, ExecutionPhase.PREPARING_IMAGE)
             socket_path = (
                 backend.config.state_root.parent / "ingress" / f"{uuid.uuid4().hex}.sock"
-                if backend.config.ingress_host == "host.docker.internal"
+                if not backend.desktop and backend.config.ingress_host == "host.docker.internal"
                 else None
             )
             port = await ingress.start(backend.config.ingress_bind, socket_path=socket_path)
@@ -2502,7 +2505,7 @@ class RuntimeService:
                 key: translate_value(value, self._gateway_port, ingress_url)
                 for key, value in prepared.env.items()
             }
-            if harness == "opencode" and terminal is None:
+            if harness == "opencode" and not native:
                 argv.extend(["--hostname", "0.0.0.0"])
             ready = await backend.readiness()
             await self._executions.phase(session_id, ExecutionPhase.PREPARING_STATE)
@@ -2510,11 +2513,11 @@ class RuntimeService:
                 session_id, cwd, resume=resume_native_id is not None, image_id=ready.image_id
             )
             launch = PreparedLaunch(argv, env, prepared.listen_port)
-            if harness == "agy" and terminal is not None:
+            if harness == "agy" and native:
                 launch.argv.extend(
                     ["--gemini_dir", "/home/worker/.gemini", "--add-dir", "/workspace"]
                 )
-            if harness == "agy" and terminal is None:
+            if harness == "agy" and not native:
 
                 async def publish(raw: dict[str, Any]) -> None:
                     await self._events.publish_event(
@@ -2550,9 +2553,9 @@ class RuntimeService:
                 ingress,
                 listen_port=launch.listen_port,
                 resume=resume_native_id is not None,
-                **({"terminal": terminal} if terminal is not None else {}),
+                **({"native": True} if native else {}),
             )
-            if harness == "agy" and terminal is None:
+            if harness == "agy" and not native:
 
                 async def spawn_command(argv: list[str]) -> ManagedProcess:
                     return await spawn_container_command(backend.client, process.container_id, argv)

@@ -11,7 +11,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from mandri.core.terminal import TerminalSize
 from mandri.runtime.codex_catalog import materialize_catalog
 from mandri.runtime.docker_client import DockerClient
 from mandri.runtime.docker_config import (
@@ -40,7 +39,6 @@ from mandri.runtime.docker_workspace import (
 from mandri.runtime.errors.docker import DockerExecutionError
 from mandri.runtime.pi_session_paths import docker_resume_args
 from mandri.runtime.process import ManagedProcess, spawn
-from mandri.runtime.terminal_process import spawn_terminal
 from mandri.runtime.worker_image import MANAGED_IMAGE, prepare_worker
 
 
@@ -50,7 +48,7 @@ class DockerReadiness:
     engine_id: str
     architecture: str
     harnesses: tuple[str, ...]
-    terminal: bool = False
+    native: bool = False
 
 
 class DockerBackend:
@@ -61,6 +59,7 @@ class DockerBackend:
         self.versions = DockerVersions(self.client, self.owner)
         self._image_lock = asyncio.Lock()
         self._image_reference = config.image
+        self.desktop = sys.platform != "linux"
 
     async def prepare_image(self) -> DockerReadiness:
         async with self._image_lock:
@@ -80,40 +79,20 @@ class DockerBackend:
 
     async def readiness(self, image_reference: str | None = None) -> DockerReadiness:
         config = self.config
-        if sys.platform != "linux":
-            raise DockerExecutionError(
-                "docker_platform_unqualified", "Only native Linux Docker execution is qualified"
-            )
         if min(config.cpus, config.memory_mb, config.pids_limit, config.tmpfs_mb) <= 0:
             raise DockerExecutionError(
                 "docker_resource_limit_invalid", "Docker limits must be positive"
             )
         for exception in config.network_exceptions:
             network_exception(exception)
-        context = await self.client.json("context", "inspect")
-        endpoint = context[0]["Endpoints"]["docker"]["Host"]
-        if not endpoint.startswith("unix://"):
-            raise DockerExecutionError(
-                "docker_unavailable", "Only local Linux Docker engines are qualified"
-            )
         info = await self.client.json("info", "--format", "{{json .}}")
+        self.desktop = (
+            sys.platform != "linux"
+            or "desktop" in str(info.get("OperatingSystem", "")).lower()
+            or info.get("Name") == "docker-desktop"
+        )
         if info.get("OSType") != "linux":
             raise DockerExecutionError("docker_unavailable", "A Linux container engine is required")
-        if (
-            "desktop" in str(info.get("OperatingSystem", "")).lower()
-            or info.get("Name") == "docker-desktop"
-        ):
-            raise DockerExecutionError(
-                "docker_platform_unqualified", "Docker Desktop execution is not qualified"
-            )
-        if info.get("Architecture") not in {"x86_64", "amd64"}:
-            raise DockerExecutionError(
-                "docker_platform_unqualified", "The Docker engine architecture is not qualified"
-            )
-        if any("rootless" in str(item) for item in info.get("SecurityOptions", [])):
-            raise DockerExecutionError(
-                "docker_unavailable", "Rootless network isolation is not qualified"
-            )
         if config.cpus > int(info["NCPU"]) or config.memory_mb * 1024 * 1024 > int(
             info["MemTotal"]
         ):
@@ -146,7 +125,7 @@ class DockerBackend:
             str(info["ID"]),
             str(image["Architecture"]),
             harnesses,
-            labels.get("io.mandri.worker.terminal") == "1",
+            labels.get("io.mandri.worker.native-run") == "1",
         )
 
     async def reconcile(self, active_session_ids: frozenset[str] = frozenset()) -> list[str]:
@@ -223,13 +202,13 @@ class DockerBackend:
         *,
         listen_port: int | None = None,
         resume: bool = False,
-        terminal: TerminalSize | None = None,
+        native: bool = False,
     ) -> DockerProcess:
         ready = await self.readiness()
-        if terminal is not None and not ready.terminal:
+        if native and not ready.native:
             raise DockerExecutionError(
                 "docker_image_incompatible",
-                "The worker image does not support native terminals; rebuild it",
+                "The worker image does not support native runs",
             )
         if harness not in ready.harnesses or harness not in self.config.image_harnesses:
             raise DockerExecutionError(
@@ -334,8 +313,15 @@ class DockerBackend:
                 *labels,
                 "--network",
                 network,
-                "--add-host",
-                "host.docker.internal:host-gateway",
+                *([] if self.desktop else ["--add-host", "host.docker.internal:host-gateway"]),
+                *(
+                    [
+                        "--mount",
+                        f"type=bind,src={context['workspace_root']},dst={WORKSPACE_ROOT},readonly",
+                    ]
+                    if self.desktop
+                    else []
+                ),
                 *port_args,
                 *socket_args,
                 "--read-only",
@@ -405,6 +391,19 @@ class DockerBackend:
                     raise DockerExecutionError(
                         "docker_network_unavailable", "Worker gateway address is unavailable"
                     ) from None
+            workspace_identity = f"{context['workspace_device']}:{context['workspace_inode']}"
+            if self.desktop:
+                workspace_identity = await self.client.run(
+                    "exec",
+                    guard,
+                    "python3",
+                    "-c",
+                    "import os; s=os.stat('/workspace'); print(f'{s.st_dev}:{s.st_ino}')",
+                )
+                if not re.fullmatch(r"[0-9]+:[0-9]+", workspace_identity):
+                    raise DockerExecutionError(
+                        "workspace_unavailable", "Docker workspace is unavailable"
+                    )
             configured_origin = f"http://{self.config.ingress_host}:{ingress.port}"
             resolved_origin = f"http://{ingress_address}:{ingress.port}"
             argv = [argument.replace(configured_origin, resolved_origin) for argument in argv]
@@ -425,13 +424,10 @@ class DockerBackend:
                 "CI": "1",
                 "LANG": "C.UTF-8",
                 **env,
-                "MANDRI_WORKSPACE_IDENTITY": (
-                    f"{context['workspace_device']}:{context['workspace_inode']}"
-                ),
+                "MANDRI_WORKSPACE_IDENTITY": workspace_identity,
             }
-            if terminal is not None:
+            if native:
                 worker_env.pop("CI", None)
-                worker_env.update(LINES=str(terminal.rows), COLUMNS=str(terminal.columns))
             if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) for key in worker_env):
                 raise DockerExecutionError(
                     "docker_image_incompatible", "Invalid worker environment key"
@@ -448,8 +444,8 @@ class DockerBackend:
                     if not directory.is_symlink():
                         os.chown(directory, uid, gid)
             watch_args = (
-                ["--terminal"]
-                if terminal is not None
+                ["--native-session"]
+                if native
                 else ["--watch-stdin"]
                 if harness == "opencode"
                 else []
@@ -465,7 +461,7 @@ class DockerBackend:
                 name,
                 *labels,
                 "--interactive",
-                *(["--tty", "--init"] if terminal is not None else []),
+                *(["--init"] if native else []),
                 "--network",
                 f"container:{guard}",
                 "--user",
@@ -489,9 +485,9 @@ class DockerBackend:
                 "--workdir",
                 WORKSPACE_ROOT,
                 "--mount",
-                f"type=bind,src={context['workspace_root']},dst={WORKSPACE_ROOT},bind-propagation=rprivate",
+                f"type=bind,src={context['workspace_root']},dst={WORKSPACE_ROOT}",
                 "--mount",
-                f"type=bind,src={state},dst={NATIVE_HOME},bind-propagation=rprivate",
+                f"type=bind,src={state},dst={NATIVE_HOME}",
                 *env_args,
                 "--entrypoint",
                 "python3",
@@ -509,11 +505,7 @@ class DockerBackend:
             )
             write_context(state, context)
             attach_argv = [self.client.binary, "start", "--attach", "--interactive", name]
-            attached = (
-                await spawn_terminal(attach_argv, terminal, env=self.client.environment())
-                if terminal is not None
-                else await spawn(attach_argv, env=self.client.environment())
-            )
+            attached = await spawn(attach_argv, env=self.client.environment())
             try:
                 await self._await_workspace(attached, worker_env["MANDRI_WORKSPACE_IDENTITY"])
             except BaseException:
@@ -521,6 +513,17 @@ class DockerBackend:
                 raise
             process = DockerProcess(attached, self.client, str(details["Id"]), cleanup)
             process.execution_context = context
+            if native:
+                process.native_argv = [
+                    self.client.binary,
+                    "exec",
+                    "--interactive",
+                    str(details["Id"]),
+                    "python3",
+                    WORKER_PROGRAM,
+                    "exec",
+                    *argv,
+                ]
             return process
         except BaseException:
             await cleanup()

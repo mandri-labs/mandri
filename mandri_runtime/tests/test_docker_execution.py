@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from mandri.core.terminal import TerminalSize
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode, ProtectionError
 from mandri.core.types.model_selection import ModelSource
 from mandri.runtime.control.agy_policy import AgyPolicy
@@ -265,8 +264,8 @@ async def test_docker_resource_limits_fail_before_engine_launch(tmp_path):
 @pytest.mark.skipif(
     sys.platform != "linux", reason="Docker execution requires a qualified Linux host"
 )
-@pytest.mark.parametrize("terminal", [None, TerminalSize(rows=41, columns=101)])
-async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch, terminal):
+@pytest.mark.parametrize("native", [False, True])
+async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch, native):
     root = tmp_path / "workspace"
     root.mkdir()
     backend = DockerBackend(DockerConfig("image", tmp_path / "state"))
@@ -297,13 +296,10 @@ async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch, termina
     )
     metadata = root.stat()
     stdout = asyncio.StreamReader()
-    ending = "\r\n" if terminal is not None else "\n"
+    ending = "\n"
     stdout.feed_data(f"MANDRI_WORKSPACE_READY {metadata.st_dev}:{metadata.st_ino}{ending}".encode())
     attached = SimpleNamespace(process=SimpleNamespace(stdout=stdout))
     monkeypatch.setattr("mandri.runtime.docker_backend.spawn", AsyncMock(return_value=attached))
-    monkeypatch.setattr(
-        "mandri.runtime.docker_backend.spawn_terminal", AsyncMock(return_value=attached)
-    )
     captured = {}
     managed = SimpleNamespace()
 
@@ -321,7 +317,7 @@ async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch, termina
             root,
             {"MANDRI_API_KEY": "scoped"},
             ingress,
-            terminal=terminal,
+            native=native,
         )
         is managed
     )
@@ -339,9 +335,12 @@ async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch, termina
     assert options["env"]["MANDRI_API_KEY"] == "scoped"
     assert "sha256:pinned" in args
     assert any(f"src={root},dst=/workspace" in value for value in args)
-    assert ("--tty" in args) == (terminal is not None)
-    assert ("--init" in args) == (terminal is not None)
-    assert ("--terminal" in args) == (terminal is not None)
+    assert "--tty" not in args
+    assert ("--init" in args) == native
+    assert ("--native-session" in args) == native
+    if native:
+        assert managed.native_argv[:4] == ["docker", "exec", "--interactive", "container-id"]
+        assert managed.native_argv[-2:] == ["codex", "app-server"]
     await captured["cleanup"]()
     client.remove.assert_awaited_once()
     ingress.aclose.assert_awaited_once()

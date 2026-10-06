@@ -357,6 +357,17 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HarnessKind": {
+        "enum": [
+          "codex",
+          "claude",
+          "opencode",
+          "agy",
+          "pi"
+        ],
+        "title": "HarnessKind",
+        "type": "string"
+      },
       "HistoryPageOut": {
         "properties": {
           "entries": {
@@ -808,6 +819,96 @@
           "display_name"
         ],
         "title": "NativeModel",
+        "type": "object"
+      },
+      "NativeRunPlan": {
+        "properties": {
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Argv",
+            "type": "array"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Env",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "argv"
+        ],
+        "title": "NativeRunPlan",
+        "type": "object"
+      },
+      "NativeRunStart": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "cwd": {
+            "minLength": 1,
+            "title": "Cwd",
+            "type": "string"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "execution_backend": {
+            "$ref": "#/components/schemas/ExecutionBackend",
+            "default": "host"
+          },
+          "harness": {
+            "$ref": "#/components/schemas/HarnessKind"
+          },
+          "model": {
+            "minLength": 3,
+            "title": "Model",
+            "type": "string"
+          },
+          "privacy_mode": {
+            "$ref": "#/components/schemas/PrivacyMode",
+            "default": "none"
+          },
+          "term": {
+            "default": "xterm-256color",
+            "pattern": "^[a-zA-Z0-9_.+-]{1,64}$",
+            "title": "Term",
+            "type": "string"
+          },
+          "tty": {
+            "default": false,
+            "title": "Tty",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "harness",
+          "model",
+          "cwd"
+        ],
+        "title": "NativeRunStart",
         "type": "object"
       },
       "PrivacyEntryOut": {
@@ -4453,6 +4554,82 @@
           }
         },
         "summary": "Cancel Runtime Start",
+        "tags": [
+          "runtime"
+        ]
+      }
+    },
+    "/v1/runtime/runs": {
+      "post": {
+        "operationId": "prepare_native_run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeRunStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeRunPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prepare Native Run",
+        "tags": [
+          "runtime"
+        ]
+      }
+    },
+    "/v1/runtime/runs/{run_id}": {
+      "delete": {
+        "operationId": "release_native_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Release Native Run",
         "tags": [
           "runtime"
         ]

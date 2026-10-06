@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mandri.api.deps import LifespanState
 from mandri.api.errors import register_error_handlers
+from mandri.api.native_run import router as native_run_router
 from mandri.api.routers.attachments import router as attachments_router
 from mandri.api.routers.chatgpt import router as chatgpt_router
 from mandri.api.routers.execution import router as execution_router
@@ -19,7 +20,6 @@ from mandri.api.routers.sessions import router as sessions_router
 from mandri.api.routers.transcript_records import router as transcript_records_router
 from mandri.api.routers.usage import router as usage_router
 from mandri.api.routers.worktree_integration import router as worktree_integration_router
-from mandri.api.terminal import router as terminal_router
 from mandri.api.ws import router as ws_router
 from mandri.core.types.config import DEFAULT_CORS_ORIGINS, CorsOrigin
 from mandri.core.version import __version__
@@ -32,6 +32,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         state = app.state.lifespan
+        for stack in state.native_runs.values():
+            await stack.aclose()
         if state.agent_observer is not None:
             await state.agent_observer.close()
 
@@ -68,5 +70,5 @@ def create_app(cors_origins: Sequence[CorsOrigin] | None = None) -> FastAPI:
     app.include_router(fs_router, prefix="/v1")
     app.include_router(usage_router, prefix="/v1")
     app.include_router(ws_router, prefix="/v1")
-    app.include_router(terminal_router, prefix="/v1")
+    app.include_router(native_run_router, prefix="/v1")
     return app

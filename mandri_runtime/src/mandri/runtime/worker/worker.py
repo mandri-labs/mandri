@@ -91,17 +91,21 @@ def guard(encoded: str) -> None:
         signal.pause()
 
 
-def run(command: list[str]) -> int:
+def run(command: list[str], *, native: bool = False) -> int:
     expected = os.environ.pop("MANDRI_WORKSPACE_IDENTITY", None)
     metadata = os.stat("/workspace")
     actual = f"{metadata.st_dev}:{metadata.st_ino}"
     if expected is None or actual != expected:
         print("MANDRI_WORKSPACE_IDENTITY_MISMATCH", file=sys.stderr, flush=True)
         return 125
-    print(f"MANDRI_WORKSPACE_READY {actual}", flush=True)
-    if command[0] == "--terminal":
+    if native:
         os.environ.pop("CI", None)
-        os.execvp(command[1], command[1:])
+        os.execvp(command[0], command)
+    print(f"MANDRI_WORKSPACE_READY {actual}", flush=True)
+    if command[0] == "--native-session":
+        while os.read(sys.stdin.fileno(), 65536):
+            pass
+        return 0
     watch_stdin = command[0] == "--watch-stdin"
     if watch_stdin:
         command = command[1:]
@@ -149,6 +153,8 @@ def run(command: list[str]) -> int:
 if __name__ == "__main__":
     if sys.argv[1] == "guard":
         guard(sys.argv[2])
+    elif sys.argv[1] == "exec":
+        raise SystemExit(run(sys.argv[2:], native=True))
     elif sys.argv[1] == "run":
         raise SystemExit(run(sys.argv[2:]))
     else:

@@ -7,7 +7,20 @@ from typing import Any
 
 from mandri.runtime.errors.docker import DockerExecutionError
 
-_CLIENT_ENV = ("PATH", "SYSTEMROOT", "SystemRoot", "TEMP", "TMP", "HOME", "USERPROFILE")
+_CLIENT_ENV = (
+    "PATH",
+    "SYSTEMROOT",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "HOME",
+    "USERPROFILE",
+    "DOCKER_HOST",
+    "DOCKER_CONTEXT",
+    "DOCKER_CONFIG",
+    "DOCKER_TLS_VERIFY",
+    "DOCKER_CERT_PATH",
+)
 
 
 class DockerClient:

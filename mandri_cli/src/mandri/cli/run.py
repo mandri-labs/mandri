@@ -10,13 +10,13 @@ from codex_cli_bin import bundled_codex_path
 from mandri.cli.agy_run import AgyRunProfile, close_agy_run, prepare_agy_run, wait_agy_process
 from mandri.cli.daemon_client import base_url, error_message, request
 from mandri.cli.daemon_command import DaemonCommand
+from mandri.cli.native_run import NativeRunCommand
 from mandri.cli.run_errors import (
     DaemonUnreachableError,
     HarnessBinaryNotFoundError,
     ModelResolutionError,
     RunError,
 )
-from mandri.cli.terminal_run import TerminalRunCommand
 from mandri.cli.types import RunSpec
 from mandri.config.toml_adapter import TomlConfigAdapter
 from mandri.core.ids import HARNESS_WIRE_FORMATS, HarnessKind
@@ -52,7 +52,7 @@ class RunCommand(DaemonCommand):
         privacy = self._spec.privacy_mode or defaults.privacy_mode
         if backend is not ExecutionBackend.HOST or privacy is not PrivacyMode.NONE:
             self._validate_model_arg(self._spec.model_arg)
-            return TerminalRunCommand(
+            return NativeRunCommand(
                 replace(self._spec, execution_backend=backend, privacy_mode=privacy)
             ).run()
         self._validate_model_arg(self._spec.model_arg)

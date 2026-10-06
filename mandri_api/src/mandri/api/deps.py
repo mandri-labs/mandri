@@ -3,6 +3,7 @@
 import dataclasses
 import typing
 from collections.abc import Awaitable, Callable
+from contextlib import AsyncExitStack
 
 import httpx
 from fastapi import Depends, FastAPI, Request
@@ -74,6 +75,7 @@ class LifespanState:
     heartbeat_configured: bool = False
     transcript_observer: TranscriptObserver | None = None
     viewer_counts: dict[str, int] = dataclasses.field(default_factory=dict)
+    native_runs: dict[str, AsyncExitStack] = dataclasses.field(default_factory=dict)
 
 
 def app_state(app: FastAPI) -> LifespanState | None:

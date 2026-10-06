@@ -64,23 +64,23 @@ def test_continuation_uses_daemon_native_session_operation(monkeypatch, action, 
     )
 
 
-def test_foreground_run_uses_managed_terminal_for_protected_defaults(monkeypatch, tmp_path: Path):
+def test_foreground_run_uses_native_run_for_protected_defaults(monkeypatch, tmp_path: Path):
     (tmp_path / "config.toml").write_text('[defaults]\nprivacy_mode = "surrogate"\n')
     command = RunCommand(RunSpec(HarnessKind.CODEX, "provider/model", tmp_path))
     launch = Mock(side_effect=AssertionError("No real harness may run in this test"))
     monkeypatch.setattr(command, "_resolve_binary", launch)
     managed = Mock()
     managed.return_value.run.return_value = 17
-    monkeypatch.setattr("mandri.cli.run.TerminalRunCommand", managed)
+    monkeypatch.setattr("mandri.cli.run.NativeRunCommand", managed)
     assert command.run() == 17
     assert managed.call_args.args[0].privacy_mode is PrivacyMode.SURROGATE
     launch.assert_not_called()
 
 
-def test_foreground_docker_and_privacy_options_reach_terminal(monkeypatch, tmp_path):
+def test_foreground_docker_and_privacy_options_reach_native_run(monkeypatch, tmp_path):
     managed = Mock()
     managed.return_value.run.return_value = 0
-    monkeypatch.setattr("mandri.cli.run.TerminalRunCommand", managed)
+    monkeypatch.setattr("mandri.cli.run.NativeRunCommand", managed)
     args = build_parser().parse_args(
         [
             "run",
@@ -123,5 +123,5 @@ def test_explicit_unprotected_run_overrides_protected_defaults(monkeypatch, tmp_
     monkeypatch.setattr(command, "_exec_harness", Mock(return_value=0))
     monkeypatch.setattr(command, "_delete_route", Mock())
     managed = Mock(side_effect=AssertionError("Managed execution was explicitly disabled"))
-    monkeypatch.setattr("mandri.cli.run.TerminalRunCommand", managed)
+    monkeypatch.setattr("mandri.cli.run.NativeRunCommand", managed)
     assert command.run() == 0

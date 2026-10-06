@@ -7,38 +7,41 @@ from mandri.runtime.docker_config import DockerConfig
 from mandri.runtime.errors.docker import DockerExecutionError
 
 
-@pytest.mark.parametrize("platform", ["darwin", "win32"])
-async def test_unqualified_daemon_platform_never_probes_engine(tmp_path, monkeypatch, platform):
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+@pytest.mark.parametrize("desktop", [False, True])
+async def test_linux_worker_can_run_on_any_docker_host(tmp_path, monkeypatch, platform, desktop):
     monkeypatch.setattr("mandri.runtime.docker_backend.sys.platform", platform)
     backend = DockerBackend(DockerConfig("image", tmp_path))
-    backend.client = SimpleNamespace(json=AsyncMock())
-    with pytest.raises(DockerExecutionError) as error:
-        await backend.readiness()
-    assert error.value.reason == "docker_platform_unqualified"
-    backend.client.json.assert_not_awaited()
+    info = {
+        "OSType": "linux",
+        "ID": "engine",
+        "NCPU": 8,
+        "MemTotal": 16 * 1024**3,
+        "OperatingSystem": "Docker Desktop" if desktop else "Linux",
+    }
+    image = {
+        "Id": "worker",
+        "Os": "linux",
+        "Architecture": "amd64",
+        "Config": {
+            "Labels": {
+                "io.mandri.worker.version": "1",
+                "io.mandri.worker.workspace-identity": "1",
+                "io.mandri.worker.native-run": "1",
+                "io.mandri.worker.harnesses": "codex",
+            }
+        },
+    }
+    backend.client = SimpleNamespace(json=AsyncMock(side_effect=[info, [image]]))
+    ready = await backend.readiness()
+    assert ready.image_id == "worker"
+    assert ready.native
+    assert backend.desktop == (desktop or platform != "linux")
+    assert backend.client.json.call_args_list[0].args[0] == "info"
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        {"OperatingSystem": "Docker Desktop"},
-        {"Name": "docker-desktop"},
-        {"Architecture": "aarch64"},
-        {"Architecture": "unknown"},
-    ],
-)
-async def test_unqualified_engine_topologies_fail_before_any_worker(
-    tmp_path, monkeypatch, mutation
-):
-    monkeypatch.setattr("mandri.runtime.docker_backend.sys.platform", "linux")
+async def test_windows_containers_cannot_run_linux_worker(tmp_path):
     backend = DockerBackend(DockerConfig("image", tmp_path))
-    info = {"OSType": "linux", "Architecture": "x86_64", **mutation}
-    backend.client = SimpleNamespace(
-        json=AsyncMock(
-            side_effect=[[{"Endpoints": {"docker": {"Host": "unix:///var/run/docker.sock"}}}], info]
-        )
-    )
-    with pytest.raises(DockerExecutionError) as error:
+    backend.client = SimpleNamespace(json=AsyncMock(return_value={"OSType": "windows"}))
+    with pytest.raises(DockerExecutionError, match="Linux container engine"):
         await backend.readiness()
-    assert error.value.reason == "docker_platform_unqualified"
-    assert backend.client.json.await_count == 2

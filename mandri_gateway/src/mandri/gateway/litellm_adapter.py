@@ -75,7 +75,7 @@ def _credentials(route: ResolvedRoute, guard: EgressGuard | None = None) -> dict
         else f"route:{route.route_id}"
     )
     headers = {
-        **(guard.headers if guard is not None else inference_headers(model.provider, context)),
+        **inference_headers(model.provider, context),
         **identity_headers(model),
     }
     if headers:

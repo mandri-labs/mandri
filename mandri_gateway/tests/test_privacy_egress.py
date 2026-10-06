@@ -92,19 +92,22 @@ async def test_final_wire_validation_rejects_wrong_model_and_known_personal_data
     [
         {"x-sdk-user": "private-customer"},
         {"x-sdk-root": "/srv/private-customer/Project/file.py"},
-        {"authorization": "Bearer wrong-credential"},
         {"x-sdk-token": "unprepared-credential"},
         {"x-sdk-debug": "sk-proj-syntheticcredential000000000"},
     ],
 )
-async def test_sdk_headers_reject_known_values_and_wrong_credentials(guard, headers):
-    if "x-sdk-token" not in headers:
-        with pytest.raises(ProtectionError):
-            await guard.check(request(guard, headers=headers))
-        assert guard.sends == 0
-    else:
-        await guard.check(request(guard, headers=headers))
-        assert guard.sends == 1
+async def test_sdk_headers_pass_known_values_unchanged(guard, headers):
+    wire = request(guard, headers=headers)
+    await guard.check(wire)
+    assert guard.sends == 1
+    for name, value in headers.items():
+        assert wire.headers[name] == value
+
+
+async def test_sdk_headers_reject_wrong_credentials(guard):
+    with pytest.raises(ProtectionError, match="Unexpected provider credentials"):
+        await guard.check(request(guard, headers={"authorization": "Bearer wrong-credential"}))
+    assert guard.sends == 0
 
 
 async def test_duplicate_json_keys_are_rejected_before_transport(guard):

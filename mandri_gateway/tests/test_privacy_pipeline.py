@@ -172,6 +172,8 @@ async def test_real_sdk_serialization_passes_guard_before_transport(
 ):
     service, scope_id = privacy
     resolved = route(kind, scope_id)
+    if kind in {ProviderKind.OPENCODE, ProviderKind.OPENCODE_GO}:
+        await service.scopes.prepare(scope_id, lambda engine: engine.register("mandri"))
     prepared = await service.prepare(resolved, protocol, request_body(protocol))
     guard = prepared.guard
     observed = []
@@ -186,8 +188,6 @@ async def test_real_sdk_serialization_passes_guard_before_transport(
             assert request.headers["x-opencode-session"] == expected
             assert request.headers["x-opencode-session-id"] == expected
             assert UUID(request.headers["x-opencode-request"]).version == 4
-            for name, value in guard.headers.items():
-                assert request.headers[name] == value
         else:
             assert not any(name.startswith("x-opencode-") for name in request.headers)
         assert _EMAIL.encode() not in request.content

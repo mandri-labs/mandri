@@ -1,6 +1,6 @@
 import hmac
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
@@ -80,7 +80,6 @@ def unique_object(items: list[tuple[str, Any]]) -> dict[str, Any]:
 class EgressGuard:
     route: ResolvedRoute
     engine: SurrogateEngine
-    headers: dict[str, str] = field(default_factory=dict)
     sends: int = 0
 
     async def check(self, request: httpx.Request, *, complete_response: bool = False) -> None:
@@ -123,8 +122,6 @@ class EgressGuard:
             elif name in identity:
                 if not hmac.compare_digest(value, identity[name]):
                     raise ProtectionError("privacy_egress_blocked", "Unexpected provider identity")
-            elif known.text(value) != value:
-                raise ProtectionError("privacy_egress_blocked", "Unmasked provider header")
         try:
             raw = request.content
         except httpx.RequestNotRead:

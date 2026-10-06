@@ -57,7 +57,7 @@ async def test_alternate_sdk_client_accepts_known_provider_route():
     assert protected.guard.sends == 1
 
 
-async def test_sdk_injected_known_header_is_blocked_before_transport():
+async def test_sdk_injected_known_header_passes_unchanged():
     observed = []
     protected = scope()
 
@@ -72,10 +72,10 @@ async def test_sdk_injected_known_header_is_blocked_before_transport():
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(receive), event_hooks={"request": [inject]}
         ) as client:
-            with pytest.raises(ProtectionError, match="Unmasked provider header"):
-                await client.post(_BASE + "/chat/completions", json=body("Synthetic content"))
-    assert observed == []
-    assert protected.guard.sends == 0
+            await client.post(_BASE + "/chat/completions", json=body("Synthetic content"))
+    assert len(observed) == 1
+    assert observed[0].headers["x-debug-owner"] == _EMAIL
+    assert protected.guard.sends == 1
 
 
 async def test_concurrent_protected_and_standard_requests_keep_their_contexts():

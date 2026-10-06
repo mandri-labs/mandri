@@ -46,7 +46,7 @@ class DefaultsConfig:
 @dataclass(frozen=True)
 class DockerSettings:
     image: str | None = "mandri-worker:latest"
-    pull_policy: str = "never"
+    pull_policy: str = "always"
     pull_timeout_seconds: int = 600
     state_root: str | None = None
     cpus: float = 4.0

@@ -19,6 +19,7 @@ from mandri.api.routers.sessions import router as sessions_router
 from mandri.api.routers.transcript_records import router as transcript_records_router
 from mandri.api.routers.usage import router as usage_router
 from mandri.api.routers.worktree_integration import router as worktree_integration_router
+from mandri.api.terminal import router as terminal_router
 from mandri.api.ws import router as ws_router
 from mandri.core.types.config import DEFAULT_CORS_ORIGINS, CorsOrigin
 from mandri.core.version import __version__
@@ -67,4 +68,5 @@ def create_app(cors_origins: Sequence[CorsOrigin] | None = None) -> FastAPI:
     app.include_router(fs_router, prefix="/v1")
     app.include_router(usage_router, prefix="/v1")
     app.include_router(ws_router, prefix="/v1")
+    app.include_router(terminal_router, prefix="/v1")
     return app

@@ -38,8 +38,9 @@ def parse_docker(data: Any) -> DockerSettings:
     if not isinstance(values["pull_policy"], str) or values["pull_policy"] not in {
         "never",
         "if-missing",
+        "always",
     }:
-        raise ConfigError("docker.pull_policy must be never or if-missing")
+        raise ConfigError("docker.pull_policy must be never, if-missing or always")
     _positive("docker.pull_timeout_seconds", values["pull_timeout_seconds"])
     if values["image"] is not None and not valid_image_reference(values["image"]):
         raise ConfigError("docker.image must be an image reference without credentials")

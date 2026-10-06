@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from mandri.core.terminal import TerminalSize
 from mandri.runtime.codex_catalog import materialize_catalog
 from mandri.runtime.docker_client import DockerClient
 from mandri.runtime.docker_config import (
@@ -39,6 +40,8 @@ from mandri.runtime.docker_workspace import (
 from mandri.runtime.errors.docker import DockerExecutionError
 from mandri.runtime.pi_session_paths import docker_resume_args
 from mandri.runtime.process import ManagedProcess, spawn
+from mandri.runtime.terminal_process import spawn_terminal
+from mandri.runtime.worker_image import MANAGED_IMAGE, prepare_worker
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,7 @@ class DockerReadiness:
     engine_id: str
     architecture: str
     harnesses: tuple[str, ...]
+    terminal: bool = False
 
 
 class DockerBackend:
@@ -56,12 +60,25 @@ class DockerBackend:
         self.owner = hashlib.sha256(str(config.state_root.resolve()).encode()).hexdigest()[:24]
         self.versions = DockerVersions(self.client, self.owner)
         self._image_lock = asyncio.Lock()
+        self._image_reference = config.image
 
     async def prepare_image(self) -> DockerReadiness:
         async with self._image_lock:
+            if self.config.image == MANAGED_IMAGE:
+                try:
+                    await self.readiness()
+                except DockerExecutionError as error:
+                    if error.reason not in {"docker_image_missing", "docker_image_incompatible"}:
+                        raise
+                reference = await prepare_worker(
+                    self.client, self.config.state_root, self.config.pull_timeout_seconds
+                )
+                ready = await self.readiness(reference)
+                self._image_reference = reference
+                return ready
             return await prepare_image(self.client, self.config, self.readiness)
 
-    async def readiness(self) -> DockerReadiness:
+    async def readiness(self, image_reference: str | None = None) -> DockerReadiness:
         config = self.config
         if sys.platform != "linux":
             raise DockerExecutionError(
@@ -107,7 +124,9 @@ class DockerBackend:
             raise DockerExecutionError(
                 "docker_image_incompatible", "A worker image must be configured"
             )
-        image = (await self.client.json("image", "inspect", config.image))[0]
+        image = (
+            await self.client.json("image", "inspect", image_reference or self._image_reference)
+        )[0]
         labels = image.get("Config", {}).get("Labels") or {}
         if labels.get("io.mandri.worker.version") != "1" or image.get("Os") != "linux":
             raise DockerExecutionError(
@@ -127,6 +146,7 @@ class DockerBackend:
             str(info["ID"]),
             str(image["Architecture"]),
             harnesses,
+            labels.get("io.mandri.worker.terminal") == "1",
         )
 
     async def reconcile(self, active_session_ids: frozenset[str] = frozenset()) -> list[str]:
@@ -203,8 +223,14 @@ class DockerBackend:
         *,
         listen_port: int | None = None,
         resume: bool = False,
+        terminal: TerminalSize | None = None,
     ) -> DockerProcess:
         ready = await self.readiness()
+        if terminal is not None and not ready.terminal:
+            raise DockerExecutionError(
+                "docker_image_incompatible",
+                "The worker image does not support native terminals; rebuild it",
+            )
         if harness not in ready.harnesses or harness not in self.config.image_harnesses:
             raise DockerExecutionError(
                 "docker_image_incompatible", "The image does not contain the selected harness"
@@ -403,6 +429,9 @@ class DockerBackend:
                     f"{context['workspace_device']}:{context['workspace_inode']}"
                 ),
             }
+            if terminal is not None:
+                worker_env.pop("CI", None)
+                worker_env.update(LINES=str(terminal.rows), COLUMNS=str(terminal.columns))
             if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) for key in worker_env):
                 raise DockerExecutionError(
                     "docker_image_incompatible", "Invalid worker environment key"
@@ -418,7 +447,13 @@ class DockerBackend:
                 for directory in state.rglob("*"):
                     if not directory.is_symlink():
                         os.chown(directory, uid, gid)
-            watch_args = ["--watch-stdin"] if harness == "opencode" else []
+            watch_args = (
+                ["--terminal"]
+                if terminal is not None
+                else ["--watch-stdin"]
+                if harness == "opencode"
+                else []
+            )
             namespace_args = (
                 ["--security-opt", "seccomp=unconfined", "--security-opt", "apparmor=unconfined"]
                 if harness == "codex"
@@ -430,6 +465,7 @@ class DockerBackend:
                 name,
                 *labels,
                 "--interactive",
+                *(["--tty", "--init"] if terminal is not None else []),
                 "--network",
                 f"container:{guard}",
                 "--user",
@@ -472,9 +508,11 @@ class DockerBackend:
                 image=ready.image_id, generation=generation, container_id=str(details["Id"])
             )
             write_context(state, context)
-            attached = await spawn(
-                [self.client.binary, "start", "--attach", "--interactive", name],
-                env=self.client.environment(),
+            attach_argv = [self.client.binary, "start", "--attach", "--interactive", name]
+            attached = (
+                await spawn_terminal(attach_argv, terminal, env=self.client.environment())
+                if terminal is not None
+                else await spawn(attach_argv, env=self.client.environment())
             )
             try:
                 await self._await_workspace(attached, worker_env["MANDRI_WORKSPACE_IDENTITY"])
@@ -500,7 +538,7 @@ class DockerBackend:
             raise DockerExecutionError(
                 "workspace_identity_changed", "The worker did not verify its workspace mount"
             ) from None
-        if line != f"MANDRI_WORKSPACE_READY {identity}\n".encode():
+        if line.rstrip(b"\r\n") != f"MANDRI_WORKSPACE_READY {identity}".encode():
             raise DockerExecutionError(
                 "workspace_identity_changed", "The selected workspace changed before execution"
             )

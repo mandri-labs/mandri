@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from mandri.runtime.errors.docker import DockerExecutionError
@@ -61,14 +62,29 @@ class DockerClient:
         return (stdout + stderr if include_stderr else stdout).decode().strip()
 
     async def pull(self, reference: str, timeout: float) -> None:
+        await self._acquire(["image", "pull", "--platform", "linux/amd64", reference], timeout)
+
+    async def build(self, context: Path, reference: str, label: str, timeout: float) -> None:
+        await self._acquire(
+            [
+                "build",
+                "--platform",
+                "linux/amd64",
+                "--label",
+                label,
+                "--tag",
+                reference,
+                str(context),
+            ],
+            timeout,
+        )
+
+    async def _acquire(self, args: list[str], timeout: float) -> None:
+        operation = "build" if args[0] == "build" else "pull"
         try:
             process = await asyncio.create_subprocess_exec(
                 self.binary,
-                "image",
-                "pull",
-                "--platform",
-                "linux/amd64",
-                reference,
+                *args,
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
@@ -87,7 +103,7 @@ class DockerClient:
             await process.wait()
             if isinstance(error, TimeoutError):
                 raise DockerExecutionError(
-                    "docker_image_pull_timeout", "Worker image acquisition timed out"
+                    f"docker_image_{operation}_timeout", "Worker image acquisition timed out"
                 ) from None
             raise
         if code:
@@ -105,7 +121,7 @@ class DockerClient:
                     "The Docker engine became unavailable during image acquisition",
                 )
             raise DockerExecutionError(
-                "docker_image_pull_failed", "Worker image acquisition failed"
+                f"docker_image_{operation}_failed", "Worker image acquisition failed"
             )
 
     async def json(self, *args: str) -> Any:

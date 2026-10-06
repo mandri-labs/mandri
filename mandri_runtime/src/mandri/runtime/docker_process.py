@@ -3,8 +3,10 @@ import contextlib
 import subprocess
 from collections.abc import Awaitable, Callable
 
+from mandri.core.terminal import TerminalSize
 from mandri.runtime.docker_client import DockerClient
 from mandri.runtime.process import ManagedProcess
+from mandri.runtime.terminal_process import TerminalProcess
 
 
 class DockerProcess(ManagedProcess):
@@ -55,6 +57,13 @@ class DockerProcess(ManagedProcess):
     async def wait(self) -> int:
         return await asyncio.shield(self._watcher)
 
+    async def write_stdin(self, data: bytes) -> None:
+        await self._attach.write_stdin(data)
+
+    def resize(self, size: TerminalSize) -> None:
+        if isinstance(self._attach, TerminalProcess):
+            self._attach.resize(size)
+
     async def stop(self, grace: float = 5.0) -> int:
         if self._stopped:
             if not self._cleaned:
@@ -76,6 +85,8 @@ class DockerProcess(ManagedProcess):
                 await self._attach.stop(grace)
             return await self.wait()
         finally:
+            if isinstance(self._attach, TerminalProcess):
+                self._attach.close_terminal()
             await self._cleanup()
             self._cleaned = True
 
@@ -92,6 +103,8 @@ class DockerProcess(ManagedProcess):
         await self._client.run("kill", self.container_id, check=False)
         await self._attach.kill()
         code = await self.wait()
+        if isinstance(self._attach, TerminalProcess):
+            self._attach.close_terminal()
         self._stopped = True
         await self._cleanup()
         self._cleaned = True

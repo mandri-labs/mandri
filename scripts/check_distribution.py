@@ -27,6 +27,8 @@ RESOURCE_FILES = {
     "runtime/security/worker-seccomp.json",
     "runtime/security/third-party-license.txt",
     "runtime/security/NOTICE.txt",
+    "runtime/worker/Dockerfile",
+    "runtime/worker/worker.py",
 }
 ENTRY_POINTS = {
     "mandri = mandri.cli.main:main",

@@ -21,6 +21,7 @@ from mandri.cli.sessions_args import add_sessions_parser
 from mandri.cli.types import RunSpec
 from mandri.config.toml_adapter import DEFAULT_BASE_DIR
 from mandri.core.ids import HarnessKind
+from mandri.core.types.execution import ExecutionBackend, PrivacyMode
 from mandri.core.version import __version__
 
 
@@ -56,6 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--cwd", type=Path, default=None, help="working directory for the harness process"
     )
     run.add_argument("--base-dir", type=Path, default=None, help="base directory")
+    run.add_argument("--execution-backend", choices=("host", "docker"), default=None)
+    run.add_argument("--privacy-mode", choices=("none", "surrogate"), default=None)
     run.add_argument(
         "passthrough", nargs=argparse.REMAINDER, help="arguments passed to the harness"
     )
@@ -73,12 +76,18 @@ def _run_command(args: argparse.Namespace) -> int:
         cwd=args.cwd,
         effort=args.effort,
         passthrough_args=_passthrough(args),
+        execution_backend=ExecutionBackend(args.execution_backend)
+        if args.execution_backend
+        else None,
+        privacy_mode=PrivacyMode(args.privacy_mode) if args.privacy_mode else None,
     )
     try:
         return RunCommand(spec).run()
     except RunError as error:
         print(str(error), file=sys.stderr)
         return _error_exit_code(error)
+    except KeyboardInterrupt:
+        return 130
 
 
 def _base_dir(args: argparse.Namespace) -> Path:

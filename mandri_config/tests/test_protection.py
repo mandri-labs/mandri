@@ -67,7 +67,7 @@ def test_privacy_rules_file_is_a_local_path_setting_without_inline_values():
 
 
 def test_image_pull_defaults_and_explicit_digest_roundtrip(tmp_path):
-    assert parse_docker({}).pull_policy == "never"
+    assert parse_docker({}).pull_policy == "always"
     digest = "registry.invalid/worker@sha256:" + "b" * 64
     docker = parse_docker(
         {"image": digest, "pull_policy": "if-missing", "pull_timeout_seconds": 120}
@@ -81,7 +81,7 @@ def test_image_pull_defaults_and_explicit_digest_roundtrip(tmp_path):
 @pytest.mark.parametrize(
     "value",
     [
-        {"pull_policy": "always"},
+        {"pull_policy": "unknown"},
         {"pull_policy": []},
         {"pull_policy": "if-missing"},
         {"pull_policy": "if-missing", "image": "worker:latest"},

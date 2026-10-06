@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from mandri.core.terminal import TerminalSize
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode, ProtectionError
 from mandri.core.types.model_selection import ModelSource
 from mandri.runtime.control.agy_policy import AgyPolicy
@@ -264,7 +265,8 @@ async def test_docker_resource_limits_fail_before_engine_launch(tmp_path):
 @pytest.mark.skipif(
     sys.platform != "linux", reason="Docker execution requires a qualified Linux host"
 )
-async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch):
+@pytest.mark.parametrize("terminal", [None, TerminalSize(rows=41, columns=101)])
+async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch, terminal):
     root = tmp_path / "workspace"
     root.mkdir()
     backend = DockerBackend(DockerConfig("image", tmp_path / "state"))
@@ -289,13 +291,19 @@ async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch):
     monkeypatch.setattr(
         backend,
         "readiness",
-        AsyncMock(return_value=DockerReadiness("sha256:pinned", "engine", "amd64", ("codex",))),
+        AsyncMock(
+            return_value=DockerReadiness("sha256:pinned", "engine", "amd64", ("codex",), True)
+        ),
     )
     metadata = root.stat()
     stdout = asyncio.StreamReader()
-    stdout.feed_data(f"MANDRI_WORKSPACE_READY {metadata.st_dev}:{metadata.st_ino}\n".encode())
+    ending = "\r\n" if terminal is not None else "\n"
+    stdout.feed_data(f"MANDRI_WORKSPACE_READY {metadata.st_dev}:{metadata.st_ino}{ending}".encode())
     attached = SimpleNamespace(process=SimpleNamespace(stdout=stdout))
     monkeypatch.setattr("mandri.runtime.docker_backend.spawn", AsyncMock(return_value=attached))
+    monkeypatch.setattr(
+        "mandri.runtime.docker_backend.spawn_terminal", AsyncMock(return_value=attached)
+    )
     captured = {}
     managed = SimpleNamespace()
 
@@ -307,7 +315,13 @@ async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch):
     ingress = SimpleNamespace(port=41000, socket_path=None, aclose=AsyncMock())
     assert (
         await backend.spawn(
-            "session", "codex", ["codex", "app-server"], root, {"MANDRI_API_KEY": "scoped"}, ingress
+            "session",
+            "codex",
+            ["codex", "app-server"],
+            root,
+            {"MANDRI_API_KEY": "scoped"},
+            ingress,
+            terminal=terminal,
         )
         is managed
     )
@@ -325,6 +339,9 @@ async def test_docker_create_contract_and_cleanup(tmp_path, monkeypatch):
     assert options["env"]["MANDRI_API_KEY"] == "scoped"
     assert "sha256:pinned" in args
     assert any(f"src={root},dst=/workspace" in value for value in args)
+    assert ("--tty" in args) == (terminal is not None)
+    assert ("--init" in args) == (terminal is not None)
+    assert ("--terminal" in args) == (terminal is not None)
     await captured["cleanup"]()
     client.remove.assert_awaited_once()
     ingress.aclose.assert_awaited_once()

@@ -210,3 +210,47 @@ def test_capability_does_not_publish_unvalidated_credentials(tmp_path):
     assert image_options(config).configured_image is None
     assert not image_options(config).can_prepare
     assert image_options(replace(config, image=DIGEST)).can_prepare
+
+
+async def test_moving_registry_tag_is_refreshed_even_with_cached_image(tmp_path):
+    image = "registry.invalid/worker:latest"
+    config = DockerConfig(image, tmp_path, pull_policy="always")
+    newer = replace(READY, image_id="sha256:" + "c" * 64)
+    readiness = AsyncMock(side_effect=[READY, newer])
+    client = SimpleNamespace(pull=AsyncMock())
+    assert await prepare_image(client, config, readiness) == newer
+    client.pull.assert_awaited_once_with(image, 600)
+    assert image_options(config).can_prepare
+
+
+async def test_pinned_registry_digest_needs_no_update_check_when_present(tmp_path):
+    client = SimpleNamespace(pull=AsyncMock())
+    assert (
+        await prepare_image(
+            client,
+            DockerConfig(DIGEST, tmp_path, pull_policy="always"),
+            AsyncMock(return_value=READY),
+        )
+        == READY
+    )
+    client.pull.assert_not_awaited()
+
+
+async def test_failed_remote_refresh_does_not_silently_return_stale_image(tmp_path):
+    client = SimpleNamespace(pull=AsyncMock(side_effect=RuntimeError("registry unavailable")))
+    with pytest.raises(RuntimeError, match="registry unavailable"):
+        await prepare_image(
+            client,
+            DockerConfig("registry.invalid/worker:latest", tmp_path, pull_policy="always"),
+            AsyncMock(return_value=READY),
+        )
+
+
+async def test_auto_refresh_replaces_incompatible_cached_image(tmp_path):
+    config = DockerConfig("registry.invalid/worker:latest", tmp_path, pull_policy="always")
+    client = SimpleNamespace(pull=AsyncMock())
+    readiness = AsyncMock(
+        side_effect=[DockerExecutionError("docker_image_incompatible", "Old contract"), READY]
+    )
+    assert await prepare_image(client, config, readiness) == READY
+    client.pull.assert_awaited_once()

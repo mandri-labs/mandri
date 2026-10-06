@@ -3,7 +3,7 @@
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from codex_cli_bin import bundled_codex_path
@@ -16,6 +16,7 @@ from mandri.cli.run_errors import (
     ModelResolutionError,
     RunError,
 )
+from mandri.cli.terminal_run import TerminalRunCommand
 from mandri.cli.types import RunSpec
 from mandri.config.toml_adapter import TomlConfigAdapter
 from mandri.core.ids import HARNESS_WIRE_FORMATS, HarnessKind
@@ -47,13 +48,13 @@ class RunCommand(DaemonCommand):
 
     def run(self) -> int:
         defaults = TomlConfigAdapter(self._spec.base_dir).load().defaults
-        if (
-            defaults.execution_backend is not ExecutionBackend.HOST
-            or defaults.privacy_mode is not PrivacyMode.NONE
-        ):
-            raise RunError(
-                "The configured protection requires managed execution; use mandri sessions start"
-            )
+        backend = self._spec.execution_backend or defaults.execution_backend
+        privacy = self._spec.privacy_mode or defaults.privacy_mode
+        if backend is not ExecutionBackend.HOST or privacy is not PrivacyMode.NONE:
+            self._validate_model_arg(self._spec.model_arg)
+            return TerminalRunCommand(
+                replace(self._spec, execution_backend=backend, privacy_mode=privacy)
+            ).run()
         self._validate_model_arg(self._spec.model_arg)
         self._binary = self._resolve_binary()
         if self._spec.harness is HarnessKind.AGY:

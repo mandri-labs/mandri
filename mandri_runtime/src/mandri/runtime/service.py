@@ -209,6 +209,7 @@ class RuntimeService:
         )
         self._liveness = liveness
         self._events = RuntimeEvents(self._states, self._registry, hub, liveness)
+        self._events.on_event = self._observe_interaction_mode
         self._access = SessionAccess(
             sessions, self._registry, lambda session_id: self.is_busy(session_id)
         )
@@ -444,16 +445,42 @@ class RuntimeService:
         decision: ApprovalDecision,
         updated_input: str | None = None,
         answers: list[dict[str, Any]] | None = None,
+        permission_mode: str | None = None,
     ) -> ApprovalRequest:
         raw_input = RawEvent(updated_input) if updated_input is not None else None
 
         async def deliver(request: ApprovalRequest) -> None:
-            delivery = self._session_state(str(request.session_id)).delivery
-            if delivery is None or not await delivery.deliver(request):
-                raise ControlTransportError("The native interaction is no longer available")
+            state = self._session_state(str(request.session_id))
+            native = (
+                json.loads(request.native_request) if request.harness is HarnessKind.CLAUDE else {}
+            )
+            native = native if isinstance(native, dict) else {}
+            body = native.get("request")
+            plan = (
+                request.harness is HarnessKind.CLAUDE
+                and isinstance(body, dict)
+                and body.get("tool_name") == "ExitPlanMode"
+            )
+            if plan and request.decision is ApprovalDecision.ALLOW:
+                mode = request.permission_mode or "default"
+                if mode not in state.interaction_modes.plan_modes():
+                    raise ControlTransportError("The requested plan execution mode is unavailable")
+                state.interaction_modes.approve_plan(native, mode)
+            try:
+                if state.delivery is None or not await state.delivery.deliver(request):
+                    raise ControlTransportError("The native interaction is no longer available")
+            except Exception:
+                if plan:
+                    state.interaction_modes.forget_plan(native)
+                raise
 
         request = await self._approvals.answer(
-            ApprovalId(approval_id), decision, raw_input, answers, deliver=deliver
+            ApprovalId(approval_id),
+            decision,
+            raw_input,
+            answers,
+            deliver=deliver,
+            permission_mode=permission_mode,
         )
         self._events.publish_resolved(request)
         return request
@@ -482,6 +509,7 @@ class RuntimeService:
                 "ts": system_now_ms(),
             }
             payload = {**with_approval_metadata(envelope, request), "type": "approval.pending"}
+            self._plan_approval_modes(session_id, payload)
             self._hub.publish(topic or session_topic(session_id), payload)
 
     async def expire_approvals(self) -> list[ApprovalRequest]:
@@ -2123,20 +2151,70 @@ class RuntimeService:
     async def _persist_interaction_mode(
         self, session_id: str, mode: str, application: ModeApplication
     ) -> None:
-        if self._sessions is None:
+        self._session_state(session_id).interaction_modes.confirm(mode)
+        if self._sessions is not None:
+            with contextlib.suppress(SessionNotFoundError):
+                await self._sessions.set_session_interaction_mode(
+                    SessionId(session_id), mode, application.value
+                )
+        harness = self._registry.harness_of(session_id)
+        if harness is None:
             return
-        with contextlib.suppress(SessionNotFoundError):
-            await self._sessions.set_session_interaction_mode(
-                SessionId(session_id), mode, application.value
+        self._events.publish_both(
+            session_id,
+            {
+                "type": "interaction_mode",
+                "session_id": session_id,
+                "harness": harness,
+                "mode": mode,
+                "applied": application.value,
+            },
+        )
+
+    def _plan_approval_modes(self, session_id: str, payload: dict[str, Any]) -> None:
+        raw = payload.get("raw", {})
+        body = raw.get("request") if isinstance(raw, dict) else None
+        if (
+            payload.get("source") == "claude"
+            and isinstance(body, dict)
+            and body.get("tool_name") == "ExitPlanMode"
+        ):
+            payload["permission_modes"] = self._session_state(
+                session_id
+            ).interaction_modes.plan_modes()
+
+    async def _observe_interaction_mode(self, topic: Topic, payload: dict[str, Any]) -> None:
+        if not str(topic).startswith("session."):
+            return
+        session_id = str(topic)[len("session.") :]
+        if payload.get("type") == "approval.pending":
+            self._plan_approval_modes(session_id, payload)
+            return
+        raw = payload.get("raw")
+        if "type" in payload or not isinstance(raw, dict):
+            return
+        source = payload.get("source")
+        if source != self._registry.harness_of(session_id):
+            return
+        state = self._session_state(session_id)
+        mode = state.interaction_modes.observe(str(source), raw, state.native_id)
+        if mode is not None:
+            await self._persist_interaction_mode(
+                session_id, mode, ModeApplication.MID_SESSION_APPLIED
             )
 
     def _persist_launch_mode(self, session_id: str, launch_mode: modes.LaunchMode | None) -> None:
         if self._sessions is None or launch_mode is None or launch_mode.mode is None:
             return
-        task = asyncio.create_task(
-            self._persist_interaction_mode(session_id, launch_mode.mode, ModeApplication.AT_LAUNCH)
-        )
+        observed = self._session_state(session_id).interaction_modes
+        if observed.mode is None:
+            observed.confirm(launch_mode.mode)
+        task = asyncio.create_task(self._persist_current_launch_mode(session_id, launch_mode.mode))
         self._track_control_task(session_id, task)
+
+    async def _persist_current_launch_mode(self, session_id: str, mode: str) -> None:
+        if self._session_state(session_id).interaction_modes.mode == mode:
+            await self._persist_interaction_mode(session_id, mode, ModeApplication.AT_LAUNCH)
 
     async def _spawn_harness(
         self, argv: list[str], cwd: str | Path, env: dict[str, str]

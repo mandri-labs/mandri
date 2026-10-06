@@ -4,6 +4,7 @@ from typing import Any
 from mandri.core.ids import ApprovalDecision, ApprovalKind, ApprovalStatus
 from mandri.core.types.approvals import ApprovalRequest
 from mandri.runtime.control.codex import CodexControlAdapter
+from mandri.runtime.control.codex_structured import elicitation_response, permission_grant
 from mandri.runtime.control.errors import ControlError
 from mandri.runtime.question_answers import valid_question_answers
 
@@ -30,16 +31,21 @@ class CodexApprovalDelivery:
                 request.native_request_ref, result
             )
         elif request.kind is ApprovalKind.ELICITATION:
-            if allowed:
-                raise ControlError("Native elicitation requires a structured response")
             delivered = await self._control.answer_native_request(
-                request.native_request_ref, {"action": "cancel"}
+                request.native_request_ref,
+                elicitation_response(request)
+                if allowed
+                else {
+                    "action": "decline"
+                    if request.status is ApprovalStatus.ANSWERED
+                    and request.decision is not ApprovalDecision.CANCEL
+                    else "cancel"
+                },
             )
         elif request.kind is ApprovalKind.PERMISSION_SCOPE:
-            if allowed:
-                raise ControlError("Native permission scope requires explicit grants")
             delivered = await self._control.answer_native_request(
-                request.native_request_ref, {"permissions": {}, "scope": "turn"}
+                request.native_request_ref,
+                permission_grant(request) if allowed else {"permissions": {}, "scope": "turn"},
             )
         else:
             decision = request.decision if request.status is ApprovalStatus.ANSWERED else None

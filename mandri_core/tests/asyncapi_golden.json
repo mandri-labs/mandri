@@ -124,6 +124,9 @@
         "gatewayEvents": {
           "$ref": "#/components/messages/gatewayEvents"
         },
+        "interaction_mode": {
+          "$ref": "#/components/messages/interaction_mode"
+        },
         "ping": {
           "$ref": "#/components/messages/ping"
         },
@@ -1817,6 +1820,12 @@
         },
         "title": "gateway.events"
       },
+      "interaction_mode": {
+        "payload": {
+          "$ref": "#/components/schemas/InteractionModeFrame"
+        },
+        "title": "InteractionModeFrame"
+      },
       "ping": {
         "payload": {
           "$ref": "#/components/schemas/PingFrame"
@@ -2863,6 +2872,24 @@
           "decision": {
             "$ref": "#/components/schemas/ApprovalDecision"
           },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "default",
+                  "acceptEdits",
+                  "bypassPermissions",
+                  "auto"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Permission Mode"
+          },
           "updated_input": {
             "anyOf": [
               {
@@ -2911,6 +2938,18 @@
         "title": "ApprovalDecision",
         "type": "string"
       },
+      "ApprovalKind": {
+        "enum": [
+          "command_execution",
+          "file_change",
+          "permission_scope",
+          "user_input",
+          "elicitation",
+          "unknown"
+        ],
+        "title": "ApprovalKind",
+        "type": "string"
+      },
       "ApprovalPendingFrame": {
         "properties": {
           "agent_id": {
@@ -2932,6 +2971,32 @@
           "deadline": {
             "title": "Deadline",
             "type": "integer"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "permission_modes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Permission Modes"
           },
           "raw": {
             "additionalProperties": true,
@@ -4062,6 +4127,58 @@
         "title": "HarnessKind",
         "type": "string"
       },
+      "InteractionModeFrame": {
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Agent Id"
+          },
+          "raw": {
+            "additionalProperties": true,
+            "title": "Raw",
+            "type": "object"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "integer"
+          },
+          "type": {
+            "const": "interaction_mode",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "seq",
+          "source",
+          "raw",
+          "ts",
+          "type"
+        ],
+        "title": "InteractionModeFrame",
+        "type": "object"
+      },
       "ParentAgentCapabilities": {
         "properties": {
           "create": {
@@ -4414,6 +4531,18 @@
             ],
             "default": null
           },
+          "applied": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Applied"
+          },
           "cause": {
             "anyOf": [
               {
@@ -4443,6 +4572,18 @@
             ],
             "default": null,
             "title": "Last Activity At"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
           },
           "policy_revision": {
             "default": 1,
@@ -4476,7 +4617,8 @@
               "session_stopped",
               "session_state",
               "activity",
-              "control_lost"
+              "control_lost",
+              "interaction_mode"
             ],
             "title": "Type",
             "type": "string"

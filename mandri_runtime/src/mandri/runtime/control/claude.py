@@ -382,6 +382,11 @@ class ClaudeApprovalMessenger:
         if request.decision is not ApprovalDecision.ALLOW:
             return {"behavior": "deny", "message": _DENY_MESSAGE}
         updated = _echoed_input(request.native_request)
+        if request.updated_input is not None:
+            replacement = _parse_frame(str(request.updated_input))
+            if replacement is None:
+                raise ControlError("Claude tool input must be an object")
+            updated = replacement
         if request.answers:
             updated["answers"] = {
                 item["question"]: ", ".join(item["answers"])
@@ -390,7 +395,15 @@ class ClaudeApprovalMessenger:
                 and isinstance(item.get("answers"), list)
                 and all(isinstance(answer, str) for answer in item["answers"])
             }
-        return {"behavior": "allow", "updatedInput": updated}
+        payload = {"behavior": "allow", "updatedInput": updated}
+        native = _parse_frame(str(request.native_request)) or {}
+        body = native.get("request")
+        if isinstance(body, dict) and body.get("tool_name") == "ExitPlanMode":
+            payload["updatedPermissions"] = [{
+                "type": "setMode", "mode": request.permission_mode or "default",
+                "destination": "session",
+            }]
+        return payload
 
 
 def _tool_request(frame: dict[str, Any]) -> ControlRequest | None:

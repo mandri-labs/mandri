@@ -88,6 +88,7 @@ class ApprovalService:
         updated_input: RawEvent | None = None,
         answers: list[dict[str, Any]] | None = None,
         deliver: typing.Callable[[ApprovalRequest], typing.Awaitable[None]] | None = None,
+        permission_mode: str | None = None,
     ) -> ApprovalRequest:
         async with self._lock:
             request = self._require(approval_id)
@@ -119,10 +120,29 @@ class ApprovalService:
             ):
                 raise ApprovalNotPendingError("The native question requires non-empty answers")
             resolved = request.transition(ApprovalStatus.ANSWERED, decision)
-            resolved = dataclasses.replace(resolved, answers=answers)
+            if permission_mode is not None:
+                native = json.loads(request.native_request)
+                body = native.get("request") if isinstance(native, dict) else None
+                if (
+                    request.harness is not HarnessKind.CLAUDE
+                    or not isinstance(body, dict)
+                    or body.get("tool_name") != "ExitPlanMode"
+                    or decision is not ApprovalDecision.ALLOW
+                    or permission_mode
+                    not in {"default", "acceptEdits", "bypassPermissions", "auto"}
+                ):
+                    raise ApprovalNotPendingError("Permission modes require a plan approval")
+            resolved = dataclasses.replace(
+                resolved,
+                answers=answers,
+                updated_input=updated_input,
+                permission_mode=permission_mode,
+            )
             if deliver is not None:
                 await deliver(resolved)
             object.__setattr__(request, "answers", answers)
+            object.__setattr__(request, "updated_input", updated_input)
+            object.__setattr__(request, "permission_mode", permission_mode)
             return self._resolve(request, resolved)
 
     async def cancel(

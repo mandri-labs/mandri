@@ -119,7 +119,7 @@ class OpencodeEvents:
             return result
         if kind == "session.retry.scheduled":
             return [{"type": "session.status", "properties": {**data, "status": {"type": "retry"}}}]
-        if kind == "session.renamed":
+        if kind in {"session.renamed", "session.updated"}:
             return [{"type": "session.updated", "properties": {"info": {**data, "id": owner}}}]
         if kind == "session.inbox.delivered":
             response = await self._call(

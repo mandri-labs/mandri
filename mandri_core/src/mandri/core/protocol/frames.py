@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
-from mandri.core.ids import CorrelationId
+from mandri.core.ids import ApprovalKind, CorrelationId
 from mandri.core.protocol.errors import ProtocolErrorCode
 from mandri.core.types.conversation_status import ConversationStatus
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
@@ -53,6 +53,8 @@ class ApprovalPendingFrame(BaseModel):
     approval_id: str
     deadline: int
     status: str
+    kind: ApprovalKind | None = None
+    permission_modes: list[str] | None = None
     agent_id: str | None = None
 
 
@@ -66,6 +68,10 @@ class ApprovalResolvedFrame(BaseModel):
     approval_id: str
     outcome: str
     decision: str | None = None
+
+
+class InteractionModeFrame(EventFrame):
+    type: Literal["interaction_mode"]
 
 
 class SessionStoppedFrame(BaseModel):
@@ -162,6 +168,7 @@ ServerFrame = (
     | ApprovalResolvedFrame
     | SessionStoppedFrame
     | ControlLostFrame
+    | InteractionModeFrame
     | EventFrame
     | GapFrame
     | SnapshotFrame

@@ -21,6 +21,7 @@ dependencies = [
     "fastapi==0.141.1",
     "httpx==0.28.1",
     "keyring==25.7.0",
+    "jsonschema==4.26.0",
     "litellm==1.99.0",
     "openai-codex-cli-bin==0.159.0",
     "orjson>=3.12.0",

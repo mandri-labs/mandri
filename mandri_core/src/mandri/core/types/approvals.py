@@ -59,6 +59,8 @@ class ApprovalRequest:
     status: ApprovalStatus
     decision: ApprovalDecision | None
     answers: list[dict[str, Any]] | None = None
+    updated_input: RawEvent | None = None
+    permission_mode: str | None = None
 
     def transition(
         self,

@@ -91,6 +91,7 @@ def with_approval_metadata(
     return {
         **envelope,
         "approval_id": request.id,
+        "kind": request.kind.value,
         "deadline": request.deadline,
         "status": request.status.value,
     }

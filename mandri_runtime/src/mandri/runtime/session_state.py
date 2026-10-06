@@ -8,6 +8,7 @@ from mandri.core.types.model_selection import ModelSource
 from mandri.runtime.agy_launch import AgyLaunch
 from mandri.runtime.approvals.watcher import ApprovalWatcher
 from mandri.runtime.control.agy_commands import AgyCommandRunner
+from mandri.runtime.interaction_modes import InteractionModes
 from mandri.runtime.liveness.factory import LivenessAdapter as LivenessAdapter
 from mandri.runtime.pi_session_paths import PiSessionCheckpoint
 from mandri.runtime.session_feed import SessionFeed
@@ -18,6 +19,7 @@ ModelSelection = tuple[ModelSource, str, str | None]
 
 @dataclass
 class SessionRuntimeState:
+    interaction_modes: InteractionModes = field(default_factory=InteractionModes)
     policy: SessionPolicy = field(default_factory=SessionPolicy)
     policy_revision: int = 1
     agy: AgyLaunch | None = None

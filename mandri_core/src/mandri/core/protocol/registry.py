@@ -72,13 +72,22 @@ class ConversationReadParams(BaseModel):
 class SessionLifecyclePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["session_started", "session_stopped", "session_state", "activity", "control_lost"]
+    type: Literal[
+        "session_started",
+        "session_stopped",
+        "session_state",
+        "activity",
+        "control_lost",
+        "interaction_mode",
+    ]
     session_id: SessionId
     harness: HarnessKind
     state: SessionState | None = None
     activity: ActivityState | None = None
     last_activity_at: int | None = None
     cause: SessionStopCause | None = None
+    mode: str | None = None
+    applied: str | None = None
     execution_backend: ExecutionBackend = ExecutionBackend.HOST
     privacy_mode: PrivacyMode = PrivacyMode.NONE
     policy_revision: int = 1
@@ -222,6 +231,7 @@ class ApprovalAnswerParams(BaseModel):
     decision: ApprovalDecision
     updated_input: str | None = None
     answers: list[dict[str, Any]] | None = None
+    permission_mode: Literal["default", "acceptEdits", "bypassPermissions", "auto"] | None = None
 
 
 class ApprovalCancelParams(BaseModel):

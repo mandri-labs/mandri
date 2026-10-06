@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mandri.core.clock import system_now_ms
@@ -36,9 +36,12 @@ class RuntimeEvents:
         self._hub = hub
         self._liveness = liveness
         self.publisher: EventPublisher | None = None
+        self.on_event: Callable[[Topic, dict[str, Any]], Awaitable[None]] | None = None
         self.approval_topic: Callable[[ApprovalRequest], Topic | None] | None = None
 
     async def publish_event(self, topic: Topic, payload: dict[str, Any]) -> None:
+        if self.on_event is not None:
+            await self.on_event(topic, payload)
         if self.publisher is not None:
             await self.publisher(topic, payload)
         elif self._hub is not None:

@@ -48,6 +48,7 @@ async def test_pseudonymized_launch_keeps_native_extensions(kind, backend, tmp_p
         monkeypatch.setattr("mandri.runtime.service.WorkerIngress", Mock(return_value=ingress))
         runtime._docker = SimpleNamespace(
             owner="owner",
+            desktop=False,
             config=SimpleNamespace(ingress_host="gateway.invalid", ingress_bind="127.0.0.1"),
             readiness=AsyncMock(return_value=SimpleNamespace(image_id="image")),
             context=Mock(return_value={"native_state_root": str(home)}),

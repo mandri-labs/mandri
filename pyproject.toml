@@ -1,6 +1,6 @@
 [project]
 name = "mandri"
-version = "0.2.0b0"
+version = "0.3.0b0"
 description = "Local control plane for AI agents"
 readme = "README.md"
 license = "Apache-2.0"

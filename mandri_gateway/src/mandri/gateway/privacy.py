@@ -45,7 +45,7 @@ class GatewayPrivacy:
             if route.execution_backend is ExecutionBackend.DOCKER:
                 engine.reserve_root("/workspace")
                 engine.reserve_root("/home/worker")
-            result = transform_content(body, engine)
+            result: dict[str, Any] = transform_content(body, engine)
             result = visit_content(result, KnownValues(engine).replace)
             if protocol in {
                 GatewayProtocol.CHAT,

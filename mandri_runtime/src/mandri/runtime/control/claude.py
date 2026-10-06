@@ -215,7 +215,8 @@ class ClaudeControlAdapter:
         self._stderr_pump.close()
         self._commands.fail("Claude control stream closed; command outcome is unknown")
         tasks = [
-            task for task in (self._pump_task, self._stderr_task, self._title_task)
+            task
+            for task in (self._pump_task, self._stderr_task, self._title_task)
             if task is not None
         ]
         for task in tasks:
@@ -395,14 +396,17 @@ class ClaudeApprovalMessenger:
                 and isinstance(item.get("answers"), list)
                 and all(isinstance(answer, str) for answer in item["answers"])
             }
-        payload = {"behavior": "allow", "updatedInput": updated}
+        payload: dict[str, Any] = {"behavior": "allow", "updatedInput": updated}
         native = _parse_frame(str(request.native_request)) or {}
         body = native.get("request")
         if isinstance(body, dict) and body.get("tool_name") == "ExitPlanMode":
-            payload["updatedPermissions"] = [{
-                "type": "setMode", "mode": request.permission_mode or "default",
-                "destination": "session",
-            }]
+            payload["updatedPermissions"] = [
+                {
+                    "type": "setMode",
+                    "mode": request.permission_mode or "default",
+                    "destination": "session",
+                }
+            ]
         return payload
 
 

@@ -23,9 +23,7 @@ async def identities(tmp_path, monkeypatch):
     backend = FakeBackend()
     engine = SyncEngine(database, {HarnessKind.PI: backend})
     service = SessionsService(database, engine, pi_identities=NativePiSessionIdentities(database))
-    await insert_session_row(
-        database, "managed", harness="pi", native_id="previous", state="live"
-    )
+    await insert_session_row(database, "managed", harness="pi", native_id="previous", state="live")
     try:
         yield service, database, backend, engine
     finally:

@@ -203,7 +203,8 @@ async def _snapshot(state: LifespanState) -> dict[str, Any]:
         "sessions": sessions,
         "statuses": (
             [row.model_dump() for row in service.statuses.all()]
-            if service is not None and service.statuses is not None else []
+            if service is not None and service.statuses is not None
+            else []
         ),
         "runtimes": runtimes,
     }

@@ -211,9 +211,7 @@ def spawn_daemon(
         kwargs = _spawn_platform_kwargs()
         kwargs["stdout"] = log_file
         kwargs["stderr"] = log_file
-        subprocess.Popen(
-            _spawn_argv(base_dir, address, log_level, enable_litellm_debug), **kwargs
-        )
+        subprocess.Popen(_spawn_argv(base_dir, address, log_level, enable_litellm_debug), **kwargs)
 
 
 def await_ready(address: Address, deadline_s: float = 10.0, log_path: Path | None = None) -> None:

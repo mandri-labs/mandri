@@ -38,31 +38,69 @@ async def test_managed_native_settlement_is_specific_to_each_harness(observed, h
         lambda evidence, state: observe_liveness(observed, evidence, state)
     )
     tracker.register(SessionId("s"))
-    adapter = liveness_adapter(harness, hub, Topic("session.s"), tracker, SessionId("s"),
-                               native_identity=lambda: "native")
+    adapter = liveness_adapter(
+        harness, hub, Topic("session.s"), tracker, SessionId("s"), native_identity=lambda: "native"
+    )
     adapter.start()
     try:
         if harness is HarnessKind.CODEX:
             start = {"method": "turn/started", "params": {"threadId": "native"}}
-            interim = {"method": "item/started", "params": {"threadId": "native", "item": {
-                "type": "subAgentActivity", "agentThreadId": "child", "kind": "started"}}}
-            end = {"method": "turn/completed", "params": {"threadId": "native", "turn": {
-                "id": "turn", "status": "completed"}}}
-            final = {"method": "item/completed", "params": {"threadId": "native", "item": {
-                "type": "subAgentActivity", "agentThreadId": "child", "kind": "completed"}}}
+            interim = {
+                "method": "item/started",
+                "params": {
+                    "threadId": "native",
+                    "item": {
+                        "type": "subAgentActivity",
+                        "agentThreadId": "child",
+                        "kind": "started",
+                    },
+                },
+            }
+            end = {
+                "method": "turn/completed",
+                "params": {"threadId": "native", "turn": {"id": "turn", "status": "completed"}},
+            }
+            final = {
+                "method": "item/completed",
+                "params": {
+                    "threadId": "native",
+                    "item": {
+                        "type": "subAgentActivity",
+                        "agentThreadId": "child",
+                        "kind": "completed",
+                    },
+                },
+            }
         elif harness is HarnessKind.CLAUDE:
             start = {"type": "user", "message": {"role": "user"}}
             interim = {"type": "system", "subtype": "task_started", "task_id": "child"}
             end = {"type": "result", "subtype": "success", "queued_turn_count": 0}
-            final = {"type": "system", "subtype": "task_notification", "task_id": "child",
-                     "status": "completed"}
+            final = {
+                "type": "system",
+                "subtype": "task_notification",
+                "task_id": "child",
+                "status": "completed",
+            }
         elif harness is HarnessKind.OPENCODE:
-            start = {"type": "session.status", "properties": {"sessionID": "native",
-                     "status": {"type": "busy"}}}
-            interim = {"type": "session.status", "properties": {"sessionID": "native",
-                       "status": {"type": "retry"}}}
-            end = {"type": "message.updated", "properties": {"info": {"sessionID": "native",
-                   "role": "assistant", "finish": "stop", "time": {"completed": 2}}}}
+            start = {
+                "type": "session.status",
+                "properties": {"sessionID": "native", "status": {"type": "busy"}},
+            }
+            interim = {
+                "type": "session.status",
+                "properties": {"sessionID": "native", "status": {"type": "retry"}},
+            }
+            end = {
+                "type": "message.updated",
+                "properties": {
+                    "info": {
+                        "sessionID": "native",
+                        "role": "assistant",
+                        "finish": "stop",
+                        "time": {"completed": 2},
+                    }
+                },
+            }
             final = {"type": "session.idle", "properties": {"sessionID": "native"}}
         elif harness is HarnessKind.PI:
             start = {"type": "agent_start"}
@@ -71,11 +109,20 @@ async def test_managed_native_settlement_is_specific_to_each_harness(observed, h
             final = {"type": "agent_settled"}
         else:
             start = {"event": "hook", "hook": "PreInvocation", "data": {"conversationId": "native"}}
-            interim = {"event": "step_update", "step_update": {"conversation_id": "native",
-                       "step_type": "planner", "state": "DONE"}}
+            interim = {
+                "event": "step_update",
+                "step_update": {
+                    "conversation_id": "native",
+                    "step_type": "planner",
+                    "state": "DONE",
+                },
+            }
             end = {"event": "result", "result": {"status": "SUCCESS"}}
-            final = {"event": "hook", "hook": "Stop", "data": {
-                     "conversationId": "native", "fullyIdle": True}}
+            final = {
+                "event": "hook",
+                "hook": "Stop",
+                "data": {"conversationId": "native", "fullyIdle": True},
+            }
         status = await deliver(hub, observed, harness.value, start, interim, end)
         assert status.completion_revision == 0
         assert status.cycle_active
@@ -97,8 +144,9 @@ async def test_claude_queued_result_is_not_global_completion(observed):
     adapter = liveness_adapter(HarnessKind.CLAUDE, hub, Topic("session.s"), tracker, SessionId("s"))
     adapter.start()
     try:
-        status = await deliver(hub, observed, "claude", {"type": "user"},
-                               {"type": "result", "queued_turn_count": 1})
+        status = await deliver(
+            hub, observed, "claude", {"type": "user"}, {"type": "result", "queued_turn_count": 1}
+        )
         assert status.work_state == "working"
         assert status.completion_revision == 0
         status = await deliver(hub, observed, "claude", {"type": "result", "queued_turn_count": 0})
@@ -116,13 +164,23 @@ async def test_pi_retry_updates_outcome_and_waits_for_settlement(observed):
     adapter = liveness_adapter(HarnessKind.PI, hub, Topic("session.s"), tracker, SessionId("s"))
     adapter.start()
     try:
-        status = await deliver(hub, observed, "pi", {"type": "agent_start"},
+        status = await deliver(
+            hub,
+            observed,
+            "pi",
+            {"type": "agent_start"},
             {"type": "message_end", "message": {"role": "assistant", "stopReason": "error"}},
-            {"type": "auto_retry_end", "willRetry": False}, {"type": "agent_end"})
+            {"type": "auto_retry_end", "willRetry": False},
+            {"type": "agent_end"},
+        )
         assert status.completion_revision == 0
-        status = await deliver(hub, observed, "pi",
+        status = await deliver(
+            hub,
+            observed,
+            "pi",
             {"type": "message_end", "message": {"role": "assistant", "stopReason": "stop"}},
-            {"type": "agent_settled"})
+            {"type": "agent_settled"},
+        )
         assert status.completion_revision == 1
         assert status.outcome == "completed"
     finally:

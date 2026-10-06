@@ -248,9 +248,7 @@ def test_opencode_optional_parent_metadata_is_read_only(tmp_path: Path, has_pare
         suffix = ", parent_id TEXT" if has_parent_column else ""
         db.execute(
             "CREATE TABLE session (id TEXT, title TEXT, directory TEXT, time_created INT,"
-            " time_updated INT, time_archived INT"
-            + suffix
-            + ")"
+            " time_updated INT, time_archived INT" + suffix + ")"
         )
         values = "'child','title','/project',1,2,NULL" + (",'root'" if has_parent_column else "")
         db.execute("INSERT INTO session VALUES (" + values + ")")

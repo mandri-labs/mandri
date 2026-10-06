@@ -33,15 +33,17 @@ def parse_models(harness: HarnessKind, rows: Sequence[Any]) -> list[NativeModel]
             pi_model = f"{provider}/{identifier}"
             mapping = row.get("thinkingLevelMap")
             mapping = mapping if isinstance(mapping, dict) else {}
-            pi_efforts = tuple(
-                level
-                for level in ("off", "minimal", "low", "medium", "high", "xhigh", "max")
-                if mapping.get(level, level) is not None
-                and (level not in {"xhigh", "max"} or level in mapping)
-            ) if row.get("reasoning") else ()
-            models[pi_model] = NativeModel(
-                pi_model, str(row.get("name") or identifier), pi_efforts
+            pi_efforts = (
+                tuple(
+                    level
+                    for level in ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+                    if mapping.get(level, level) is not None
+                    and (level not in {"xhigh", "max"} or level in mapping)
+                )
+                if row.get("reasoning")
+                else ()
             )
+            models[pi_model] = NativeModel(pi_model, str(row.get("name") or identifier), pi_efforts)
             continue
         model = (
             row.get("model", row.get("id")) if harness is HarnessKind.CODEX else row.get("value")

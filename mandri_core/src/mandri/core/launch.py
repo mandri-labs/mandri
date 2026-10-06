@@ -98,7 +98,8 @@ def build_harness_launch(
                 "mandri",
                 "--model",
                 "gateway",
-            ) + (("--thinking", effort) if effort else ()),
+            )
+            + (("--thinking", effort) if effort else ()),
         )
     return HarnessLaunch(opencode_env(route_base, token, opencode_config, metadata))
 

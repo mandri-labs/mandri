@@ -107,14 +107,14 @@ class AgyLivenessAdapter:
             if isinstance(details, dict)
             else None
         )
-        self._work_context.observe(
-            raw, timestamp, root=owner is None or owner == self._native_id
-        )
+        self._work_context.observe(raw, timestamp, root=owner is None or owner == self._native_id)
         event = raw.get("event")
         if event == "init":
             native_id = raw.get("conversation_id")
-            if isinstance(native_id, str) and native_id and (
-                self._native_id is None or self._native_id == native_id
+            if (
+                isinstance(native_id, str)
+                and native_id
+                and (self._native_id is None or self._native_id == native_id)
             ):
                 self._native_id = native_id
             return

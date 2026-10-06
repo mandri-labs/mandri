@@ -70,9 +70,8 @@ def _inherit(record: dict[str, Any], parent: dict[str, Any]) -> dict[str, Any]:
         raise ProtectionError(
             "session_lineage_invalid", "Container lineage requires owned native state"
         )
-    if (
-        parent.get("privacy_mode") == PrivacyMode.SURROGATE.value
-        and not record.get("privacy_override")
+    if parent.get("privacy_mode") == PrivacyMode.SURROGATE.value and not record.get(
+        "privacy_override"
     ):
         scope = record.get("privacy_scope_id")
         if scope and scope != parent["privacy_scope_id"]:

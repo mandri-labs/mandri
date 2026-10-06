@@ -474,7 +474,8 @@ async def wire_runtime(
         Path(config.sessions.codex_home) if config.sessions.codex_home else DEFAULT_CODEX_HOME,
         claude_home=(
             Path(config.sessions.claude_config_dir)
-            if config.sessions.claude_config_dir else Path.home() / ".claude"
+            if config.sessions.claude_config_dir
+            else Path.home() / ".claude"
         ),
         opencode_db=Path(config.sessions.opencode_db_path or default_opencode_db_path()),
     )
@@ -553,8 +554,10 @@ async def wire_runtime(
         privacy_scopes=privacy.scopes,
     )
     resources.runtime.commands.catalogs = create_command_catalog_cache(
-        build_harness_commands(config.sessions.launch_args), config.sessions,
-        resources.runtime._spawn_harness, default_cwd=str(Path.cwd()),
+        build_harness_commands(config.sessions.launch_args),
+        config.sessions,
+        resources.runtime._spawn_harness,
+        default_cwd=str(Path.cwd()),
         profiles_dir=Path(config.sessions.agy_profiles_dir or base_dir / "agy-profiles"),
         docker_backend=resources.runtime._docker,
         docker_commands=build_harness_commands(config.sessions.launch_args, include_docker=True),
@@ -564,10 +567,14 @@ async def wire_runtime(
         if not session.project_path or session.privacy_mode is not PrivacyMode.NONE:
             continue
         key = (session.harness.value, str(session.project_path), session.execution_backend.value)
-        projects.setdefault(key, CommandCatalogParams(
-            harness=session.harness.value, cwd=str(session.project_path),
-            execution_backend=session.execution_backend.value,
-        ))
+        projects.setdefault(
+            key,
+            CommandCatalogParams(
+                harness=session.harness.value,
+                cwd=str(session.project_path),
+                execution_backend=session.execution_backend.value,
+            ),
+        )
         if len(projects) >= 8:
             break
     native_usage = NativeUsageCollector(

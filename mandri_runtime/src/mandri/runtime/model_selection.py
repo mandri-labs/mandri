@@ -83,9 +83,7 @@ class ModelSelectionService:
             capabilities = model_capabilities(record.harness)
             return (
                 capabilities.gateway_model_requires_restart and previous[1] != selection[1]
-            ) or (
-                capabilities.gateway_effort_requires_restart and previous[2] != selection[2]
-            )
+            ) or (capabilities.gateway_effort_requires_restart and previous[2] != selection[2])
         if record.native_id is None:
             raise SessionConflictError(
                 "Wait for the first harness response before changing native model settings"

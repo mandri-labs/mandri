@@ -63,7 +63,9 @@ async def test_projects_ordered_by_most_recent_session():
         await _seed(connection)
         paths = await list_project_paths(SqliteDb(connection))
     assert [Path(path).as_posix() for path in paths] == [
-        "D:/Dev/example-project", "C:/Users/test-user", "D:/other",
+        "D:/Dev/example-project",
+        "C:/Users/test-user",
+        "D:/other",
     ]
 
 

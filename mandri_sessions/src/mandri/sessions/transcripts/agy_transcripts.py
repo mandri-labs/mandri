@@ -75,8 +75,14 @@ class AgyTranscriptReader:
                 if metadata.is_file() and metadata.stat().st_size <= 65536:
                     with contextlib.suppress(ValueError, TypeError, OSError):
                         owner = json.loads(metadata.read_text()).get("native_id")
-                delta = jsonl_work_delta(journal, session, cursors.get(key), context=context,
-                                        require_owner=True, default_owner=owner)
+                delta = jsonl_work_delta(
+                    journal,
+                    session,
+                    cursors.get(key),
+                    context=context,
+                    require_owner=True,
+                    default_owner=owner,
+                )
                 updated[key] = delta.checkpoint
                 observations.extend(delta.observations)
         updated["context"] = context.checkpoint()

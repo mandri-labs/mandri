@@ -27,7 +27,7 @@ def prompt_frame():
 async def test_native_model_conflict_returns_correlated_terminal_error():
     runtime = SimpleNamespace(
         commands=Mock(spec=CommandService),
-        send_session_prompt=AsyncMock(side_effect=SessionConflictError("Wait for native identity"))
+        send_session_prompt=AsyncMock(side_effect=SessionConflictError("Wait for native identity")),
     )
     response = await build_action_registry(runtime).handle(prompt_frame())
     assert response.op_id == "request-1"

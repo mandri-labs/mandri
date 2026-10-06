@@ -345,9 +345,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     ),
     Migration(
         version=19,
-        statements=(
-            "ALTER TABLE session ADD COLUMN privacy_override INTEGER NOT NULL DEFAULT 0",
-        ),
+        statements=("ALTER TABLE session ADD COLUMN privacy_override INTEGER NOT NULL DEFAULT 0",),
     ),
 )
 

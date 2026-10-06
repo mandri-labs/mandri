@@ -128,9 +128,7 @@ async def test_warm_scope_does_not_release_uncommitted_aliases_when_sqlite_is_fu
         cached = service.cache.get("scope")
         assert cached.revision == committed.revision and cached.payload == committed.payload
         await db.fetch_one("PRAGMA max_page_count = 100000")
-        retried, engine = await service.prepare(
-            "scope", lambda engine: engine.protect(originals)
-        )
+        retried, engine = await service.prepare("scope", lambda engine: engine.protect(originals))
         assert engine.restore(retried) == originals
         assert engine.protect_text("stable@example.invalid") == stable
         persisted = await repository.load("scope")

@@ -172,7 +172,8 @@ class OpencodeTranscriptReader:
                 table = message_table(connection, str(session.native_id))
                 latest = connection.execute(
                     f"SELECT coalesce(max(rowid),0),coalesce(max(time_updated),0)"
-                    f" FROM {table} WHERE session_id=?", (str(session.native_id),)
+                    f" FROM {table} WHERE session_id=?",
+                    (str(session.native_id),),
                 ).fetchone()
                 if checkpoint is not None and (
                     checkpoint.get("identity") != identity
@@ -182,14 +183,17 @@ class OpencodeTranscriptReader:
                     checkpoint = None
                 boundary = int(checkpoint.get("updated", 0)) if checkpoint else int(latest[1])
                 rowid = int(checkpoint.get("rowid", 0)) if checkpoint else int(latest[0])
-                metadata = _projected_metadata_sql() if table == "session_message" else (
-                    "CASE WHEN length(CAST(data AS BLOB)) <= 65536 THEN data END"
+                metadata = (
+                    _projected_metadata_sql()
+                    if table == "session_message"
+                    else ("CASE WHEN length(CAST(data AS BLOB)) <= 65536 THEN data END")
                 )
                 type_column = ",type" if table == "session_message" else ""
                 rows = connection.execute(
                     f"SELECT rowid,{metadata},id,time_updated{type_column} FROM {table}"
                     " WHERE session_id=? AND (rowid>? OR time_updated>=?)"
-                    " ORDER BY time_updated,rowid", (str(session.native_id), rowid, boundary)
+                    " ORDER BY time_updated,rowid",
+                    (str(session.native_id), rowid, boundary),
                 ).fetchall()
             finally:
                 connection.close()
@@ -215,17 +219,34 @@ class OpencodeTranscriptReader:
                     data = {**data, "type": row[4], "id": str(row[2])}
                     events = message_events(data, str(session.native_id))
                 else:
-                    events = [{"type": "message.updated", "properties": {
-                        "info": {**data, "id": str(row[2]), "sessionID": str(session.native_id)}
-                    }}]
+                    events = [
+                        {
+                            "type": "message.updated",
+                            "properties": {
+                                "info": {
+                                    **data,
+                                    "id": str(row[2]),
+                                    "sessionID": str(session.native_id),
+                                }
+                            },
+                        }
+                    ]
                 for event in events:
-                    observations.extend(native_work_observations(
-                        session.harness, event, str(session.native_id)
-                    ))
+                    observations.extend(
+                        native_work_observations(session.harness, event, str(session.native_id))
+                    )
             except (ValueError, TypeError, RecursionError):
                 observations.append(WorkObservation(state="unknown"))
-        return WorkDelta({"identity": identity, "rowid": int(latest[0]), "updated": int(latest[1]),
-                          "versions": versions}, tuple(observations), checkpoint is None)
+        return WorkDelta(
+            {
+                "identity": identity,
+                "rowid": int(latest[0]),
+                "updated": int(latest[1]),
+                "versions": versions,
+            },
+            tuple(observations),
+            checkpoint is None,
+        )
 
     def _read_rows(
         self,

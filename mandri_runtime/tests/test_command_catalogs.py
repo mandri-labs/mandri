@@ -25,7 +25,11 @@ async def test_startup_snapshot_waits_for_all_harnesses_without_sessions(tmp_pat
     result = await snapshot
     assert result.default_cwd == str(tmp_path)
     assert {item.harness for item in result.catalogs} == {
-        "claude", "codex", "agy", "opencode", "pi"
+        "claude",
+        "codex",
+        "agy",
+        "opencode",
+        "pi",
     }
     assert all(item.state == "ready" for item in result.catalogs)
     assert len(called) == 5

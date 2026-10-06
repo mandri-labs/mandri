@@ -341,10 +341,15 @@ class RuntimeService:
         updated = await self._sessions.set_session_privacy(record, mode)
         state.policy = updated.policy
         state.policy_revision = updated.policy_revision
-        self._events.publish_both(session_id, {
-            "type": "session_state", "session_id": session_id,
-            "harness": updated.harness.value, "state": updated.state.value,
-        })
+        self._events.publish_both(
+            session_id,
+            {
+                "type": "session_state",
+                "session_id": session_id,
+                "harness": updated.harness.value,
+                "state": updated.state.value,
+            },
+        )
         return updated
 
     async def restore_native_model(self, session_id: str) -> SessionAvailability:
@@ -771,7 +776,14 @@ class RuntimeService:
                 cleanup.push_async_callback(self._rollback_route, route_id)
             metadata = None if native else await self._resolve_metadata(model)
             session_id = await self._create_session_record(
-                harness, model, route_id, cwd, effort, model_source, policy, scope_id,
+                harness,
+                model,
+                route_id,
+                cwd,
+                effort,
+                model_source,
+                policy,
+                scope_id,
                 starting=worktree,
             )
             self._session_state(session_id).policy = policy
@@ -937,14 +949,21 @@ class RuntimeService:
             await sessions.worktrees.rename(SessionId(session_id), name)
 
     async def preview_worktree(
-        self, session_id: str, target: str | None, strategy: IntegrationStrategy,
+        self,
+        session_id: str,
+        target: str | None,
+        strategy: IntegrationStrategy,
     ) -> IntegrationPreview:
         async with self._worktree_operation(session_id) as sessions:
             return await sessions.worktrees.preview(SessionId(session_id), target, strategy)
 
     async def integrate_worktree(
-        self, session_id: str, target: str, strategy: IntegrationStrategy,
-        token: str, message: str,
+        self,
+        session_id: str,
+        target: str,
+        strategy: IntegrationStrategy,
+        token: str,
+        message: str,
     ) -> None:
         async with self._worktree_operation(session_id) as sessions:
             await sessions.worktrees.integrate(
@@ -952,7 +971,11 @@ class RuntimeService:
             )
 
     async def resolve_worktree(
-        self, session_id: str, target: str, strategy: IntegrationStrategy, token: str,
+        self,
+        session_id: str,
+        target: str,
+        strategy: IntegrationStrategy,
+        token: str,
     ) -> None:
         async with self._worktree_operation(session_id) as sessions:
             await sessions.worktrees.resolve(SessionId(session_id), target, strategy, token)
@@ -987,8 +1010,12 @@ class RuntimeService:
                 operation_id,
                 fingerprint,
                 lambda: self.fork_session(
-                    source_id, execution_backend, privacy_mode, mode=mode,
-                    worktree=worktree, worktree_id=worktree_id,
+                    source_id,
+                    execution_backend,
+                    privacy_mode,
+                    mode=mode,
+                    worktree=worktree,
+                    worktree_id=worktree_id,
                 ),
             )
         if self._sessions is None:
@@ -2147,7 +2174,8 @@ class RuntimeService:
             process = self._registry.process(session_id)
             checkpoint = self._session_state(session_id).pi_checkpoint
             await self._sessions.adopt_pi_native_id(
-                SessionId(session_id), native_id,
+                SessionId(session_id),
+                native_id,
                 ignored_pid=process.process.pid if process is not None else None,
                 check_writer=checkpoint is None or checkpoint.path.exists(),
             )

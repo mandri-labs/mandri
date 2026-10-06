@@ -25,10 +25,15 @@ def cycle(start="start", end="end"):
 
 async def test_history_and_process_lifecycle_do_not_create_unread(database):
     repository = ConversationStatusRepository(database)
-    status = await repository.observe("session:old", [
-        WorkObservation(state="idle", outcome="completed", key="old-result"),
-        WorkObservation(state="idle", outcome="interrupted", key="process-stop"),
-    ], "native", {"offset": 200})
+    status = await repository.observe(
+        "session:old",
+        [
+            WorkObservation(state="idle", outcome="completed", key="old-result"),
+            WorkObservation(state="idle", outcome="interrupted", key="process-stop"),
+        ],
+        "native",
+        {"offset": 200},
+    )
     assert status.completion_revision == status.read_revision == 0
     assert await repository.checkpoint("session:old", "native") == {"offset": 200}
 

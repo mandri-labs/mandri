@@ -48,9 +48,12 @@ async def test_codex_distinguishes_rejection_from_lost_response(monkeypatch, ste
         if outcome == "eof":
             transport.output.put_nowait(None)
         elif outcome == "rejection":
-            transport.output.put_nowait((json.dumps({
-                "id": frame["id"], "error": {"message": "Rejected by harness"}
-            }) + "\n").encode())
+            transport.output.put_nowait(
+                (
+                    json.dumps({"id": frame["id"], "error": {"message": "Rejected by harness"}})
+                    + "\n"
+                ).encode()
+            )
         expected = (
             PromptDeliveryFailedError if outcome == "rejection" else PromptDeliveryUnknownError
         )
@@ -77,9 +80,12 @@ async def test_opencode_preparation_and_prompt_transport_failures_are_distinct()
     control._request = AsyncMock(side_effect=ControlTransportError("model request failed"))
     with pytest.raises(ControlTransportError):
         await control.send_prompt("Synthetic message")
-    control._request = AsyncMock(side_effect=[
-        type("Response", (), {"status_code": 200})(), ControlTransportError("prompt reply lost")
-    ])
+    control._request = AsyncMock(
+        side_effect=[
+            type("Response", (), {"status_code": 200})(),
+            ControlTransportError("prompt reply lost"),
+        ]
+    )
     with pytest.raises(PromptDeliveryUnknownError):
         await control.send_prompt("Synthetic message")
     assert control._request.await_count == 2
@@ -99,10 +105,12 @@ async def test_agy_failed_drain_preserves_uncertainty():
 async def test_opencode_distinguishes_rejection_from_server_failure(status):
     control = object.__new__(OpencodeControlAdapter)
     control._session_id = "native"
-    control._request = AsyncMock(side_effect=[
-        type("Response", (), {"status_code": 200})(),
-        type("Response", (), {"status_code": status})(),
-    ])
+    control._request = AsyncMock(
+        side_effect=[
+            type("Response", (), {"status_code": 200})(),
+            type("Response", (), {"status_code": status})(),
+        ]
+    )
     expected = PromptDeliveryFailedError if status < 500 else PromptDeliveryUnknownError
     with pytest.raises(expected):
         await control.send_prompt("Synthetic message")

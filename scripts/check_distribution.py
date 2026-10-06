@@ -9,8 +9,16 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = {
-    "api", "cli", "config", "core", "daemon", "database", "gateway", "providers",
-    "runtime", "sessions",
+    "api",
+    "cli",
+    "config",
+    "core",
+    "daemon",
+    "database",
+    "gateway",
+    "providers",
+    "runtime",
+    "sessions",
 }
 SOURCE_SUFFIXES = {".py", ".typed"}
 SOURCE_FILES = {"pyproject.toml", "README.md", "LICENSE", "PKG-INFO", ".gitignore"}
@@ -61,7 +69,11 @@ def allowed_wheel_path(path: PurePosixPath) -> bool:
         return True
     if path.parts[0].endswith(".dist-info"):
         return path.name in {
-            "METADATA", "WHEEL", "RECORD", "entry_points.txt", "LICENSE",
+            "METADATA",
+            "WHEEL",
+            "RECORD",
+            "entry_points.txt",
+            "LICENSE",
         }
     return (
         len(path.parts) >= 3

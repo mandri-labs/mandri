@@ -398,10 +398,16 @@ class SessionsService:
             "UPDATE session SET model = ?, model_source = ?,"
             " reasoning_effort = CASE WHEN ? THEN NULL ELSE reasoning_effort END,"
             " gateway_route_id = CASE WHEN ? = 'native' THEN NULL ELSE gateway_route_id END"
-            " WHERE id = ? AND deleted = 0 AND policy_revision = ?"
-            + condition + " RETURNING *",
-            (model, source.value, reset_effort, source.value, str(session_id),
-             existing["policy_revision"], *selection),
+            " WHERE id = ? AND deleted = 0 AND policy_revision = ?" + condition + " RETURNING *",
+            (
+                model,
+                source.value,
+                reset_effort,
+                source.value,
+                str(session_id),
+                existing["policy_revision"],
+                *selection,
+            ),
         )
         if updated is None:
             raise SessionConflictError("Session model selection changed or policy changed")
@@ -414,8 +420,14 @@ class SessionsService:
             "UPDATE session SET model = ?, reasoning_effort = ?"
             " WHERE id = ? AND deleted = 0 AND model_source = 'native'"
             " AND native_id IS ? AND model IS ? AND reasoning_effort IS ? RETURNING id",
-            (model, effort, str(expected.id), expected.native_id, expected.model,
-             expected.reasoning_effort),
+            (
+                model,
+                effort,
+                str(expected.id),
+                expected.native_id,
+                expected.model,
+                expected.reasoning_effort,
+            ),
         )
         return updated is not None
 

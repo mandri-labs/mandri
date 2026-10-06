@@ -85,9 +85,7 @@ async def upstream(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[list[dict[s
     await GLOBAL_LOGGING_WORKER.flush()
 
 
-@pytest.mark.parametrize(
-    "kind", [ProviderKind.OPENCODE, ProviderKind.OPENCODE_GO]
-)
+@pytest.mark.parametrize("kind", [ProviderKind.OPENCODE, ProviderKind.OPENCODE_GO])
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("search_type", ["web_search", "web_search_preview"])
 async def test_responses_preserve_search_capability_on_upstream_wire(

@@ -87,7 +87,6 @@ async def test_final_wire_validation_rejects_wrong_model_and_known_personal_data
     assert guard.sends == 0
 
 
-
 @pytest.mark.parametrize(
     "headers",
     [

@@ -79,9 +79,7 @@ def reconcile(
     }
     gateways = [
         observation(row[0])
-        for row in db.execute(
-            "SELECT payload FROM usage_fact WHERE source='gateway'"
-        )
+        for row in db.execute("SELECT payload FROM usage_fact WHERE source='gateway'")
     ]
     by_counters: dict[tuple[object, ...], list[UsageObservation]] = defaultdict(list)
     for gateway in gateways:

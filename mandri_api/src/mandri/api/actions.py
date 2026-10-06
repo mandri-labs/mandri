@@ -154,12 +154,8 @@ def _make_answer_handler(
                 str(params.approval_id),
                 params.decision,
                 params.updated_input,
-                **({"answers": params.answers} if params.answers is not None else {}),
-                **(
-                    {"permission_mode": params.permission_mode}
-                    if params.permission_mode is not None
-                    else {}
-                ),
+                answers=params.answers,
+                permission_mode=params.permission_mode,
             )
         except ControlError as exc:
             raise ProtocolError(ProtocolErrorCode.CONTROL_DELIVERY_FAILED, str(exc)) from exc

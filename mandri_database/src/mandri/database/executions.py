@@ -122,9 +122,7 @@ class ExecutionRepository:
         return [execution_record(row) for row in rows]
 
     async def reconcile_stopped_sessions(self, owner: str, excluded: frozenset[str]) -> list[str]:
-        exclusion = (
-            " AND id NOT IN (" + ",".join("?" for _ in excluded) + ")" if excluded else ""
-        )
+        exclusion = " AND id NOT IN (" + ",".join("?" for _ in excluded) + ")" if excluded else ""
         rows = await self._database.fetch_all(
             "UPDATE session SET state='stopped',updated_at=?"
             " WHERE state='live' AND execution_backend='docker' AND deleted=0"

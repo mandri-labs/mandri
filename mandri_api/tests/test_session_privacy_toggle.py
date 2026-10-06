@@ -12,11 +12,22 @@ SESSION_ID = "8b1f3d2a-4c5e-4f6a-9b0c-1d2e3f4a5b6c"
 
 def test_privacy_patch_returns_same_session_and_confirmed_policy(make_client):
     record = Session(
-        id=SessionId(SESSION_ID), harness=HarnessKind.CODEX, native_id=None,
-        native_title=None, title_overlay=None, project_path=ProjectPath("/workspace"),
-        created_at=EpochMs(0), updated_at=EpochMs(0), state=SessionState.LIVE,
-        privacy_mode=PrivacyMode.SURROGATE, privacy_scope_id="scope", policy_revision=2,
-        model="synthetic/model", gateway_route_id=None, deleted=False, last_synced_at=EpochMs(0),
+        id=SessionId(SESSION_ID),
+        harness=HarnessKind.CODEX,
+        native_id=None,
+        native_title=None,
+        title_overlay=None,
+        project_path=ProjectPath("/workspace"),
+        created_at=EpochMs(0),
+        updated_at=EpochMs(0),
+        state=SessionState.LIVE,
+        privacy_mode=PrivacyMode.SURROGATE,
+        privacy_scope_id="scope",
+        policy_revision=2,
+        model="synthetic/model",
+        gateway_route_id=None,
+        deleted=False,
+        last_synced_at=EpochMs(0),
     )
     runtime = SimpleNamespace(set_session_privacy=AsyncMock(return_value=record))
     sessions = SimpleNamespace(activity_of=lambda _: None, statuses=None)
@@ -33,9 +44,11 @@ def test_privacy_patch_returns_same_session_and_confirmed_policy(make_client):
 
 @pytest.mark.parametrize("mode", ["none", "surrogate"])
 def test_native_privacy_patch_returns_conflict(make_client, mode):
-    runtime = SimpleNamespace(set_session_privacy=AsyncMock(
-        side_effect=ProtectionError("privacy_native_unsupported", "Native model")
-    ))
+    runtime = SimpleNamespace(
+        set_session_privacy=AsyncMock(
+            side_effect=ProtectionError("privacy_native_unsupported", "Native model")
+        )
+    )
     client = make_client({runtime_service: lambda: runtime, sessions_service: lambda: object()})
     response = client.patch(f"/v1/sessions/{SESSION_ID}/privacy", json={"privacy_mode": mode})
     assert response.status_code == 409

@@ -34,10 +34,13 @@ async def store(tmp_path):
         " VALUES ('session','codex','native-session','/workspace',0,0,'live',0,"
         " 'synthetic/model','gateway','route')"
     )
-    scopes = SimpleNamespace(create=AsyncMock(return_value="scope"), validate=AsyncMock(),
-                             delete=AsyncMock())
+    scopes = SimpleNamespace(
+        create=AsyncMock(return_value="scope"), validate=AsyncMock(), delete=AsyncMock()
+    )
     sessions = SessionsService(
-        database, Mock(), privacy_scopes=scopes,
+        database,
+        Mock(),
+        privacy_scopes=scopes,
         session_privacy=SessionPrivacyRepository(database),
     )
     try:
@@ -72,9 +75,15 @@ async def test_live_toggle_preserves_execution_and_reuses_scope(store, backend):
     assert in_flight.privacy_mode is PrivacyMode.NONE
     assert route.privacy_scope_id == enabled.privacy_scope_id == "scope"
     assert enabled.policy_revision == 2
-    assert replace(enabled, privacy_mode=original.privacy_mode,
-                   privacy_scope_id=original.privacy_scope_id,
-                   policy_revision=original.policy_revision) == original
+    assert (
+        replace(
+            enabled,
+            privacy_mode=original.privacy_mode,
+            privacy_scope_id=original.privacy_scope_id,
+            policy_revision=original.policy_revision,
+        )
+        == original
+    )
     disabled = await runtime.set_session_privacy("session", PrivacyMode.NONE)
     assert disabled.privacy_scope_id == "scope"
     assert (await routes.get(RouteId("route"))).privacy_mode is PrivacyMode.NONE

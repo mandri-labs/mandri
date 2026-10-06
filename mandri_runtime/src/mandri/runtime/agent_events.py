@@ -39,15 +39,12 @@ class AgentEventRouter:
         parent = None
         try:
             parent = await self._parent(parent_id)
-            if (
-                parent.native_id is None
-                and (
-                    (parent.harness is HarnessKind.AGY and raw.get("event") == "init")
-                    or (
-                        parent.harness is HarnessKind.CODEX
-                        and raw.get("method") == "mcpServer/startupStatus/updated"
-                        and "id" not in raw
-                    )
+            if parent.native_id is None and (
+                (parent.harness is HarnessKind.AGY and raw.get("event") == "init")
+                or (
+                    parent.harness is HarnessKind.CODEX
+                    and raw.get("method") == "mcpServer/startupStatus/updated"
+                    and "id" not in raw
                 )
             ):
                 parent = await self._parent(parent_id, force=True)

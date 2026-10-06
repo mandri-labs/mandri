@@ -85,7 +85,9 @@ class SessionModelIn(BaseModel):
 
 
 @router.patch(
-    "/{session_id}/privacy", operation_id="set_session_privacy", responses=NOT_FOUND_CONFLICT,
+    "/{session_id}/privacy",
+    operation_id="set_session_privacy",
+    responses=NOT_FOUND_CONFLICT,
     response_model_exclude_unset=True,
 )
 async def set_session_privacy(

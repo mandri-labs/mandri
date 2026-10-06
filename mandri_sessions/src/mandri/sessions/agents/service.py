@@ -292,7 +292,8 @@ class AgentHistory:
         if agent.session_id:
             return await self._sessions.work_delta(SessionId(agent.session_id), checkpoint)
         ref = SessionRef(
-            agent.harness, HarnessSessionId(agent.native_id),
+            agent.harness,
+            HarnessSessionId(agent.native_id),
             transcript_reference(parent).project_path,
             FsPath(agent.transcript_path) if agent.transcript_path else None,
         )

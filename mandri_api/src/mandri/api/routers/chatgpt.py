@@ -110,9 +110,7 @@ async def get_chatgpt_login(login_id: str, wiring: ChatGpt) -> LoginOut:
     operation_id="complete_chatgpt_login",
     responses=LOGIN_RESPONSES,
 )
-async def complete_chatgpt_login(
-    login_id: str, body: LoginCallbackIn, wiring: ChatGpt
-) -> LoginOut:
+async def complete_chatgpt_login(login_id: str, body: LoginCallbackIn, wiring: ChatGpt) -> LoginOut:
     service = _login_service(wiring)
     if service.get(login_id) is None:
         raise _missing(login_id)

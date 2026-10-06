@@ -32,9 +32,9 @@ class AdapterContext:
         typing.Callable[[HarnessSessionId], typing.Awaitable[None] | None] | None
     ) = None
     on_session_path: typing.Callable[[HarnessSessionId, str], None] | None = None
-    on_model_selection: (
-        typing.Callable[[str, str | None], typing.Awaitable[None] | None] | None
-    ) = None
+    on_model_selection: typing.Callable[[str, str | None], typing.Awaitable[None] | None] | None = (
+        None
+    )
     agy_bridge: AgyBridge | None = None
     agy_commands: AgyCommandRunner | None = None
     control_auth: tuple[str, str] | None = None

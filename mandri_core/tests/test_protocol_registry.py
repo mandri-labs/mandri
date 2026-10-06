@@ -116,8 +116,13 @@ def test_parse_params_invalid_params_raises_protocol_error() -> None:
 def test_actions_registry_covers_session_and_approval_actions() -> None:
     assert set(ACTIONS) == {
         "conversation.read",
-        "command.catalogs", "command.catalog",
-        "session.commands", "command.invoke", "command.get", "command.list", "command.cancel",
+        "command.catalogs",
+        "command.catalog",
+        "session.commands",
+        "command.invoke",
+        "command.get",
+        "command.list",
+        "command.cancel",
         "session.history",
         "session.list",
         "approval.answer",

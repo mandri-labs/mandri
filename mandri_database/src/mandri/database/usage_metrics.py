@@ -56,10 +56,7 @@ class UsageMetrics:
         context = self._contexts[index]
         context.prec = max(
             28,
-            self._integer_digits[index]
-            + self._fraction_digits[index]
-            + len(str(self.count))
-            + 1,
+            self._integer_digits[index] + self._fraction_digits[index] + len(str(self.count)) + 1,
         )
         self.amounts[index] = context.add(previous, amount)
 

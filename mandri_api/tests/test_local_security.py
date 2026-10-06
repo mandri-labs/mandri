@@ -59,8 +59,8 @@ def test_websocket_rejects_foreign_origin(client):
     with (
         pytest.raises(WebSocketDisconnect),
         client.websocket_connect(
-        "ws://127.0.0.1/ws",
-        subprotocols=["mandri", f"mandri-token.{TOKEN}"],
+            "ws://127.0.0.1/ws",
+            subprotocols=["mandri", f"mandri-token.{TOKEN}"],
             headers={"Origin": "https://attacker.example"},
         ),
     ):

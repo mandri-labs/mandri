@@ -24,7 +24,7 @@ async def test_managed_sources_build_once_then_refresh_when_source_changes(tmp_p
     async def build(context, reference, label, timeout):
         observed.append(reference)
         assert {
-            str(p.relative_to(context)): p.read_bytes()
+            p.relative_to(context).as_posix(): p.read_bytes()
             for p in Path(context).rglob("*")
             if p.is_file()
         } == sources

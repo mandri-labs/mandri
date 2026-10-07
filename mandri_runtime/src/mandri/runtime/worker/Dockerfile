@@ -4,11 +4,11 @@ ARG TARGETARCH
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-httpx ca-certificates git openssh-client ripgrep iptables util-linux procps bubblewrap \
     && rm -rf /var/lib/apt/lists/*
-RUN npm install -g @anthropic-ai/claude-code@2.1.282 @openai/codex@0.159.0 @opencode/cli@2.0.22 @earendil-works/pi-coding-agent@0.87.1 \
+RUN npm install -g @anthropic-ai/claude-code@2.1.292 @openai/codex@0.161.0 @opencode/cli@2.0.24 @earendil-works/pi-coding-agent@1.0.4 \
     && npm cache clean --force
-ADD https://storage.googleapis.com/antigravity-public/antigravity-cli/1.2.11-6016716732497920/linux-x64/cli_linux_x64.tar.gz /tmp/agy.tar.gz
+ADD https://storage.googleapis.com/antigravity-public/antigravity-cli/1.3.1-4582356770750464/linux-x64/cli_linux_x64.tar.gz /tmp/agy.tar.gz
 RUN test "$TARGETARCH" = amd64 \
-    && echo "ca12c262343f29a2b87423d1ff1e4244989e936e37fe1f8e56056b0f91cd02f93f133321229ce35c86c2d84b977e919937a3fd9430cfd769a16d6b03ede25081  /tmp/agy.tar.gz" | sha512sum --check --strict \
+    && echo "3b8349d72678795baf8788481815e20d7acf3b80f9d2f867a607e712bc6be7fb18fd7d4fcf3aeee4ae593b0f469684c6d3497524f10a4c426a1a2bdec20b1f68  /tmp/agy.tar.gz" | sha512sum --check --strict \
     && tar -xzf /tmp/agy.tar.gz -C /usr/local/bin antigravity \
     && mv /usr/local/bin/antigravity /usr/local/bin/agy \
     && chmod 755 /usr/local/bin/agy \

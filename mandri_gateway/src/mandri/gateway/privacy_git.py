@@ -1,5 +1,5 @@
-import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -18,6 +18,9 @@ def git_values(root: Path) -> dict[str, str]:
         "--get-regexp",
         r"^(user\.(name|email)|remote\.origin\.url)$",
     ]
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW
     try:
         with tempfile.TemporaryFile() as output:
             result = subprocess.run(
@@ -28,7 +31,7 @@ def git_values(root: Path) -> dict[str, str]:
                 stderr=subprocess.DEVNULL,
                 timeout=5,
                 check=False,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                creationflags=creationflags,
             )
             if result.returncode not in {0, 1}:
                 raise ValueError

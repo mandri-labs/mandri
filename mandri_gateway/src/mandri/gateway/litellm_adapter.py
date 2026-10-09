@@ -21,6 +21,8 @@ from mandri.gateway.reasoning_transport import apply_reasoning_transport
 from mandri.gateway.responses_input import normalize_tool_results
 from mandri.gateway.route_registry import ResolvedRoute
 from mandri.gateway.types.model import Model
+from mandri.gateway.unauthenticated_client import unauthenticated_client
+from openai import omit
 
 _CONNECT_TIMEOUT_SECONDS = 30.0
 _IDLE_TIMEOUT_SECONDS = 300.0
@@ -69,15 +71,23 @@ def _credentials(route: ResolvedRoute, guard: EgressGuard | None = None) -> dict
         credentials["api_base"] = provider_base(route)
     elif model.api_base:
         credentials["api_base"] = str(model.api_base)
+    if (
+        not str(model.api_key)
+        and model.provider in {ProviderKind.CUSTOM, ProviderKind.LM_STUDIO}
+        and credentials.get("api_base")
+    ):
+        credentials["client"] = unauthenticated_client(credentials["api_base"])
     context = (
         f"session:{route.conversation_id}"
         if route.conversation_id is not None
         else f"route:{route.route_id}"
     )
-    headers = {
+    headers: dict[str, Any] = {
         **inference_headers(model.provider, context),
         **identity_headers(model),
     }
+    if "client" in credentials:
+        headers["Authorization"] = omit
     if headers:
         credentials["extra_headers"] = headers
     return credentials

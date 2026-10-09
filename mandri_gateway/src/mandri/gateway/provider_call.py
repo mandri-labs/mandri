@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from mandri.core.ids import ProviderKind
@@ -12,6 +12,39 @@ from mandri.gateway.route_registry import ResolvedRoute
 
 
 async def provider_call(
+    route: ResolvedRoute,
+    call: Callable[..., Awaitable[Any]],
+    kwargs: dict[str, Any],
+    guard: EgressGuard | None,
+) -> Any:
+    client = kwargs.get("client")
+    if client is None:
+        return await _provider_call(route, call, kwargs, guard)
+    try:
+        result = await _provider_call(route, call, kwargs, guard)
+    except BaseException:
+        await client.close()
+        raise
+    if isinstance(result, AsyncIterator):
+        return _client_stream(result, client)
+    await client.close()
+    return result
+
+
+async def _client_stream(stream: AsyncIterator[Any], client: Any) -> AsyncIterator[Any]:
+    try:
+        async for event in stream:
+            yield event
+    finally:
+        close = getattr(stream, "aclose", None)
+        try:
+            if close is not None:
+                await close()
+        finally:
+            await client.close()
+
+
+async def _provider_call(
     route: ResolvedRoute,
     call: Callable[..., Awaitable[Any]],
     kwargs: dict[str, Any],

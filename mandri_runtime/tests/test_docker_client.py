@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 import psutil
@@ -34,7 +35,7 @@ def cli(tmp_path, monkeypatch):
 
     async def spawn_python(binary, *args, **kwargs):
         assert binary == str(script)
-        return await spawn(sys.executable, str(script), *args, **kwargs)
+        return await spawn(sys._base_executable, str(script), *args, **kwargs)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn_python)
     return DockerClient(str(script), timeout=1)
@@ -42,7 +43,8 @@ def cli(tmp_path, monkeypatch):
 
 def assert_process_stopped(client):
     identifier = int(Path(client.binary).with_suffix(".pid").read_text())
-    assert not psutil.pid_exists(identifier)
+    with suppress(psutil.NoSuchProcess):
+        psutil.Process(identifier).wait(timeout=1)
 
 
 @pytest.mark.parametrize(

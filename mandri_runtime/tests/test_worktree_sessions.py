@@ -40,6 +40,8 @@ def repository(tmp_path):
         ["init", "-b", "main"],
         ["config", "user.email", "test@example.test"],
         ["config", "user.name", "Test"],
+        ["config", "core.autocrlf", "false"],
+        ["config", "commit.gpgsign", "false"],
         ["add", "file.txt"],
         ["commit", "-m", "Initial"],
     ]

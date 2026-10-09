@@ -24,6 +24,8 @@ def repository(tmp_path):
     git(path, "init", "-b", "main")
     git(path, "config", "user.email", "test@example.test")
     git(path, "config", "user.name", "Test")
+    git(path, "config", "core.autocrlf", "false")
+    git(path, "config", "commit.gpgsign", "false")
     (path / "file.txt").write_text("initial\n")
     git(path, "add", "file.txt")
     git(path, "commit", "-m", "Initial")

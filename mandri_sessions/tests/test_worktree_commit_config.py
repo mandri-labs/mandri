@@ -197,6 +197,7 @@ async def test_conditional_policies_of_two_projects_remain_distinct(
     git(other, "init", "-b", "main")
     git(other, "config", "user.name", "Initial")
     git(other, "config", "user.email", "initial@example.test")
+    git(other, "config", "core.autocrlf", "false")
     (other / "file.txt").write_text("initial\n")
     git(other, "add", "file.txt")
     git(other, "commit", "-m", "Initial")

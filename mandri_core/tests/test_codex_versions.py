@@ -14,7 +14,7 @@ def test_daemon_and_worker_codex_pins_support_native_forks():
         if value.startswith("openai-codex-cli-bin==")
     )
     version = dependency.split("==")[1]
-    worker = (root / "docker/worker/Dockerfile").read_text()
+    worker = (root / "mandri_runtime/src/mandri/runtime/worker/Dockerfile").read_text()
     match = re.search(r"@openai/codex@(\d+\.\d+\.\d+)", worker)
     assert match is not None
     assert match[1] == version

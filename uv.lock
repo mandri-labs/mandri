@@ -1305,7 +1305,7 @@ wheels = [
 
 [[package]]
 name = "mandri"
-version = "0.3.0b0"
+version = "0.4.0b0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },

@@ -1,6 +1,8 @@
 import os
 import stat
+import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -20,6 +22,10 @@ def synthetic_process(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "mandri.gateway.privacy_context.Path.home", lambda: tmp_path / "SyntheticHome"
     )
+    config = tmp_path / "global-git-config"
+    config.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
 @pytest.fixture
@@ -27,12 +33,14 @@ def repository(tmp_path):
     root = tmp_path / "Project"
     git = root / ".git"
     git.mkdir(parents=True)
-    (git / "config").write_text(
-        '[remote "origin"]\nurl = git@github.com:private-customer/private-repo.git\n'
-        '[user]\nname = "Synthetic Author"\nemail = author@private.example\n'
-        "[include]\npath = /unrelated/profile/config\n"
-        "[credential]\nhelper = !never execute any process\n"
-    )
+    subprocess.run(["git", "init", str(root)], capture_output=True, check=True)
+    with (git / "config").open("a") as config:
+        config.write(
+            '[remote "origin"]\nurl = git@github.com:private-customer/private-repo.git\n'
+            '[user]\nname = "Synthetic Author"\nemail = author@private.example\n'
+            "[include]\npath = /unrelated/profile/config\n"
+            "[credential]\nhelper = !never execute any process\n"
+        )
     return root
 
 
@@ -63,13 +71,18 @@ def test_selected_local_context_is_seeded_without_following_includes(repository)
 @pytest.mark.skipif(sys.platform == "win32", reason="Secure local metadata reads require POSIX")
 def test_worktree_common_config_and_selected_override_are_bounded(repository, tmp_path):
     root = tmp_path / "SelectedWorktree"
-    root.mkdir()
-    directory = repository / ".git" / "worktrees" / "selected"
-    directory.mkdir(parents=True)
-    (root / ".git").write_text(f"gitdir: {directory}\n")
-    (directory / "gitdir").write_text(str(root / ".git") + "\n")
-    (directory / "commondir").write_text("../..\n")
-    (directory / "config.worktree").write_text("[user]\nemail = selected@private.example\n")
+    for args in (
+        ["-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "fixture"],
+        ["worktree", "add", "--detach", str(root)],
+        ["config", "extensions.worktreeConfig", "true"],
+    ):
+        subprocess.run(["git", "-C", str(repository), *args], capture_output=True, check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "--worktree", "user.email", "selected@private.example"],
+        capture_output=True,
+        check=True,
+    )
+    directory = Path((root / ".git").read_text().strip().removeprefix("gitdir: "))
     selected = git_values(root)
     assert selected == {
         "origin": "git@github.com:private-customer/private-repo.git",
@@ -82,7 +95,7 @@ def test_worktree_common_config_and_selected_override_are_bounded(repository, tm
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Secure local metadata reads require POSIX")
-def test_worktree_pointer_requires_verified_backreference(repository, tmp_path):
+def test_invalid_worktree_metadata_is_rejected_by_git(repository, tmp_path):
     root = tmp_path / "SelectedWorktree"
     root.mkdir()
     directory = repository / ".git" / "worktrees" / "selected"
@@ -178,16 +191,23 @@ def test_windows_metadata_reader_rejects_symlink_and_replaced_file(monkeypatch, 
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Secure local metadata reads require POSIX")
-def test_git_directory_symlinks_and_arbitrary_gitdir_are_rejected(tmp_path):
+def test_git_directory_indirection_uses_native_git_resolution(tmp_path):
     root = tmp_path / "selected"
     root.mkdir()
     other = tmp_path / "unrelated"
     other.mkdir()
-    (root / ".git").symlink_to(other)
-    with pytest.raises(ProtectionError):
-        git_values(root)
+    subprocess.run(["git", "init", str(other)], capture_output=True, check=True)
+    subprocess.run(
+        ["git", "-C", str(other), "config", "user.name", "Indirect Author"],
+        capture_output=True,
+        check=True,
+    )
+    (root / ".git").symlink_to(other / ".git", target_is_directory=True)
+    assert git_values(root) == {"author": "Indirect Author"}
     (root / ".git").unlink()
-    (root / ".git").write_text(f"gitdir: {other}")
+    (root / ".git").write_text(f"gitdir: {other / '.git'}")
+    assert git_values(root) == {"author": "Indirect Author"}
+    (root / ".git").write_text(f"gitdir: {other / 'missing'}")
     with pytest.raises(ProtectionError):
         git_values(root)
 

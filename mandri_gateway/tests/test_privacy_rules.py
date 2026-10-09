@@ -144,7 +144,7 @@ def test_legacy_scope_upgrades_without_changing_assigned_values():
     legacy["version"] = 1
     legacy.pop("rules")
     upgraded = SurrogateScope.from_dict(legacy)
-    assert upgraded.version == 2
+    assert upgraded.version == 3
     assert upgraded.rules == []
     resumed = SurrogateEngine(upgraded)
     assert resumed.protect(source) == protected

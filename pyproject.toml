@@ -33,6 +33,7 @@ dependencies = [
     "tzdata==2025.3",
     "uvicorn==0.52.4",
     "websockets==17.1",
+    "faker==40.41.0",
 ]
 
 [project.urls]

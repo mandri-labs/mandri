@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mandri.gateway.privacy_context_edit import context_edit
+from mandri.gateway.privacy_media import media_block
 
 _SCHEMA_MAPS = frozenset(
     {"properties", "$defs", "definitions", "patternProperties", "dependentSchemas"}
@@ -103,6 +104,9 @@ class ContentVisitor:
             return self.data(value)
         if not isinstance(value, dict):
             return value
+        media = media_block(value, self.data)
+        if media is not None:
+            return media
         kind = value.get("type")
         if not isinstance(kind, (str, type(None))):
             return value

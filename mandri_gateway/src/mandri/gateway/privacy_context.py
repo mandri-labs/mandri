@@ -1,4 +1,3 @@
-import configparser
 import getpass
 import os
 import socket
@@ -6,6 +5,7 @@ import stat
 from pathlib import Path
 
 from mandri.core.types.execution import ProtectionError
+from mandri.gateway.privacy_git import git_values
 from mandri.gateway.surrogate import SurrogateEngine
 from mandri.gateway.surrogate.detectors import GIT_SCP, URL
 
@@ -68,66 +68,6 @@ def local_text(path: Path, *, optional: bool = False) -> str | None:
         raise unavailable() from None
     finally:
         os.close(descriptor)
-
-
-def git_directories(root: Path) -> tuple[Path, ...]:
-    marker = root / ".git"
-    if marker.is_symlink():
-        raise unavailable()
-    if marker.is_dir():
-        return (marker,)
-    value = local_text(marker, optional=True)
-    if value is None:
-        return ()
-    prefix, separator, target = value.strip().partition(": ")
-    if prefix != "gitdir" or not separator or "\n" in target:
-        raise unavailable()
-    directory = (root / target).resolve()
-    if directory.parent.name != "worktrees" or directory.parent.parent.name != ".git":
-        raise unavailable()
-    common = directory.parent.parent
-    common_value = local_text(directory / "commondir")
-    backpointer = local_text(directory / "gitdir")
-    if common_value is None or backpointer is None:
-        raise unavailable()
-    if (directory / common_value.strip()).resolve() != common.resolve():
-        raise unavailable()
-    if Path(backpointer.strip()).resolve() != marker.resolve():
-        raise unavailable()
-    return (common, directory)
-
-
-def git_values(root: Path) -> dict[str, str]:
-    parser = configparser.ConfigParser(interpolation=None, strict=False)
-    directories = git_directories(root)
-    home = Path.home()
-    paths = [home / ".config" / "git" / "config", home / ".gitconfig"]
-    paths.extend(
-        directory / ("config" if index == 0 else "config.worktree")
-        for index, directory in enumerate(directories)
-    )
-    for path in paths:
-        content = local_text(path, optional=True)
-        if content is None:
-            continue
-        try:
-            parser.read_string(content)
-        except configparser.Error:
-            raise unavailable() from None
-    selected = {}
-    for section, option, name in (
-        ('remote "origin"', "url", "origin"),
-        ("user", "name", "author"),
-        ("user", "email", "email"),
-    ):
-        if not parser.has_option(section, option):
-            continue
-        value = parser.get(section, option, raw=True).strip()
-        if value.startswith('"') and value.endswith('"'):
-            value = value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-        if value:
-            selected[name] = value
-    return selected
 
 
 def seed_context(engine: SurrogateEngine, root: Path) -> None:

@@ -3,12 +3,13 @@ from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
+from mandri.core.types.execution import ProtectionError
 from mandri.gateway.surrogate.allocation import unique_alias
 from mandri.gateway.surrogate.compound import transform_git, transform_url
 from mandri.gateway.surrogate.detectors import context_kind, detect, select_spans
 from mandri.gateway.surrogate.encoded_paths import encoded_roots
 from mandri.gateway.surrogate.formats import SurrogateGenerator, valid
-from mandri.gateway.surrogate.json_text import rewrite_json
+from mandri.gateway.surrogate.json_text import rewrite_json, rewrite_numbered_json
 from mandri.gateway.surrogate.matching import LiteralIndex
 from mandri.gateway.surrogate.path_aliases import PathAliases
 from mandri.gateway.surrogate.paths import (
@@ -16,11 +17,13 @@ from mandri.gateway.surrogate.paths import (
     case_like,
     descendant,
     normalized,
+    path_mappings,
     path_reservations,
     root_occurrences,
     windows_path,
 )
 from mandri.gateway.surrogate.public import PUBLIC_HOSTS, PUBLIC_PACKAGE_SCOPES
+from mandri.gateway.surrogate.representations import KnownRepresentations
 from mandri.gateway.surrogate.rules import TypedRule
 from mandri.gateway.surrogate.types import (
     KINDS,
@@ -89,24 +92,31 @@ class SurrogateEngine:
         }
         self._originals = {item.original: item for item in scope.mappings}
         self._surrogates = {item.surrogate: item for item in scope.mappings}
-        self._private_values = {
-            item.original.casefold() for item in scope.mappings if len(item.original) >= 4
-        }
+        self._private_values = {item.original for item in scope.mappings if len(item.original) >= 4}
         self._private_lengths = {len(value) for value in self._private_values}
+        self._folded_private = {
+            item.original.casefold()
+            for item in scope.mappings
+            if item.kind in {"domain", "hostname"} and len(item.original) >= 4
+        }
+        self._folded_lengths = {len(value) for value in self._folded_private}
         self._path_aliases = PathAliases(scope.roots)
         self._reserved: tuple[str, ...] = ()
         self._forward = LiteralIndex(scope.mappings)
         self._host_index = self._hosts()
         self._reverse = LiteralIndex(scope.mappings, reverse=True)
-        self._indexed_size = len(scope.mappings)
+        self._indexed_size = -1
+        self._encoded_revision = (-1, -1)
+        self._representations: KnownRepresentations | None = None
         self._neutral_roots: list[PathRoot] = []
         self._legacy = LiteralIndex([])
+        self._reset()
         self._upgrade_aliases()
         self._legacy = LiteralIndex(
             [
                 Mapping(item.kind, item.surrogate, self._originals[item.original].surrogate)
                 for item in scope.mappings
-                if any(word in item.surrogate.casefold() for word in ("surrogate", "mandri"))
+                if item.surrogate != self._originals[item.original].surrogate
             ]
         )
 
@@ -115,11 +125,23 @@ class SurrogateEngine:
             self._originals.values(), key=lambda item: item.kind in {"url", "git_remote"}
         )
         for item in mappings:
-            if not any(word in item.surrogate.casefold() for word in ("surrogate", "mandri")):
+            invalid = item.kind in {"url", "git_remote", "path_root"} and not valid(
+                item.kind, item.surrogate, item.original
+            )
+            invalid = invalid or (
+                item.kind == "email" and item.surrogate.casefold().endswith(".invalid")
+            )
+            if not invalid and not any(
+                word in item.surrogate.casefold() for word in ("surrogate", "mandri")
+            ):
                 continue
             candidate = (
                 self._compound(item.kind, item.original)
                 if item.kind in {"url", "git_remote"}
+                else self._path_aliases.generate(
+                    item.original, self._originals, self.generator, self._available
+                )
+                if item.kind == "path_root"
                 else self.generator.generate(item.kind, item.original)
             )
             self._record(item.kind, item.original, candidate, item.context, replace=True)
@@ -249,10 +271,48 @@ class SurrogateEngine:
 
     def _reset(self) -> None:
         if self._indexed_size != len(self.scope.mappings):
-            self._forward = LiteralIndex(self.scope.mappings)
+            mappings = path_mappings(self.scope.mappings)
+            self._surrogates.update({item.surrogate: item for item in mappings})
+            self._forward = LiteralIndex(mappings)
             self._host_index = self._hosts()
-            self._reverse = LiteralIndex(self.scope.mappings, reverse=True)
+            self._reverse = LiteralIndex(mappings, reverse=True)
             self._indexed_size = len(self.scope.mappings)
+
+    def representations(self) -> KnownRepresentations:
+        revision = (len(self.scope.mappings), len(self.scope.representations))
+        if self._representations is None or self._encoded_revision != revision:
+            self._representations = KnownRepresentations(
+                path_mappings(self.scope.mappings), self.scope.representations
+            )
+            self._encoded_revision = revision
+            for mapping in self._representations.mappings:
+                existing = self._surrogates.get(mapping.surrogate)
+                if existing and existing.original != mapping.original:
+                    raise ProtectionError(
+                        "privacy_alias_collision", "Encoded and canonical replacements conflict"
+                    )
+                self._surrogates[mapping.surrogate] = mapping
+        return self._representations
+
+    def remember_representation(self, mapping: Mapping) -> str:
+        existing = self._surrogates.get(mapping.surrogate)
+        if existing and existing.original != mapping.original:
+            raise ProtectionError(
+                "privacy_alias_collision",
+                "Encoded replacement spellings conflict"
+                if existing.kind == "encoded"
+                else "Encoded and canonical replacements conflict",
+            )
+        for previous in self.scope.representations:
+            if previous.surrogate == mapping.surrogate and previous.original != mapping.original:
+                raise ProtectionError(
+                    "privacy_alias_collision", "Encoded replacement spellings conflict"
+                )
+            if previous == mapping:
+                return mapping.surrogate
+        self.scope.representations.append(mapping)
+        self._surrogates[mapping.surrogate] = mapping
+        return mapping.surrogate
 
     def _hosts(self) -> LiteralIndex:
         names = {
@@ -323,6 +383,8 @@ class SurrogateEngine:
 
     def _text(self, value: str, context: str, operation: str) -> str:
         nested = rewrite_json(value, lambda item: self._walk(item, context, operation))
+        if nested is None:
+            nested = rewrite_numbered_json(value, lambda item: self._walk(item, context, operation))
         return nested if nested is not None else self._plain(value, context, operation)
 
     def _plain(self, value: str, context: str, operation: str) -> str:
@@ -330,7 +392,9 @@ class SurrogateEngine:
             return self._restore_plain(value, context)
         value = self._replace_legacy(value)
         reservations = (
-            [] if context in {"$ref", "$dynamicRef", "$url_path"} else path_reservations(value)
+            []
+            if context in {"$ref", "$dynamicRef", "$url_path", "$url_query"}
+            else path_reservations(value)
         )
         neutral_reservations = []
         for root in () if context == "$url_path" else self._neutral_roots:
@@ -381,6 +445,18 @@ class SurrogateEngine:
             or not any(start <= span.start and span.end <= end for start, end in reservations)
         ]
         aliases = [(start, end) for start, end, _ in self._reverse.find(value)]
+        if (0, len(value)) in aliases:
+            return value
+        encoded_matches = {}
+        if operation != "discover":
+            representations = self.representations()
+            aliases.extend(
+                (start, end) for start, end, _ in representations.find(value, reverse=True)
+            )
+            encoded_matches = {
+                (start, end): item for start, end, item in representations.find(value)
+            }
+        spans.extend(Span(start, end, "encoded", 210) for start, end in encoded_matches)
         spans = select_spans(
             [
                 span
@@ -394,14 +470,18 @@ class SurrogateEngine:
                     self._compound(span.kind, value[span.start : span.end], operation="discover")
                 elif span.kind in {"cloud_resource", "private_package"}:
                     self._resource(span.kind, value[span.start : span.end])
-                elif span.kind != "path_root":
+                elif span.kind not in {"path_root", "encoded"}:
                     self._allocate(span.kind, value[span.start : span.end], span.context)
             return value
         pieces: list[str] = []
         cursor = 0
         for span in spans:
             original = value[span.start : span.end]
-            surrogate = self._allocate(span.kind, original, span.context)
+            surrogate = (
+                self.remember_representation(encoded_matches[span.start, span.end])
+                if span.kind == "encoded"
+                else self._allocate(span.kind, original, span.context)
+            )
             pieces.extend((value[cursor : span.start], surrogate))
             cursor = span.end
         pieces.append(value[cursor:])
@@ -418,7 +498,13 @@ class SurrogateEngine:
         return "".join(pieces)
 
     def _restoration_spans(self, value: str, context: str = "") -> list[Span]:
-        spans = []
+        exact = self._surrogates.get(value)
+        if exact is not None:
+            return [Span(0, len(value), exact.kind, 300)]
+        spans = [
+            Span(start, end, "encoded", 250)
+            for start, end, _ in self.representations().find(value, reverse=True)
+        ]
         for start, end, mapping in self._reverse.find(value):
             if mapping.kind == "path_root":
                 root = PathRoot(mapping.original, mapping.surrogate)
@@ -493,7 +579,7 @@ class SurrogateEngine:
         elif kind == "username" and original in self._path_aliases.components:
             candidate = self._path_aliases.components[original]
         else:
-            candidate = self.generator.generate(kind, original)
+            candidate = self.generator.generate_context(kind, original, context)
         return self._record(kind, original, candidate, context)
 
     def _available(self, original: str, candidate: str) -> bool:
@@ -501,7 +587,7 @@ class SurrogateEngine:
             not candidate
             or candidate == original
             or candidate in self._originals
-            or candidate in self._surrogates
+            or (candidate in self._surrogates and self._surrogates[candidate].original != original)
             or (len(original) >= 4 and original.casefold() in candidate.casefold())
             or self._contains_private(candidate)
         ):
@@ -509,12 +595,16 @@ class SurrogateEngine:
         return not any(candidate in text for text in self._reserved)
 
     def _contains_private(self, candidate: str) -> bool:
-        folded = candidate.casefold()
-        return any(
-            folded[start : start + width] in self._private_values
-            for width in self._private_lengths
-            for start in range(len(folded) - width + 1)
-        )
+        for text, values, lengths in (
+            (candidate, self._private_values, self._private_lengths),
+            (candidate.casefold(), self._folded_private, self._folded_lengths),
+        ):
+            for width in lengths:
+                for start in range(len(text) - width + 1):
+                    value = text[start : start + width]
+                    if value in values and any(literal_occurrences(text, value)):
+                        return True
+        return False
 
     def _record(
         self, kind: str, original: str, surrogate: str, context: str, *, replace: bool = False
@@ -532,14 +622,33 @@ class SurrogateEngine:
             else ()
         )
         surrogate = unique_alias(
-            original, surrogate, self._available, kind=kind, alphabets=alphabets
+            original,
+            surrogate,
+            self._available,
+            kind=kind,
+            alphabets=alphabets,
+            regenerate=(lambda: self._compound(kind, original))
+            if kind in {"url", "git_remote"}
+            else (
+                lambda: self._path_aliases.generate(
+                    original, self._originals, self.generator, self._available
+                )
+            )
+            if kind == "path_root"
+            else (lambda: self.generator.generate_context(kind, original, context))
+            if kind in {"identity", "address", "email", "domain"}
+            and type(self.generator) is SurrogateGenerator
+            else None,
         )
         mapping = Mapping(kind, original, surrogate, context)
         self.scope.mappings.append(mapping)
         self._originals[original] = mapping
         if len(original) >= 4:
-            self._private_values.add(original.casefold())
-            self._private_lengths.add(len(original.casefold()))
+            self._private_values.add(original)
+            self._private_lengths.add(len(original))
+            if kind in {"domain", "hostname"}:
+                self._folded_private.add(original.casefold())
+                self._folded_lengths.add(len(original.casefold()))
         if original.casefold().rstrip(".") in self.public_hosts:
             self._private_public_hosts.add(original.casefold().rstrip("."))
         self._surrogates[surrogate] = mapping

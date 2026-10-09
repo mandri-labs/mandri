@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import quote
 
-from mandri.gateway.surrogate.paths import root_occurrences
+from mandri.gateway.surrogate.paths import case_like, root_occurrences
 from mandri.gateway.surrogate.types import PathRoot
 
 PERCENT_RUN = re.compile(r"(?:%[0-9a-fA-F]{2})+")
@@ -55,7 +55,7 @@ def encoded_roots(text: str, roots: list[PathRoot]) -> list[EncodedRoot]:
             if raw_original == value[start:end]:
                 continue
             safe = "" if "%2f" in raw_original.lower() or "%5c" in raw_original.lower() else "/:\\"
-            alias = quote(root.surrogate, safe=safe)
+            alias = quote(case_like(root.surrogate, value[start:end]), safe=safe)
             if re.search(r"%[0-9a-f]*[a-f]", raw_original) and not re.search(
                 r"%[0-9A-F]*[A-F]", raw_original
             ):

@@ -2,8 +2,10 @@ import ntpath
 import posixpath
 import re
 from collections.abc import Iterator
+from dataclasses import replace
 
-from mandri.gateway.surrogate.types import PathRoot
+from mandri.core.types.execution import ProtectionError
+from mandri.gateway.surrogate.types import Mapping, PathRoot
 
 PATH_TOKEN = re.compile(r"(?<![\w@])(?:[A-Za-z]:[\\/]|\\\\|/|(?:\.{1,2}/)?[\w.-]+/)[^\s\"'`<>|;,]*")
 PATH_END = frozenset("\r\n\t\"'`<>|;, ")
@@ -40,7 +42,12 @@ def root_occurrences(
 ) -> Iterator[tuple[int, int, int]]:
     needle = root.surrogate if reverse else root.original
     flags = 0 if root.case_sensitive or reverse else re.IGNORECASE
-    for match in re.finditer(re.escape(needle), text, flags):
+    pattern = (
+        "".join(r"[/\\]" if char in "/\\" else re.escape(char) for char in needle)
+        if windows_path(needle)
+        else re.escape(needle)
+    )
+    for match in re.finditer(pattern, text, flags):
         start, end = match.span()
         if start and (text[start - 1].isalnum() or text[start - 1] in "_.-\\"):
             continue
@@ -52,7 +59,9 @@ def root_occurrences(
         while token_end < len(text) and text[token_end] not in PATH_END:
             token_end += 1
         token = text[start:token_end]
-        normalized_token = normalized(token, root.case_sensitive)
+        normalized_token = normalized(
+            token.replace("/", "\\") if windows_path(needle) else token, root.case_sensitive
+        )
         normalized_root = normalized(needle, root.case_sensitive)
         if (
             not reverse
@@ -76,6 +85,43 @@ def case_like(value: str, template: str) -> str:
     if len(value) != len(template):
         return value
     return "".join(
-        char.upper() if source.isupper() else char.lower() if source.islower() else char
+        source
+        if char in "/\\" and source in "/\\" and (windows_path(value) or windows_path(template))
+        else char.upper()
+        if source.isupper()
+        else char.lower()
+        if source.islower()
+        else char
         for char, source in zip(value, template, strict=True)
     )
+
+
+def path_mappings(mappings: list[Mapping]) -> list[Mapping]:
+    variants: dict[str, Mapping] = {}
+    for item in mappings:
+        if item.kind != "path_root" or not (
+            windows_path(item.original) and windows_path(item.surrogate)
+        ):
+            continue
+        for separator in ("/", "\\"):
+            original = item.original.replace("\\", separator).replace("/", separator)
+            surrogate = item.surrogate.replace("\\", separator).replace("/", separator)
+            variant = replace(item, original=original, surrogate=surrogate)
+            existing = variants.get(surrogate)
+            if existing and existing.original != original:
+                raise ProtectionError(
+                    "privacy_alias_collision", "Path replacement spellings conflict"
+                )
+            variants[surrogate] = variant
+    for item in mappings:
+        existing = variants.get(item.surrogate)
+        equivalent = (
+            existing is not None
+            and item.kind == existing.kind == "path_root"
+            and ntpath.normcase(ntpath.normpath(item.original))
+            == ntpath.normcase(ntpath.normpath(existing.original))
+        )
+        if existing and existing.original != item.original and not equivalent:
+            raise ProtectionError("privacy_alias_collision", "Path replacement spellings conflict")
+        variants[item.surrogate] = item
+    return list(variants.values())

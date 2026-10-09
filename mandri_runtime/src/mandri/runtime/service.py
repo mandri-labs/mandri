@@ -1157,6 +1157,7 @@ class RuntimeService:
             if self._privacy_scopes is None or record.privacy_scope_id is None:
                 raise ProtectionError("privacy_state_unavailable", "Privacy state is unavailable")
             await self._privacy_scopes.validate(record.privacy_scope_id)
+            await self._privacy_scopes.add_workspace(record.privacy_scope_id, record.project_path)
         self._session_state(session_id).policy = policy
         self._session_state(session_id).policy_revision = getattr(record, "policy_revision", 1)
         harness = record.harness.value

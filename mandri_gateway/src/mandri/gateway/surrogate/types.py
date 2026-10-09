@@ -59,10 +59,11 @@ class RuleSpec:
 @dataclass(slots=True)
 class SurrogateScope:
     scope_id: str
-    version: int = 2
+    version: int = 3
     mappings: list[Mapping] = field(default_factory=list)
     roots: list[PathRoot] = field(default_factory=list)
     rules: list[RuleSpec] = field(default_factory=list)
+    representations: list[Mapping] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, JSONValue]:
         return {
@@ -70,6 +71,7 @@ class SurrogateScope:
             "version": self.version,
             "mappings": [dict(asdict(item)) for item in self.mappings],
             "roots": [dict(asdict(item)) for item in self.roots],
+            "representations": [dict(asdict(item)) for item in self.representations],
             "rules": [
                 {
                     "name": item.name,
@@ -115,7 +117,21 @@ class SurrogateScope:
             and isinstance(item.get("kind", "identifier"), str)
             and isinstance(item.get("fields", []), list)
         ]
-        return cls(str(value.get("scope_id", "")), mappings=mappings, roots=roots, rules=rules)
+        representations = [
+            Mapping("encoded", item["original"], item["surrogate"], item["context"])
+            for item in records(value.get("representations"))
+            if all(
+                isinstance(item.get(key), str) and item[key]
+                for key in ("original", "surrogate", "context")
+            )
+        ]
+        return cls(
+            str(value.get("scope_id", "")),
+            mappings=mappings,
+            roots=roots,
+            rules=rules,
+            representations=representations,
+        )
 
 
 def records(value: Any) -> list[dict[str, Any]]:

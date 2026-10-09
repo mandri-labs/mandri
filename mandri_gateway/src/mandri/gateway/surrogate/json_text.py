@@ -6,6 +6,7 @@ from typing import cast
 from mandri.gateway.surrogate.types import JSONValue
 
 TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null')
+NUMBERED = re.compile(r"^([ \t]*\d+[ ]*(?:\t|\u2192)[ \t]*)(.*?)(\r?\n|$)")
 
 
 def unique_object(pairs: list[tuple[str, JSONValue]]) -> dict[str, JSONValue]:
@@ -54,3 +55,34 @@ def rewrite_json(text: str, transform: Callable[[JSONValue], JSONValue]) -> str 
         cursor = old.end()
     result.append(text[cursor:])
     return "".join(result)
+
+
+def rewrite_numbered_json(text: str, transform: Callable[[JSONValue], JSONValue]) -> str | None:
+    lines = text.splitlines(keepends=True)
+    result: list[str] = []
+    changed = False
+    index = 0
+    while index < len(lines):
+        matches: list[re.Match[str]] = []
+        while index + len(matches) < len(lines):
+            match = NUMBERED.fullmatch(lines[index + len(matches)])
+            if match is None:
+                break
+            matches.append(match)
+        if not matches:
+            result.append(lines[index])
+            index += 1
+            continue
+        source = "\n".join(match.group(2) for match in matches)
+        rendered = rewrite_json(source, transform)
+        new_lines = rendered.split("\n") if rendered is not None else []
+        if len(new_lines) == len(matches):
+            result.extend(
+                match.group(1) + body + match.group(3)
+                for match, body in zip(matches, new_lines, strict=True)
+            )
+            changed = changed or rendered != source
+        else:
+            result.extend(lines[index : index + len(matches)])
+        index += len(matches)
+    return "".join(result) if changed else None

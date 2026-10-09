@@ -9,6 +9,7 @@ from mandri.gateway.surrogate.public import PUBLIC_FORGES
 GIT_BOUNDARIES = frozenset(
     {"issues", "pull", "pulls", "merge_requests", "tree", "blob", "commit", "commits", "-"}
 )
+DATABASE_SCHEMES = frozenset({"postgres", "postgresql", "mysql", "mongodb", "mongodb+srv"})
 Allocate = Callable[[str, str, str], str]
 Transform = Callable[[str, str], str]
 
@@ -97,6 +98,11 @@ def transform_url(
     path = (
         git_path(path, allocate)
         if is_git
+        else "/".join(
+            encoded_component(component, "identifier", allocate) if component else component
+            for component in path.split("/")
+        )
+        if parts.scheme in DATABASE_SCHEMES
         else transform(path, "" if host.casefold().rstrip(".") in public_hosts else "$url_path")
     )
     if parts.scheme == "s3":
@@ -123,7 +129,7 @@ def transform_query(value: str, allocate: Allocate, transform: Transform) -> str
         replacement = (
             allocate(kind, decoded_value, decoded_key)
             if kind and decoded_value
-            else transform(decoded_value, decoded_key)
+            else transform(decoded_value, "$url_query")
         )
         new_raw = raw if replacement == decoded_value else quote(replacement, safe="")
         if "+" in raw:

@@ -13,6 +13,10 @@ class PathAliases:
             self.remember(root)
 
     def remember(self, root: PathRoot) -> None:
+        if not valid("path_root", root.surrogate, root.original) or any(
+            word in root.surrogate.casefold() for word in ("surrogate", "mandri")
+        ):
+            return
         originals = re.split(r"[/\\]", root.original)
         surrogates = re.split(r"[/\\]", root.surrogate)
         if len(originals) == len(surrogates):

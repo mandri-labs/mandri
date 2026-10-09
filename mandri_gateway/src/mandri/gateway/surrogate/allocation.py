@@ -1,5 +1,4 @@
 import re
-import secrets
 import string
 from collections.abc import Callable, Iterator
 from itertools import islice
@@ -32,6 +31,7 @@ def unique_alias(
     *,
     kind: str = "identity",
     alphabets: tuple[str, ...] = (),
+    regenerate: Callable[[], str] | None = None,
 ) -> str:
     if re.fullmatch(r"-?(?:0|[1-9]\d*)", original) and re.fullmatch(r"-?0\d+", candidate):
         start = int(candidate.startswith("-"))
@@ -46,7 +46,9 @@ def unique_alias(
 
     if acceptable(candidate):
         return candidate
-    if not alphabets:
+    structured = kind in {"url", "git_remote", "path_root", "cloud_resource", "private_package"}
+    plausible = kind in {"identity", "address", "email", "domain"}
+    if not alphabets and not structured and not plausible:
         alphabets = tuple(
             next(
                 (
@@ -58,16 +60,15 @@ def unique_alias(
             )
             for char in candidate
         )
-    for alias in islice(variants(candidate, alphabets), 128):
-        if acceptable(alias):
-            return alias
+    if alphabets:
+        for alias in islice(variants(candidate, alphabets), 128):
+            if acceptable(alias):
+                return alias
     generator = SurrogateGenerator()
     for _ in range(128):
-        alias = generator.generate(kind, original)
-        if kind in {"identity", "username", "hostname", "git_owner", "git_repository", "address"}:
-            alias = secrets.token_hex(12)
-        elif kind == "path_root":
-            alias = ("C:\\" if "\\" in original else "/") + secrets.token_hex(12)
+        if structured and regenerate is None:
+            break
+        alias = regenerate() if regenerate is not None else generator.generate(kind, original)
         if acceptable(alias):
             return alias
     raise ProtectionError("privacy_alias_unavailable", "Unable to generate a distinct replacement")

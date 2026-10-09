@@ -61,6 +61,8 @@ async def test_inventory_uses_committed_registry_and_refreshes_configured_keys(
     (home / ".gitconfig").write_text(
         "[user]\nname = Fictional Author\nemail = author@example.invalid\n"
     )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(home / ".gitconfig"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     db = AiosqliteDatabase()
     await db.connect(tmp_path / "state.sqlite")
     await db.migrate()

@@ -156,7 +156,7 @@ def test_independent_private_corpus_has_no_missed_spans(case: PrivateCase) -> No
     for span in case.public_spans:
         assert span in value
     if case.family == "email":
-        assert re.fullmatch(r"[A-Za-z0-9-]+@[a-z0-9]+\.invalid", value)
+        assert re.fullmatch(r"[a-z]+\.[a-z]+@[a-z0-9]+\.com", value)
     if case.family == "network" and case.field == "address":
         assert ipaddress.ip_address(value).version == ipaddress.ip_address(case.value).version
     if case.family == "network" and case.field == "subnet":

@@ -3,6 +3,7 @@ import re
 from bisect import bisect_left
 
 from mandri.gateway.surrogate.formats import EMAIL, MAC, UUID, valid
+from mandri.gateway.surrogate.labelled import labelled_spans
 from mandri.gateway.surrogate.public import PUBLIC_PACKAGE_SCOPES
 from mandri.gateway.surrogate.rules import TypedRule
 from mandri.gateway.surrogate.types import Span
@@ -11,7 +12,7 @@ URL = re.compile(
     r"(?i)\b(?:https?|ssh|git|postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|rediss|amqps?|s3)://[^\s<>\"'`]+"
 )
 GIT_SCP = re.compile(r"(?<![\w./])(?:[\w.-]+@)?[\w.-]+:(?:[\w.%~-]+/)+[\w.%~-]+(?:\.git)?")
-IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?(?![\w./])")
+IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?(?![\w/]|\.[\w.])")
 IPV6 = re.compile(
     r"(?<![\w:])(?:[0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F:.]*(?:%[\w.-]+)?(?:/\d{1,3})?(?![\w:])"
 )
@@ -26,11 +27,6 @@ API_SECRET = re.compile(
 AUTH = re.compile(r"(?i)\b(Bearer|Basic)\s+([a-zA-Z0-9+/_.=~-]{4,})")
 ARN = re.compile(r"\barn:(?:aws|aws-cn|aws-us-gov):[a-z0-9-]+:[a-z0-9-]*:[0-9]*:[\w./:@+=,-]+")
 PRIVATE_PACKAGE = re.compile(r"(?<![\w./])@([\w.-]+)/[\w.-]+")
-LABEL = re.compile(
-    r"(?im)(?<![\w-])([a-z][a-z0-9_-]{1,48})\s*[:=]\s*"
-    r"(?:\"([^\"\r\n]*)\"|'([^'\r\n]*)'|([^\r\n,;}]+?)"
-    r"(?=\s+[a-z][a-z0-9_-]{1,48}\s*[:=]|[\r\n,;}]|$))"
-)
 CONTEXTS = {
     "email": "email",
     "email_address": "email",
@@ -73,6 +69,7 @@ CONTEXTS = {
     "account_number": "account",
     "bank_account": "account",
     "tenant_id": "identifier",
+    "tenant_uuid": "uuid",
     "customer_id": "identifier",
     "user_id": "identifier",
     "device_id": "identifier",
@@ -101,7 +98,7 @@ CONTEXTS = {
 
 
 def context_kind(context: str, value: str) -> str | None:
-    normalized = context.casefold().replace("-", "_")
+    normalized = re.sub(r"[ \t-]+", "_", context.casefold())
     kind = CONTEXTS.get(normalized)
     if kind is None:
         kind = next(
@@ -141,7 +138,8 @@ def detect(
         if uuid_prefix and re.fullmatch(r":\d+", text[uuid_prefix.end() :]):
             spans.append(Span(0, uuid_prefix.end(), "uuid", 165, context))
         else:
-            spans.append(Span(0, len(text), kind, 160, context))
+            spans.append(Span(0, len(text), kind, 190 if kind == "email" else 160, context))
+    labels = labelled_spans(text, context_kind, valid_context)
     for pattern, entity, priority in (
         (GIT_SCP, "git_remote", 180),
         (URL, "url", 180),
@@ -156,6 +154,7 @@ def detect(
             if entity == "private_package" and match.group(1) in public_package_scopes:
                 continue
             end = match.end()
+            start = match.start()
             if entity in {"url", "git_remote"}:
                 while end > match.start() and text[end - 1] in ".),]":
                     end -= 1
@@ -163,17 +162,19 @@ def detect(
                 continue
             if entity == "email" and not valid("email", text[match.start() : end]):
                 continue
-            spans.append(Span(match.start(), end, entity, priority))
+            if entity == "email" and text[start] == "`" and text[end : end + 1] == "`":
+                start += 1
+            spans.append(Span(start, end, entity, priority))
     for match in IPV4.finditer(text):
         prefix = text[max(0, match.start() - 20) : match.start()]
         if re.search(r"(?i)(?:version|release|v)\s*[:=]?\s*$", prefix):
             continue
-        value = match.group()
+        value = match.group().rstrip(".")
         entity = "cidr" if "/" in value else "ipv4"
         if valid(entity, value):
-            spans.append(Span(match.start(), match.end(), entity, 165))
+            spans.append(Span(match.start(), match.start() + len(value), entity, 165))
     for match in IPV6.finditer(text):
-        value = match.group()
+        value = match.group().rstrip(".")
         entity = "cidr" if "/" in value else "ipv6"
         try:
             valid_ip = (
@@ -184,20 +185,19 @@ def detect(
         except ValueError:
             continue
         if valid_ip.version == 6:
-            spans.append(Span(match.start(), match.end(), entity, 165))
+            spans.append(Span(match.start(), match.start() + len(value), entity, 165))
     for match in AUTH.finditer(text):
         entity = "basic" if match.group(1).lower() == "basic" else "secret"
         if entity == "basic" and not valid("basic", match.group(2)):
             continue
+        if entity == "basic" and context.casefold() not in {"authorization", "proxy-authorization"}:
+            prefix = text[max(0, match.start() - 24) : match.start()]
+            if not re.search(r"(?i)authorization:[ \t]*$", prefix) and not (
+                match.start() == 0 and match.group(1) == "Basic" and len(match.group(2)) >= 16
+            ):
+                continue
         spans.append(Span(match.start(2), match.end(2), entity, 175))
-    for match in LABEL.finditer(text):
-        group = next(index for index in (2, 3, 4) if match.group(index) is not None)
-        raw = match.group(group)
-        value = raw.strip()
-        labelled_kind = context_kind(match.group(1), value)
-        if labelled_kind and valid_context(labelled_kind, value):
-            start = match.start(group) + len(raw) - len(raw.lstrip())
-            spans.append(Span(start, start + len(value), labelled_kind, 160, match.group(1)))
+    spans.extend(labels)
     for rule in rules:
         spans.extend(rule.find(text, context))
     return spans

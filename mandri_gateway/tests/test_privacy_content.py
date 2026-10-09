@@ -481,7 +481,12 @@ def test_responses_tool_images_preserve_payload_and_controls(
     }
     protected = protect(body, engine)
     output = protected["input"][0]["output"]
-    assert output[1] == image
+    if str(image.get("image_url", "")).startswith("https://"):
+        assert output[1]["image_url"].startswith("https://")
+        assert "private-customer" not in output[1]["image_url"]
+        assert output[1]["detail"] == image["detail"]
+    else:
+        assert output[1] == image
     assert output[0]["type"] == "input_text"
     assert "private-customer" not in output[0]["text"]
 

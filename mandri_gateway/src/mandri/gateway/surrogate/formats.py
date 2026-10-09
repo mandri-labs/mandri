@@ -5,6 +5,9 @@ import re
 import secrets
 import string
 import uuid
+from urllib.parse import unquote, urlsplit
+
+from mandri.gateway.surrogate.plausible import PlausibleValues
 
 EMAIL = re.compile(
     r"(?<![\w.!#$%&'*+/=?^`{|}~-])[\w.!#$%&'*+/=?^`{|}~-]{1,64}"
@@ -157,7 +160,13 @@ def valid(kind: str, value: str, original: str | None = None) -> bool:
         if kind == "phone":
             return phone_valid(value)
         if kind == "basic":
-            return ":" in base64.b64decode(value, validate=True).decode("utf-8")
+            return (
+                len(value) >= 8
+                and re.fullmatch(
+                    r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?", value
+                )
+                is not None
+            )
         if kind in {"domain", "hostname"}:
             return all(
                 re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", label)
@@ -167,6 +176,34 @@ def valid(kind: str, value: str, original: str | None = None) -> bool:
             return re.fullmatch(r"[a-zA-Z0-9_.-]+", value) is not None
         if kind == "private_package":
             return re.fullmatch(r"@[\w.-]+/[\w.-]+", value) is not None
+        if kind == "url":
+            parsed = urlsplit(value)
+            if not parsed.scheme or not parsed.netloc or not parsed.hostname:
+                return False
+            if original is None:
+                return True
+            previous_url = urlsplit(original)
+            return (
+                parsed.scheme == previous_url.scheme
+                and parsed.port == previous_url.port
+                and parsed.path.endswith(".git") == previous_url.path.endswith(".git")
+            )
+        if kind == "git_remote":
+            return re.fullmatch(r"(?:[\w.-]+@)?[\w.-]+:(?:[\w.%~-]+/)+[\w.%~-]+", value) is not None
+        if kind == "path_root":
+            path = unquote(value)
+            if not re.match(r"(?:[A-Za-z]:[/\\]|/|\\\\)", path):
+                return False
+            if original is None:
+                return True
+            previous_path = unquote(original)
+            if re.match(r"[A-Za-z]:[/\\]", previous_path):
+                return path[:2].casefold() == previous_path[:2].casefold() and set(
+                    re.findall(r"[/\\]", path)
+                ) <= set(re.findall(r"[/\\]", previous_path))
+            if previous_path.startswith("\\\\"):
+                return path.startswith("\\\\") and "/" not in path
+            return path.startswith("/")
         if kind == "cloud_resource":
             return value.startswith("arn:") and len(value.split(":", 5)) == 6
         if kind in {"identifier", "account", "secret"} and original:
@@ -186,12 +223,23 @@ def valid(kind: str, value: str, original: str | None = None) -> bool:
 
 
 class SurrogateGenerator:
+    def __init__(self) -> None:
+        self.plausible = PlausibleValues()
+
+    def generate_context(self, kind: str, original: str, context: str) -> str:
+        if kind == "identity" and type(self) is SurrogateGenerator:
+            return self.plausible.identity(context)
+        return self.generate(kind, original)
+
     def generate(self, kind: str, original: str) -> str:
         if not valid(kind, original):
             return original
         if kind == "email":
-            local = secrets.token_hex(12)
-            return local + "@" + secrets.token_hex(8) + ".invalid"
+            return self.plausible.email()
+        if kind == "identity":
+            return self.plausible.identity("")
+        if kind == "address":
+            return self.plausible.address()
         if kind == "ipv4":
             return str(
                 ipaddress.IPv4Address(
@@ -258,19 +306,16 @@ class SurrogateGenerator:
                 chars[positions[position]] = original[positions[position]]
             return "".join(chars)
         if kind == "basic":
-            try:
-                decoded = base64.b64decode(original, validate=True).decode("utf-8")
-            except (ValueError, UnicodeError):
-                return original
-            if ":" not in decoded:
-                return original
-            return base64.b64encode(shape(decoded).encode()).decode()
+            generated = (
+                self.plausible.word(self.plausible.identity("first_name"))
+                + ":"
+                + secrets.token_urlsafe(18)
+            )
+            return base64.b64encode(generated.encode()).decode()
         if kind in {"domain", "hostname"}:
             labels = original.rstrip(".").split(".")
             result = (
-                ".".join(shape(label) for label in labels[:-1]) + ".invalid"
-                if len(labels) > 1
-                else shape(labels[0])
+                self.plausible.domain(original).rstrip(".") if len(labels) > 1 else shape(labels[0])
             )
             return result + ("." if original.endswith(".") else "")
         if kind == "secret":

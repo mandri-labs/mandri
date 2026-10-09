@@ -25,12 +25,12 @@ def engine():
     ],
 )
 @pytest.mark.parametrize("wrapper", ["{}", "Contact <{}>.", "mailto:{}", "Author: {}\n"])
-def test_email_surrogates_are_reserved_valid_stable_and_reversible(engine, email, wrapper):
+def test_email_surrogates_are_plausible_valid_stable_and_reversible(engine, email, wrapper):
     source = wrapper.format(email)
     result = engine.protect_text(source)
     assert email not in result
     mapping = next(item for item in engine.scope.mappings if item.original == email)
-    assert re.fullmatch(r"[a-z0-9-]+@[a-z0-9]+\.invalid", mapping.surrogate)
+    assert re.fullmatch(r"[a-z]+\.[a-z]+@[a-z0-9]+\.com", mapping.surrogate)
     assert engine.protect_text(source) == result
     assert engine.restore_text(result) == source
 
@@ -54,7 +54,7 @@ def test_nested_gitlab_groups_private_host_credentials_and_ports(engine):
     result = engine.protect_text(source)
     parsed = urlsplit(result)
     assert parsed.port == 8443
-    assert parsed.hostname.endswith(".invalid")
+    assert parsed.hostname.endswith(".com")
     assert parsed.username != "build-user"
     assert parsed.password != "swordfish"
     assert parsed.path.endswith(".git")
@@ -70,7 +70,7 @@ def test_url_query_repeated_keys_percent_encoded_emails_and_secrets(engine):
     assert parsed.port == 9443
     assert parsed.path == "/v1"
     assert len(query["email"]) == 2 and query["email"][0] == query["email"][1]
-    assert query["email"][0].endswith(".invalid")
+    assert query["email"][0].endswith(".com")
     assert query["token"] != ["Abc12345"]
     assert "Zyx32100" not in parsed.fragment
     assert engine.restore_text(result) == source
@@ -340,10 +340,18 @@ def test_basic_auth_word_in_technical_prose_is_not_a_credential(engine, text):
     assert engine.protect_text(text) == text
 
 
-@pytest.mark.parametrize("value", ["searches", "bm9fY29sb24=", "@@@@"])
+@pytest.mark.parametrize("value", ["not-base64!", "@@@@"])
 def test_unknown_basic_auth_format_passes_through(engine, value):
     source = {"authorization": "Basic " + value}
     assert engine.protect(source) == source
+
+
+@pytest.mark.parametrize("value", ["searches", "bm9fY29sb24="])
+def test_explicit_basic_token_is_replaced_without_decoding_its_contents(engine, value):
+    source = {"authorization": "Basic " + value}
+    protected = engine.protect(source)
+    assert protected != source
+    assert engine.restore(protected) == source
 
 
 @pytest.mark.parametrize("registered", ["Developer.Mozilla.Org", "developer.mozilla.org."])

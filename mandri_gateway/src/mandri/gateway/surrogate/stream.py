@@ -2,14 +2,16 @@ import re
 from collections import defaultdict
 
 from mandri.gateway.surrogate.engine import SurrogateEngine, literal_occurrences
-from mandri.gateway.surrogate.paths import root_occurrences
+from mandri.gateway.surrogate.paths import path_mappings, root_occurrences
+from mandri.gateway.surrogate.representations import boundary
 from mandri.gateway.surrogate.types import Mapping, PathRoot
 
 
 class StreamRestorer:
     def __init__(self, engine: SurrogateEngine) -> None:
         self._index: dict[str, list[Mapping]] = defaultdict(list)
-        for mapping in engine.scope.mappings:
+        all_mappings = [*path_mappings(engine.scope.mappings), *engine.representations().mappings]
+        for mapping in all_mappings:
             self._index[mapping.surrogate[0]].append(mapping)
         for mappings in self._index.values():
             mappings.sort(
@@ -18,7 +20,7 @@ class StreamRestorer:
         self._buffer = ""
         self._previous = ""
         self._finished = False
-        self._max_alias = max((len(item.surrogate) for item in engine.scope.mappings), default=1)
+        self._max_alias = max((len(item.surrogate) for item in all_mappings), default=1)
         self._starts = (
             re.compile("[" + re.escape("".join(self._index)) + "]") if self._index else None
         )
@@ -69,6 +71,8 @@ class StreamRestorer:
                         start == offset
                         for start, _, _ in root_occurrences(text, root, reverse=True)
                     )
+                elif mapping.kind == "encoded":
+                    valid_match = boundary(text, offset, offset + len(alias), mapping)
                 else:
                     valid_match = mapping.kind in {"secret", "basic"} or any(
                         start == offset for start, _ in literal_occurrences(text, alias)

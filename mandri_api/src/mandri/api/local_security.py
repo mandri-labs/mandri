@@ -29,7 +29,14 @@ class LocalSecurity:
             await self._reject(scope, receive, send, 403)
             return
         preflight = scope.get("method") == "OPTIONS" and origin in self.origins
-        child = scope["type"] == "http" and _CHILD_ENDPOINT.fullmatch(scope["path"])
+        child = scope["type"] == "http" and (
+            _CHILD_ENDPOINT.fullmatch(scope["path"])
+            or re.fullmatch(r"/v1/mcp/connect/[a-f0-9]{32}/[a-f0-9-]{36}", scope["path"])
+            or (
+                scope.get("method") == "GET"
+                and re.fullmatch(r"/v1/mcp/oauth/callback/[a-f0-9-]{36}", scope["path"])
+            )
+        )
         if self.token and not preflight and not child:
             authorization = headers.get("authorization", "")
             supplied = authorization[7:] if authorization.startswith("Bearer ") else ""

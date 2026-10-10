@@ -24,6 +24,7 @@ dependencies = [
     "jsonschema==4.26.0",
     "jinja2==3.1.6",
     "litellm==1.104.2",
+    "mcp==2.3.0",
     "openai-codex-cli-bin==0.162.1",
     "orjson>=3.13.0",
     "psutil==7.2.2",
@@ -55,7 +56,7 @@ reproducible = true
 dev-mode-dirs = [
     "mandri_api/src", "mandri_cli/src", "mandri_config/src", "mandri_core/src",
     "mandri_daemon/src", "mandri_database/src", "mandri_gateway/src",
-    "mandri_providers/src", "mandri_runtime/src", "mandri_sessions/src",
+    "mandri_providers/src", "mandri_runtime/src", "mandri_sessions/src", "mandri_mcp/src",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -67,6 +68,7 @@ only-include = [
     "mandri_daemon/src/mandri/daemon",
     "mandri_database/src/mandri/database",
     "mandri_gateway/src/mandri/gateway",
+    "mandri_mcp/src/mandri/mcp",
     "mandri_providers/src/mandri/providers",
     "mandri_runtime/src/mandri/runtime",
     "mandri_sessions/src/mandri/sessions"
@@ -80,6 +82,7 @@ only-include = [
 "mandri_daemon/src" = ""
 "mandri_database/src" = ""
 "mandri_gateway/src" = ""
+"mandri_mcp/src" = ""
 "mandri_providers/src" = ""
 "mandri_runtime/src" = ""
 "mandri_sessions/src" = ""
@@ -96,6 +99,7 @@ only-include = [
     "mandri_daemon/src",
     "mandri_database/src",
     "mandri_gateway/src",
+    "mandri_mcp/src",
     "mandri_providers/src",
     "mandri_runtime/src",
     "mandri_sessions/src"
@@ -126,8 +130,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
-files = ["mandri_core/src", "mandri_config/src", "mandri_database/src", "mandri_sessions/src", "mandri_providers/src", "mandri_gateway/src", "mandri_runtime/src", "mandri_api/src", "mandri_daemon/src", "mandri_cli/src"]
-mypy_path = ["mandri_core/src", "mandri_config/src", "mandri_database/src", "mandri_sessions/src", "mandri_providers/src", "mandri_gateway/src", "mandri_runtime/src", "mandri_api/src", "mandri_daemon/src", "mandri_cli/src"]
+files = ["mandri_core/src", "mandri_config/src", "mandri_database/src", "mandri_sessions/src", "mandri_providers/src", "mandri_gateway/src", "mandri_runtime/src", "mandri_api/src", "mandri_daemon/src", "mandri_cli/src", "mandri_mcp/src"]
+mypy_path = ["mandri_core/src", "mandri_config/src", "mandri_database/src", "mandri_sessions/src", "mandri_providers/src", "mandri_gateway/src", "mandri_runtime/src", "mandri_api/src", "mandri_daemon/src", "mandri_cli/src", "mandri_mcp/src"]
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
@@ -156,6 +160,7 @@ forbidden_modules = [
     "mandri.runtime",
     "mandri.api",
     "mandri.daemon",
+    "mandri.mcp",
 ]
 
 [[tool.importlinter.contracts]]

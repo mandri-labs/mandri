@@ -102,7 +102,7 @@ class RouteRegistry:
     ) -> Route:
         if privacy_mode is PrivacyMode.SURROGATE and not privacy_scope_id:
             raise ProtectionError("privacy_state_unavailable", "A protected route requires a scope")
-        provider = self._providers.get(provider_name)
+        provider = self._providers.get_active(provider_name)
         effort = reasoning_effort.strip() if isinstance(reasoning_effort, str) else None
         route = Route(
             id=RouteId(str(uuid.uuid4())),
@@ -162,7 +162,7 @@ class RouteRegistry:
         self._emit(GatewayEventKind.ROUTE_DELETED, route.id, route.provider_name)
 
     async def swap(self, route_id: RouteId, provider_name: str, model_id: str) -> Route:
-        provider = self._providers.get(provider_name)
+        provider = self._providers.get_active(provider_name)
         previous = await self.get(route_id)
         now = int(system_now_ms())
         history = await self._db.fetch_one(
@@ -198,8 +198,9 @@ class RouteRegistry:
     async def resolve(self, route_id: RouteId) -> ResolvedRoute:
         route = await self.get(route_id)
         conversation_id = await self._bound_conversation(route)
+        self._providers.get_active(route.provider_name)
         await self._providers.ensure_fresh(route.provider_name)
-        provider = self._providers.get(route.provider_name)
+        provider = self._providers.get_active(route.provider_name)
         model = Model(
             provider=provider.kind,
             model_ref=route.model_ref,

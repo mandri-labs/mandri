@@ -264,6 +264,9 @@ class DockerBackend:
                     else "/opt/mandri/pi_managed.ts"
                     if argument.endswith("/resources/pi_managed.ts")
                     or argument.endswith("\\resources\\pi_managed.ts")
+                    else "/opt/mandri/pi_mcp.ts"
+                    if argument.endswith("/resources/pi_mcp.ts")
+                    or argument.endswith("\\resources\\pi_mcp.ts")
                     else argument
                     for argument in argv
                 ]

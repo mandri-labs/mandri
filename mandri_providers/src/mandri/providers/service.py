@@ -10,6 +10,7 @@ from mandri.core.ports.provider_verifier import ProviderVerifierPort
 from mandri.core.ports.routes import RouteLookupPort
 from mandri.core.types.config import ProviderConfig
 from mandri.providers.errors import (
+    ProviderDisabledError,
     ProviderExistsError,
     ProviderInUseError,
     ProviderInvalidError,
@@ -65,6 +66,7 @@ class Provider:
     api_base: Url | None
     api_key: SecretRef
     state: ProviderState
+    enabled: bool = True
 
 
 def _coerce_kind(kind: ProviderKind) -> ProviderKind:
@@ -98,13 +100,19 @@ class ProvidersRegistry:
                 return self._materialize(entry)
         raise ProviderNotFoundError(f"unknown provider {name!r}")
 
+    def get_active(self, name: str) -> Provider:
+        provider = self.get(name)
+        if not provider.enabled:
+            raise ProviderDisabledError(name)
+        return provider
+
     async def ensure_fresh(self, provider_name: str) -> None:
         """Rotate stored credentials that are about to expire."""
         if self._token_resolver is None:
             return
         entries = self._config.load().providers
         entry = next((item for item in entries if item.name == provider_name), None)
-        if entry is None or ProviderKind(entry.kind) not in _TOKEN_KINDS:
+        if entry is None or not entry.enabled or ProviderKind(entry.kind) not in _TOKEN_KINDS:
             return
         await self._token_resolver.ensure_fresh(provider_name)
 
@@ -145,8 +153,12 @@ class ProvidersRegistry:
         api_base: str | _Unset | None = _UNSET,
         api_key: str | _Unset | None = _UNSET,
         verify: bool = True,
+        enabled: bool | _Unset = _UNSET,
     ) -> Provider:
         current = self.get(name)
+        active = current.enabled if isinstance(enabled, _Unset) else enabled
+        if not isinstance(active, bool):
+            raise ProviderInvalidError("enabled must be a boolean")
         if isinstance(api_base, _Unset):
             base = current.api_base
         else:
@@ -171,9 +183,12 @@ class ProvidersRegistry:
                 kind=current.kind.value,
                 api_base=str(base) if base is not None else None,
                 api_key="" if current.kind in _TOKEN_KINDS else str(key),
+                enabled=active,
             )
         )
-        return Provider(name=name, kind=current.kind, api_base=base, api_key=key, state=state)
+        return Provider(
+            name=name, kind=current.kind, api_base=base, api_key=key, state=state, enabled=active
+        )
 
     async def remove(self, name: str) -> None:
         self.get(name)
@@ -229,4 +244,5 @@ def _provider_from_entry(entry: ProviderConfig) -> Provider:
         api_base=resolve_api_base(kind, Url(entry.api_base) if entry.api_base else None),
         api_key=SecretRef(entry.api_key),
         state=ProviderState.VERIFIED,
+        enabled=entry.enabled,
     )

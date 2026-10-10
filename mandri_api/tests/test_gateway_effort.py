@@ -50,6 +50,9 @@ class StubRegistry:
 
 
 class StubProviders:
+    def get_active(self, name):
+        return self.get(name)
+
     def get(self, name: str) -> Provider:
         return Provider(
             name="openrouter",

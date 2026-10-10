@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from mandri.core.types.execution import ProtectionError
+from mandri.providers.errors import ProviderDisabledError
 from mandri.sessions.errors import SessionConflictError, SessionNotFoundError
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -64,6 +65,17 @@ async def _handle_api_error(_request: Request, exc: Exception) -> JSONResponse:
     )
 
 
+async def _handle_provider_disabled(_request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, ProviderDisabledError):
+        raise exc
+    return JSONResponse(
+        status_code=409,
+        content=ErrorEnvelope(
+            error=ErrorBody(code="provider_disabled", message=str(exc), detail={"name": exc.name})
+        ).model_dump(),
+    )
+
+
 async def _handle_protection_error(_request: Request, exc: Exception) -> JSONResponse:
     if not isinstance(exc, ProtectionError):
         raise exc
@@ -73,16 +85,22 @@ async def _handle_protection_error(_request: Request, exc: Exception) -> JSONRes
     )
 
 
-async def _handle_validation_error(_request: Request, exc: Exception) -> JSONResponse:
+async def _handle_validation_error(request: Request, exc: Exception) -> JSONResponse:
     if not isinstance(exc, RequestValidationError):
         raise exc
+    errors = exc.errors()
+    if request.url.path.startswith("/v1/mcp/"):
+        errors = [
+            {key: value for key, value in error.items() if key not in {"input", "ctx"}}
+            for error in errors
+        ]
     return JSONResponse(
         status_code=422,
         content=ErrorEnvelope(
             error=ErrorBody(
                 code="validation_error",
                 message="Request validation failed",
-                detail={"errors": exc.errors()},
+                detail={"errors": errors},
             )
         ).model_dump(),
     )
@@ -132,6 +150,7 @@ async def _handle_session_conflict(_request: Request, exc: Exception) -> JSONRes
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ApiError, _handle_api_error)
+    app.add_exception_handler(ProviderDisabledError, _handle_provider_disabled)
     app.add_exception_handler(ProtectionError, _handle_protection_error)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)

@@ -17,6 +17,7 @@ COPY docker/worker/worker.py /opt/mandri/worker.py
 COPY mandri_runtime/src/mandri/runtime/agy_hook.py /opt/mandri/agy_hook.py
 COPY mandri_core/src/mandri/core/resources/pi_gateway.ts /opt/mandri/pi_gateway.ts
 COPY mandri_core/src/mandri/core/resources/pi_managed.ts /opt/mandri/pi_managed.ts
+COPY mandri_core/src/mandri/core/resources/pi_mcp.ts /opt/mandri/pi_mcp.ts
 COPY mandri_core/src/mandri/core/resources/pi_permissions.ts /opt/mandri/pi_permissions.ts
 RUN mkdir -p /workspace /home/worker \
     && chown -R 1000:1000 /workspace /home/worker \

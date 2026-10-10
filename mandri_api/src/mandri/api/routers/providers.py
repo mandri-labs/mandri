@@ -43,6 +43,7 @@ class ProviderIn(BaseModel):
 
 
 class ProviderUpdateIn(BaseModel):
+    enabled: bool = True
     api_base: str | None = None
     api_key: str | None = None
 
@@ -52,6 +53,7 @@ class ProviderOut(BaseModel):
     kind: str
     api_base: str | None
     state: str
+    enabled: bool = True
     authorize_url: str | None = None
     login_id: str | None = None
 
@@ -73,6 +75,7 @@ def _to_out(provider: Provider, session: ChatGptLoginSession | None = None) -> P
         kind=provider.kind.value,
         api_base=None if provider.api_base is None else str(provider.api_base),
         state=provider.state.value,
+        enabled=provider.enabled,
         authorize_url=None if session is None else session.authorize_url or None,
         login_id=None if session is None else session.id,
     )
@@ -200,6 +203,8 @@ async def update_provider(name: str, body: ProviderUpdateIn, service: Providers)
         updates["api_base"] = body.api_base
     if "api_key" in body.model_fields_set:
         updates["api_key"] = body.api_key
+    if "enabled" in body.model_fields_set:
+        updates["enabled"] = body.enabled
     if not updates:
         raise ApiError(code="provider_invalid", message="no fields to update", status=400)
     try:
@@ -284,13 +289,14 @@ def _model_out(wiring: GatewayWiring, provider: Provider, entry: dict[str, Any])
     )
 
 
-@router.get("/{name}/models", operation_id="list_provider_models", responses=NOT_FOUND)
+@router.get("/{name}/models", operation_id="list_provider_models", responses=NOT_FOUND_CONFLICT)
 async def list_provider_models(
     name: str, wiring: Gateway, service: Providers, client: Http
 ) -> list[ModelOut]:
     try:
+        service.get_active(name)
         await service.ensure_fresh(name)
-        provider = service.get(name)
+        provider = service.get_active(name)
     except ProviderNotFoundError:
         raise _not_found(name) from None
     except ProviderInvalidError as error:

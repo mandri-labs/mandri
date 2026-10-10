@@ -7,6 +7,7 @@ from mandri.core.ids import ProviderKind, RouteId, Url
 from mandri.core.ports.provider_verifier import ProviderVerifierPort, VerificationResult
 from mandri.core.types.config import DaemonConfig, ProviderConfig
 from mandri.providers.errors import (
+    ProviderDisabledError,
     ProviderExistsError,
     ProviderInUseError,
     ProviderInvalidError,
@@ -197,3 +198,22 @@ async def test_verify_marks_provider_degraded_on_failure() -> None:
     await registry.add("openai", ProviderKind.OPENAI, None, "k", verify=False)
     provider = await registry.verify("openai")
     assert provider.state is ProviderState.DEGRADED
+
+
+async def test_disabling_preserves_credentials_and_does_not_verify() -> None:
+    config = FakeConfig()
+    verifier = FakeVerifier()
+    registry = ProvidersRegistry(config, FakeRoutes(), verifier)
+    await registry.add("openai", ProviderKind.OPENAI, None, "stored-key", verify=False)
+    verifier.ok = False
+    disabled = await registry.update("openai", enabled=False)
+    assert not disabled.enabled
+    assert registry.list()[0].name == "openai"
+    assert config.config.providers[0].api_key == "stored-key"
+    assert not config.config.providers[0].enabled
+    with pytest.raises(ProviderDisabledError):
+        registry.get_active("openai")
+    await registry.update("openai", api_key="replacement", verify=False)
+    assert not registry.get("openai").enabled
+    await registry.update("openai", enabled=True)
+    assert registry.get_active("openai").api_key == "replacement"

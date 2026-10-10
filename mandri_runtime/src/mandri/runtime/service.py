@@ -29,9 +29,12 @@ from mandri.core.ids import (
     SessionState,
     SessionStopCause,
 )
+from mandri.core.mcp_launch import mcp_launch
+from mandri.core.mcp_names import avoid_collisions
 from mandri.core.native_run import NativeRunPlan, NativeRunStart
 from mandri.core.ports.control import HarnessControl, PromptOutcome, PromptState
 from mandri.core.ports.executions import ExecutionRepositoryPort
+from mandri.core.ports.mcp import McpLaunchPort
 from mandri.core.ports.privacy import PrivacyScopePort
 from mandri.core.types.approvals import ApprovalRequest
 from mandri.core.types.availability import SessionAvailability, SessionOwner
@@ -171,10 +174,12 @@ class RuntimeService:
         executions: ExecutionRepositoryPort | None = None,
         creation_policy: SessionPolicy = _DEFAULT_POLICY,
         attachments_dir: Path | None = None,
+        mcp: McpLaunchPort | None = None,
     ) -> None:
         self.attachments = AttachmentStore(
             attachments_dir or Path.home() / ".mandri" / "attachments"
         )
+        self._mcp = mcp
         self._states = RuntimeStates()
         self.commands = CommandService(
             self.control_for_session,
@@ -626,6 +631,8 @@ class RuntimeService:
                 {"TERM": spec.term},
                 privacy_mode=policy.privacy_mode,
             )
+            if policy.execution_backend is ExecutionBackend.HOST:
+                self._inject_mcp(session_id, spec.harness, prepared, policy, cwd)
             if (
                 spec.harness is HarnessKind.AGY
                 and policy.execution_backend is ExecutionBackend.HOST
@@ -676,6 +683,8 @@ class RuntimeService:
                     else:
                         await self._mark_db_state(session_id, SessionState.STOPPED)
                 finally:
+                    if self._mcp is not None:
+                        self._mcp.release(session_id)
                     await self._rollback_route(route_id)
 
             stopped = asyncio.create_task(close())
@@ -1207,6 +1216,8 @@ class RuntimeService:
                 resume_native_id=record.native_id,
             )
         except BaseException:
+            if self._mcp is not None:
+                self._mcp.release(session_id)
             await self._close_control(session_id)
             raise
         self._registry.mark_live(session_id, process, harness)
@@ -1506,6 +1517,8 @@ class RuntimeService:
             await self._rollback_session(session_id)
 
     async def _rollback_session(self, session_id: str) -> None:
+        if self._mcp is not None:
+            self._mcp.release(session_id)
         try:
             await self._executions.phase(
                 session_id, ExecutionPhase.FAILED, reason="execution_launch_failed"
@@ -1777,6 +1790,8 @@ class RuntimeService:
             await self._close_control(session_id)
             await self._events.forget_liveness(session_id)
             await self._events.detach_feed(session_id)
+            if self._mcp is not None:
+                self._mcp.release(session_id)
             self._registry.mark_stopped(session_id)
             await self._mark_db_state(session_id, SessionState.STOPPED)
             if restore_native:
@@ -1790,6 +1805,8 @@ class RuntimeService:
         processes = self._registry.processes()
         stopped = await self._registry.reconcile(self._transitioning_sessions())
         for session_id in stopped:
+            if self._mcp is not None:
+                self._mcp.release(session_id)
             await self._events.drain_feed(session_id)
             await self._persist_execution_exit(
                 session_id, ExecutionPhase.FAILED, process=processes.get(session_id)
@@ -2433,6 +2450,36 @@ class RuntimeService:
             return await self._privacy_scopes.fork(source.session.privacy_scope_id)
         return await self._privacy_scopes.create(str(Path(cwd).resolve()))
 
+    def _inject_mcp(
+        self,
+        owner: str,
+        kind: HarnessKind | None,
+        prepared: PreparedLaunch,
+        policy: SessionPolicy,
+        cwd: str | Path,
+    ) -> None:
+        if self._mcp is None or kind is None or kind is HarnessKind.AGY:
+            return
+        binding = self._mcp.bind(
+            owner,
+            kind,
+            protected=policy.execution_backend is ExecutionBackend.DOCKER
+            or policy.privacy_mode is not PrivacyMode.NONE,
+        )
+        if policy.execution_backend is ExecutionBackend.HOST:
+            binding, diagnostics = avoid_collisions(kind, binding, prepared.env, Path(cwd))
+            for diagnostic in diagnostics:
+                _logger.warning("MCP launch: %s", diagnostic)
+        launch = mcp_launch(kind, binding, prepared.env)
+        prepared.argv.extend(launch.args)
+        prepared.env.update(launch.env)
+        prepared.env["MANDRI_MCP_ENDPOINTS"] = json.dumps(
+            [
+                endpoint.url.partition(f"http://127.0.0.1:{self._gateway_port}")[2]
+                for endpoint in binding.servers
+            ]
+        )
+
     async def _spawn_execution(
         self,
         session_id: str,
@@ -2446,6 +2493,7 @@ class RuntimeService:
         resume_native_id: HarnessSessionId | None = None,
         native: bool = False,
     ) -> ManagedProcess:
+        self._inject_mcp(session_id, harness_kind(harness), prepared, policy, cwd)
         if harness == "opencode" and not native:
             password = secrets.token_urlsafe(32)
             prepared.env["OPENCODE_SERVER_PASSWORD"] = password
@@ -2486,6 +2534,9 @@ class RuntimeService:
         ):
             raise DockerExecutionError("docker_unavailable", "Docker requires a configured gateway")
         ingress = WorkerIngress(self._gateway_port, route_id, self._token_issuer(route_id))
+        if self._mcp is not None and prepared.env.get("MANDRI_MCP_TOKEN"):
+            manifest = json.loads(prepared.env.get("MANDRI_MCP_ENDPOINTS", "[]"))
+            ingress.set_mcp(set(manifest), prepared.env["MANDRI_MCP_TOKEN"])
         try:
             await self._executions.phase(session_id, ExecutionPhase.PREPARING_IMAGE)
             socket_path = (
@@ -2617,7 +2668,7 @@ class RuntimeService:
             return None
         try:
             provider_name, model_id = parse_model_arg(model)
-            provider = routes.providers.get(provider_name)
+            provider = routes.providers.get_active(provider_name)
         except Exception:
             return None
         return await fetch_model_metadata(

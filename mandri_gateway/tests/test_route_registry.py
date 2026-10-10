@@ -17,7 +17,11 @@ from mandri.core.types.execution import ExecutionBackend, PrivacyMode, Protectio
 from mandri.core.types.gateway import GatewayEventKind
 from mandri.gateway.errors.upstream import RouteNotFoundError
 from mandri.gateway.route_registry import RouteRegistry
-from mandri.providers.errors import ProviderInvalidError, ProviderNotFoundError
+from mandri.providers.errors import (
+    ProviderDisabledError,
+    ProviderInvalidError,
+    ProviderNotFoundError,
+)
 from mandri.providers.service import ProvidersRegistry
 
 SCHEMA = (
@@ -375,3 +379,20 @@ async def test_usage_ambiguous_missing_or_cyclic_lineage_is_unassigned(make_regi
     )
     attribution = await registry.usage_attribution(route.id)
     assert attribution.root_session_id is None and attribution.project_path is None
+
+
+async def test_disabled_provider_blocks_routes_and_recovers_after_enable(make_registry):
+    registry = await make_registry(FakeEventSink(), two_provider_config())
+    route = await registry.create("prov", "m1", (WireFormat.OPENAI,))
+    await registry.providers.update("prov", enabled=False)
+    with pytest.raises(ProviderDisabledError):
+        await registry.resolve(route.id)
+    with pytest.raises(ProviderDisabledError):
+        await registry.create("prov", "m2", (WireFormat.OPENAI,))
+    other = await registry.create("other", "m2", (WireFormat.OPENAI,))
+    with pytest.raises(ProviderDisabledError):
+        await registry.swap(other.id, "prov", "m3")
+    assert (await registry.get(other.id)).provider_name == "other"
+    assert (await registry.get(route.id)).provider_name == "prov"
+    await registry.providers.update("prov", enabled=True)
+    assert (await registry.resolve(route.id)).provider.name == "prov"

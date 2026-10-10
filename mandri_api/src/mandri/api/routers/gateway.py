@@ -10,7 +10,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from mandri.api.deps import Gateway, GatewayWiring, Providers
-from mandri.api.errors import NOT_FOUND, ApiError
+from mandri.api.errors import NOT_FOUND, NOT_FOUND_CONFLICT, ApiError
 from mandri.api.routers._effort import lookup_efforts, normalize_effort
 from mandri.api.routers._gateway_privacy import (
     model_body,
@@ -42,7 +42,11 @@ from mandri.gateway.types.model import Model
 from mandri.gateway.usage import UsageCollector, UsageStream, collect_call
 from mandri.gateway.usage_attribution import UsageAttribution
 from mandri.gateway.usage_context import request_modality
-from mandri.providers.errors import ProviderInvalidError, ProviderNotFoundError
+from mandri.providers.errors import (
+    ProviderDisabledError,
+    ProviderInvalidError,
+    ProviderNotFoundError,
+)
 from mandri.providers.service import Provider, parse_model_arg, provider_model_ref, split_model_ref
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
@@ -113,6 +117,7 @@ class ProvidersInfoOut(BaseModel):
     kind: str
     api_base: str | None
     state: str
+    enabled: bool = True
 
 
 class GatewayInfoOut(BaseModel):
@@ -142,6 +147,7 @@ def _provider_info(provider: Provider) -> ProvidersInfoOut:
         kind=provider.kind.value,
         api_base=None if provider.api_base is None else str(provider.api_base),
         state=provider.state.value,
+        enabled=provider.enabled,
     )
 
 
@@ -304,7 +310,7 @@ def _route_invalid(error: ProviderInvalidError) -> ApiError:
     return ApiError(code="route_invalid", message=str(error), status=400)
 
 
-@router.post("/routes", operation_id="create_route", status_code=201, responses=NOT_FOUND)
+@router.post("/routes", operation_id="create_route", status_code=201, responses=NOT_FOUND_CONFLICT)
 async def create_route(body: RouteCreateIn, wiring: Gateway) -> RouteCreatedOut:
     try:
         provider_name, model_id = parse_model_arg(body.model)
@@ -331,7 +337,9 @@ async def list_routes(wiring: Gateway) -> list[RouteOut]:
     return [_to_out(route) for route in await wiring.registry.list_routes()]
 
 
-@router.patch("/routes/{route_id}/model", operation_id="set_route_model", responses=NOT_FOUND)
+@router.patch(
+    "/routes/{route_id}/model", operation_id="set_route_model", responses=NOT_FOUND_CONFLICT
+)
 async def set_route_model(route_id: ApiRouteId, body: RouteModelIn, wiring: Gateway) -> RouteOut:
     try:
         provider_name, model_id = parse_model_arg(body.model)
@@ -376,7 +384,7 @@ async def _serve_model_metadata(
     except ProviderInvalidError as error:
         raise _route_invalid(error) from None
     try:
-        provider = providers.get(provider_name)
+        provider = providers.get_active(provider_name)
     except ProviderNotFoundError as error:
         raise ApiError(code="provider_not_found", message=str(error), status=404) from None
     metadata = await fetch_model_metadata(
@@ -404,7 +412,7 @@ async def _serve_model_metadata(
     return JSONResponse(content=payload)
 
 
-@router.get("/model-metadata", operation_id="gateway_model_metadata", responses=NOT_FOUND)
+@router.get("/model-metadata", operation_id="gateway_model_metadata", responses=NOT_FOUND_CONFLICT)
 async def gateway_model_metadata(
     wiring: Gateway, providers: Providers, model: Annotated[str, Query(min_length=3)]
 ) -> Response:
@@ -487,6 +495,8 @@ async def _serve_openai(
         )
     except ProtectionError as error:
         return privacy_error(error, _openai_error)
+    except ProviderDisabledError as error:
+        return JSONResponse(status_code=503, content=_openai_error(503, str(error)))
     except (RouteNotFoundError, ProviderNotFoundError) as error:
         return JSONResponse(status_code=404, content=_openai_error(404, str(error)))
     except UpstreamError as error:
@@ -544,6 +554,8 @@ async def _serve_responses(
             responses_stream=bool(body.get("stream"))
             and resolved.privacy_mode is PrivacyMode.SURROGATE,
         )
+    except ProviderDisabledError as error:
+        return JSONResponse(status_code=503, content=_openai_error(503, str(error)))
     except (RouteNotFoundError, ProviderNotFoundError) as error:
         return JSONResponse(status_code=404, content=_openai_error(404, str(error)))
     except UpstreamError as error:
@@ -612,6 +624,8 @@ async def _serve_anthropic(
         )
     except ProtectionError as error:
         return privacy_error(error, _anthropic_error)
+    except ProviderDisabledError as error:
+        return JSONResponse(status_code=503, content=_anthropic_error(503, str(error)))
     except (RouteNotFoundError, ProviderNotFoundError) as error:
         return JSONResponse(status_code=404, content=_anthropic_error(404, str(error)))
     except UpstreamError as error:
@@ -674,6 +688,8 @@ async def _serve_gemini(
         )
     except ProtectionError as error:
         return privacy_error(error, _gemini_error)
+    except ProviderDisabledError as error:
+        return JSONResponse(status_code=503, content=_gemini_error(503, str(error)))
     except (RouteNotFoundError, ProviderNotFoundError) as error:
         return JSONResponse(status_code=404, content=_gemini_error(404, str(error)))
     except UpstreamError as error:
@@ -749,6 +765,8 @@ async def anthropic_count_tokens(
         )
     except ProtectionError as error:
         return privacy_error(error, _anthropic_error)
+    except ProviderDisabledError as error:
+        return JSONResponse(status_code=503, content=_anthropic_error(503, str(error)))
     except (RouteNotFoundError, ProviderNotFoundError) as error:
         return JSONResponse(status_code=404, content=_anthropic_error(404, str(error)))
     except UpstreamError as error:
@@ -785,6 +803,8 @@ async def _serve_models_listing(
         return unauthorized
     try:
         resolved = await wiring.registry.resolve(RouteId(route_id))
+    except ProviderDisabledError as error:
+        return JSONResponse(status_code=503, content=error_builder(503, str(error)))
     except (RouteNotFoundError, ProviderNotFoundError) as error:
         return JSONResponse(status_code=404, content=error_builder(404, str(error)))
     bare = split_model_ref(resolved.provider.kind, str(resolved.model.model_ref))
@@ -825,6 +845,8 @@ async def _gemini_model_metadata(
         return unauthorized
     try:
         resolved = await wiring.registry.resolve(RouteId(route_id))
+    except ProviderDisabledError as error:
+        return JSONResponse(status_code=503, content=_gemini_error(503, str(error)))
     except (RouteNotFoundError, ProviderNotFoundError) as error:
         return JSONResponse(status_code=404, content=_gemini_error(404, str(error)))
     metadata = await fetch_model_metadata(

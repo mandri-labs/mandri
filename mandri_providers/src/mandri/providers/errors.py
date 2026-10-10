@@ -12,6 +12,12 @@ class ProviderNotFoundError(ProviderError):
     """No provider exists under the requested name."""
 
 
+class ProviderDisabledError(ProviderError):
+    def __init__(self, name: str) -> None:
+        super().__init__(f"provider {name!r} is disabled")
+        self.name = name
+
+
 class ProviderExistsError(ProviderError):
     """A provider with this name is already registered."""
 

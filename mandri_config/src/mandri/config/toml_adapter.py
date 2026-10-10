@@ -436,13 +436,16 @@ def _parse_provider(entry: dict[str, Any], index: int) -> ProviderConfig:
     kind = entry.get("kind")
     api_base = entry.get("api_base")
     api_key = entry.get("api_key", "")
+    enabled = entry.get("enabled", True)
     if not isinstance(name, str) or not isinstance(kind, str):
         raise ConfigError(f"providers[{index}] requires string name and kind")
     if api_base is not None and not isinstance(api_base, str):
         raise ConfigError(f"providers[{index}] api_base must be a string")
     if not isinstance(api_key, str):
         raise ConfigError(f"providers[{index}] api_key must be a string")
-    return ProviderConfig(name=name, kind=kind, api_base=api_base, api_key=api_key)
+    if not isinstance(enabled, bool):
+        raise ConfigError(f"providers[{index}] enabled must be a boolean")
+    return ProviderConfig(name=name, kind=kind, api_base=api_base, api_key=api_key, enabled=enabled)
 
 
 def _validate(config: DaemonConfig) -> None:
@@ -474,6 +477,8 @@ def _validate_providers(providers: list[ProviderConfig]) -> None:
 
 
 def _validate_provider(provider: ProviderConfig, index: int, seen: set[str]) -> None:
+    if not isinstance(provider.enabled, bool):
+        raise ConfigError(f"providers[{index}]: enabled must be a boolean")
     if provider.kind not in PROVIDER_KINDS:
         raise ConfigError(
             f"providers[{index}]: unknown kind '{provider.kind}', "
@@ -527,6 +532,7 @@ def _fill_provider_table(table: Table, provider: ProviderConfig) -> None:
         "kind": provider.kind,
         "api_base": provider.api_base,
         "api_key": provider.api_key or None,
+        "enabled": provider.enabled,
     }
     for key, value in values.items():
         if value is None:

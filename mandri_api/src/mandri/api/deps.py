@@ -25,6 +25,7 @@ from mandri.gateway.privacy import GatewayPrivacy
 from mandri.gateway.reasoning_catalog import ReasoningCatalog
 from mandri.gateway.route_registry import RouteRegistry
 from mandri.gateway.usage import GatewayUsageSink
+from mandri.mcp.service import McpService
 from mandri.providers.chatgpt_login import ChatGptLoginService
 from mandri.providers.service import ProvidersRegistry
 from mandri.runtime.agents import AgentService
@@ -62,6 +63,7 @@ class LifespanState:
     http: httpx.AsyncClient | None = None
     hub: Hub | None = None
     sessions: SessionsService | None = None
+    mcp: McpService | None = None
     providers: ProvidersRegistry | None = None
     gateway: GatewayWiring | None = None
     chatgpt: ChatGptWiring | None = None

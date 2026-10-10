@@ -1,5 +1,7 @@
 """Tests for the TOML config adapter contract."""
 
+import dataclasses
+
 import pytest
 import tomlkit
 from mandri.config.errors import ConfigError, ConfigParseError
@@ -199,4 +201,31 @@ def test_local_provider_without_api_base_rejected(tmp_path: object) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ConfigError):
+        adapter.load()
+
+
+def test_provider_enabled_defaults_and_round_trips(tmp_path) -> None:
+    adapter = TomlConfigAdapter(tmp_path)
+    adapter.config_path.write_text(
+        '[[providers]]\nname = "p"\nkind = "openai"\napi_key = "stored-key"\n', encoding="utf-8"
+    )
+    config = adapter.load()
+    assert config.providers[0].enabled
+    adapter.save(
+        dataclasses.replace(
+            config, providers=[dataclasses.replace(config.providers[0], enabled=False)]
+        )
+    )
+    restored = TomlConfigAdapter(tmp_path).load()
+    assert not restored.providers[0].enabled
+    assert restored.providers[0].api_key == "stored-key"
+
+
+@pytest.mark.parametrize("value", ['"false"', "0"])
+def test_provider_enabled_rejects_non_boolean(tmp_path, value) -> None:
+    adapter = TomlConfigAdapter(tmp_path)
+    adapter.config_path.write_text(
+        '[[providers]]\nname = "p"\nkind = "openai"\nenabled = ' + value + "\n", encoding="utf-8"
+    )
+    with pytest.raises(ConfigError, match="enabled must be a boolean"):
         adapter.load()

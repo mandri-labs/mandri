@@ -40,6 +40,9 @@ class StubHttp:
 
 
 class StubProviders:
+    def get_active(self, name):
+        return self.get(name)
+
     async def ensure_fresh(self, name: str) -> None:
         pass
 

@@ -63,6 +63,7 @@ from mandri.gateway.adapters.hub_event_sink import HubGatewayEventSink
 from mandri.gateway.litellm_adapter import AnthropicHandler, GeminiHandler, OpenAIHandler
 from mandri.gateway.reasoning_catalog import build_reasoning_catalog
 from mandri.gateway.route_registry import RouteRegistry
+from mandri.mcp.service import McpService
 from mandri.providers.service import ProvidersRegistry
 from mandri.runtime.adapters import AdapterContext, HarnessAdapters
 from mandri.runtime.agent_events import AgentEventRouter
@@ -299,6 +300,7 @@ class RuntimeResources:
         self.hub: Hub | None = None
         self.sessions: SessionsService | None = None
         self.runtime: RuntimeService | None = None
+        self.mcp: McpService | None = None
         self.providers: ProvidersRegistry | None = None
         self.gateway: GatewayWiring | None = None
         self.chatgpt: ChatGptWiring | None = None
@@ -424,6 +426,7 @@ def build_app(
             state.sessions = resources.sessions
             state.runtime = resources.runtime
             state.lifetime = resources.runtime
+            state.mcp = resources.mcp
             state.providers = resources.providers
             state.gateway = resources.gateway
             state.chatgpt = resources.chatgpt
@@ -446,6 +449,8 @@ async def wire_runtime(
     db: AiosqliteDatabase,
     http: httpx.AsyncClient,
 ) -> SyncEngine:
+    resources.mcp = McpService(base_dir, config.server.port, hub)
+    resources.mcp.start()
     if config.sessions.agy_profiles_dir is None:
         config = replace(
             config,
@@ -526,6 +531,7 @@ async def wire_runtime(
     with contextlib.suppress(Exception):
         resources.gateway.reasoning_catalog = await build_reasoning_catalog(resources.providers)
     resources.runtime = RuntimeService(
+        mcp=resources.mcp,
         attachments_dir=base_dir / "attachments",
         harness_commands=build_harness_commands(
             config.sessions.launch_args, include_docker=config.docker.image is not None
@@ -640,21 +646,22 @@ def start_background_tasks(
 
 
 async def stop_background_tasks(
-    tasks: BackgroundTasks,
+    tasks: BackgroundTasks | None,
     resources: RuntimeResources,
     hub: Hub,
     http: httpx.AsyncClient,
     db: AiosqliteDatabase,
     base_dir: Path,
 ) -> None:
-    tasks.pid_watch.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await tasks.pid_watch
     remove_pid_file(base_dir)
-    for task in (tasks.sync, tasks.reconcile, tasks.approvals):
-        task.cancel()
+    if tasks is not None:
+        tasks.pid_watch.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await task
+            await tasks.pid_watch
+        for task in (tasks.sync, tasks.reconcile, tasks.approvals):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
     for task in resources.agent_tasks:
         task.cancel()
     for task in resources.agent_tasks:
@@ -679,6 +686,8 @@ async def stop_background_tasks(
         resources.usage.close()
     if resources.chatgpt is not None and resources.chatgpt.login is not None:
         await resources.chatgpt.login.aclose()
+    if resources.mcp is not None:
+        await resources.mcp.aclose()
     await hub.close_all()
     await http.aclose()
     if resources.usage_db is not None:
@@ -698,17 +707,18 @@ async def serve(server: uvicorn.Server, resources: RuntimeResources, base_dir: P
     await db.migrate()
     hub = Hub()
     http = httpx.AsyncClient()
-    engine = await wire_runtime(resources, base_dir, config, hub, db, http)
-    assert resources.runtime is not None
-    assert resources.agents is not None
-    resources.agent_tasks = [
-        asyncio.create_task(discover_agents(resources.agents.history_store)),
-        asyncio.create_task(backfill_agents(resources.agents.history_store)),
-    ]
-    if resources.usage is not None:
-        resources.agent_tasks.append(asyncio.create_task(resources.usage.run()))
-    tasks = start_background_tasks(engine, resources.runtime, config, server, base_dir)
+    tasks: BackgroundTasks | None = None
     try:
+        engine = await wire_runtime(resources, base_dir, config, hub, db, http)
+        assert resources.runtime is not None
+        assert resources.agents is not None
+        resources.agent_tasks = [
+            asyncio.create_task(discover_agents(resources.agents.history_store)),
+            asyncio.create_task(backfill_agents(resources.agents.history_store)),
+        ]
+        if resources.usage is not None:
+            resources.agent_tasks.append(asyncio.create_task(resources.usage.run()))
+        tasks = start_background_tasks(engine, resources.runtime, config, server, base_dir)
         await server.serve()
     finally:
         await stop_background_tasks(tasks, resources, hub, http, db, base_dir)

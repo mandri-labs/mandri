@@ -14,6 +14,8 @@ from mandri.api.routers.execution import router as execution_router
 from mandri.api.routers.forks import router as forks_router
 from mandri.api.routers.fs import router as fs_router
 from mandri.api.routers.gateway import router as gateway_router
+from mandri.api.routers.mcp import McpData, McpOAuthCallback
+from mandri.api.routers.mcp import router as mcp_router
 from mandri.api.routers.providers import router as providers_router
 from mandri.api.routers.runtime import router as runtime_router
 from mandri.api.routers.sessions import router as sessions_router
@@ -62,6 +64,9 @@ def create_app(cors_origins: Sequence[CorsOrigin] | None = None) -> FastAPI:
     app.include_router(attachments_router, prefix="/v1")
     app.include_router(transcript_records_router, prefix="/v1")
     app.include_router(providers_router, prefix="/v1")
+    app.include_router(mcp_router, prefix="/v1")
+    app.mount("/v1/mcp/connect", McpData())
+    app.mount("/v1/mcp/oauth/callback", McpOAuthCallback())
     app.include_router(chatgpt_router, prefix="/v1")
     app.include_router(gateway_router, prefix="/v1")
     app.include_router(runtime_router, prefix="/v1")

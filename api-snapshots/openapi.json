@@ -685,6 +685,402 @@
         "title": "LoginStartIn",
         "type": "object"
       },
+      "McpBindRequest": {
+        "properties": {
+          "harness": {
+            "$ref": "#/components/schemas/HarnessKind"
+          }
+        },
+        "required": [
+          "harness"
+        ],
+        "title": "McpBindRequest",
+        "type": "object"
+      },
+      "McpBinding": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/McpEndpoint"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "servers"
+        ],
+        "title": "McpBinding",
+        "type": "object"
+      },
+      "McpEndpoint": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url"
+        ],
+        "title": "McpEndpoint",
+        "type": "object"
+      },
+      "McpServerConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_protected": {
+            "default": false,
+            "title": "Allow Protected",
+            "type": "boolean"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Args",
+            "type": "array"
+          },
+          "auth": {
+            "default": "none",
+            "enum": [
+              "none",
+              "oauth"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "call_timeout": {
+            "default": 60,
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Call Timeout",
+            "type": "number"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwd"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Env",
+            "type": "object"
+          },
+          "env_refs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Env Refs",
+            "type": "object"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "name": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,47}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "startup_timeout": {
+            "default": 15,
+            "exclusiveMinimum": 0.0,
+            "maximum": 120.0,
+            "title": "Startup Timeout",
+            "type": "number"
+          },
+          "transport": {
+            "default": "stdio",
+            "enum": [
+              "stdio",
+              "streamable_http",
+              "sse"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "McpServerConfig",
+        "type": "object"
+      },
+      "McpServerView": {
+        "properties": {
+          "allow_protected": {
+            "default": false,
+            "title": "Allow Protected",
+            "type": "boolean"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "auth": {
+            "default": "none",
+            "enum": [
+              "none",
+              "oauth"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "authorize_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorize Url"
+          },
+          "call_timeout": {
+            "default": 60,
+            "title": "Call Timeout",
+            "type": "number"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwd"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Env Keys",
+            "type": "array"
+          },
+          "env_refs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Env Refs",
+            "type": "object"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "header_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Header Keys",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prompts": {
+            "default": 0,
+            "title": "Prompts",
+            "type": "integer"
+          },
+          "resources": {
+            "default": 0,
+            "title": "Resources",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "startup_timeout": {
+            "default": 15,
+            "title": "Startup Timeout",
+            "type": "number"
+          },
+          "state": {
+            "enum": [
+              "disabled",
+              "starting",
+              "ready",
+              "reconnecting",
+              "error",
+              "auth_required"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "tools": {
+            "default": 0,
+            "title": "Tools",
+            "type": "integer"
+          },
+          "transport": {
+            "enum": [
+              "stdio",
+              "streamable_http",
+              "sse"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "name",
+          "enabled",
+          "transport",
+          "state"
+        ],
+        "title": "McpServerView",
+        "type": "object"
+      },
+      "McpSnapshot": {
+        "properties": {
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/McpServerView"
+            },
+            "title": "Servers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision",
+          "servers"
+        ],
+        "title": "McpSnapshot",
+        "type": "object"
+      },
+      "McpUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "additionalProperties": true,
+            "title": "Changes",
+            "type": "object"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "changes"
+        ],
+        "title": "McpUpdate",
+        "type": "object"
+      },
       "ModelOut": {
         "properties": {
           "default_effort": {
@@ -1000,6 +1396,11 @@
             ],
             "title": "Authorize Url"
           },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -1056,6 +1457,11 @@
               }
             ],
             "title": "Api Key"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
           }
         },
         "title": "ProviderUpdateIn",
@@ -1073,6 +1479,11 @@
               }
             ],
             "title": "Api Base"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
           },
           "kind": {
             "title": "Kind",
@@ -3823,6 +4234,16 @@
             },
             "description": "Resource not found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflicting state"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3896,6 +4317,16 @@
               }
             },
             "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflicting state"
           },
           "422": {
             "content": {
@@ -4008,6 +4439,16 @@
             },
             "description": "Resource not found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflicting state"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4022,6 +4463,386 @@
         "summary": "Set Route Model",
         "tags": [
           "gateway"
+        ]
+      }
+    },
+    "/v1/mcp/bindings": {
+      "post": {
+        "operationId": "create_mcp_binding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpBindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpBinding"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Binding",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/v1/mcp/bindings/{identity}": {
+      "delete": {
+        "operationId": "release_mcp_binding",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Release Binding",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "put": {
+        "operationId": "renew_mcp_binding",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Renew Binding",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/v1/mcp/servers": {
+      "get": {
+        "operationId": "list_mcp_servers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Servers",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "post": {
+        "operationId": "create_mcp_server",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/v1/mcp/servers/{identity}": {
+      "delete": {
+        "operationId": "delete_mcp_server",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Server",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "patch": {
+        "operationId": "update_mcp_server",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/v1/mcp/servers/{identity}/login": {
+      "post": {
+        "operationId": "login_mcp_server",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login Server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/v1/mcp/servers/{identity}/logout": {
+      "post": {
+        "operationId": "logout_mcp_server",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout Server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/v1/mcp/servers/{identity}/reconnect": {
+      "post": {
+        "operationId": "reconnect_mcp_server",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reconnect Server",
+        "tags": [
+          "mcp"
         ]
       }
     },
@@ -4547,6 +5368,16 @@
               }
             },
             "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflicting state"
           },
           "422": {
             "content": {

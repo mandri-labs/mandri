@@ -253,7 +253,7 @@ class ReasoningCatalog:
     @classmethod
     async def build(cls, list_providers: Callable[[], list[Provider]]) -> "ReasoningCatalog":
         entries: dict[tuple[str, str], ReasoningInfo] = {}
-        providers = list_providers()
+        providers = [provider for provider in list_providers() if provider.enabled]
         discovered = {}
         for provider in providers:
             discovered[provider.name] = await _provider_live(provider)

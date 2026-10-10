@@ -5,6 +5,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from mandri.cli.mcp import run_mcp_command
+from mandri.cli.mcp_args import add_mcp_parser
 from mandri.cli.providers import run_provider_command
 from mandri.cli.providers_args import add_providers_parser
 from mandri.cli.run import RunCommand
@@ -26,7 +28,15 @@ from mandri.core.version import __version__
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    return dispatch_args(build_parser().parse_args(argv))
+    values = list(sys.argv[1:] if argv is None else argv)
+    tail: list[str] = []
+    if values[:2] in (["mcp", "add"], ["mcp", "update"]) and "--" in values:
+        index = values.index("--")
+        values, tail = values[:index], values[index + 1 :]
+    args = build_parser().parse_args(values)
+    if tail:
+        args.mcp_argv = tail
+    return dispatch_args(args)
 
 
 def dispatch_args(args: argparse.Namespace) -> int:
@@ -34,6 +44,8 @@ def dispatch_args(args: argparse.Namespace) -> int:
         return _run_command(args)
     if args.command == "sessions":
         return run_sessions_command(args)
+    if args.command == "mcp":
+        return run_mcp_command(args)
     return run_provider_command(args)
 
 
@@ -64,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_sessions_parser(subparsers)
     add_providers_parser(subparsers)
+    add_mcp_parser(subparsers)
     return parser
 
 

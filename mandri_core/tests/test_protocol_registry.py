@@ -75,6 +75,7 @@ def test_topics_registry_contents() -> None:
         "agent.{id}",
         "runtimes",
         "gateway.events",
+        "mcp.events",
         "usage.changed",
     }
     for spec in TOPICS.values():

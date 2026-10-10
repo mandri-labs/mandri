@@ -35,6 +35,8 @@ class WorkerIngress:
         self._gateway_port = gateway_port
         self._route_prefix = f"/v1/gateway/llm/{route_id}/" if route_id else None
         self._route_token = token
+        self._mcp_paths: set[str] = set()
+        self._mcp_token: str | None = None
         self._hook_path: str | None = None
         self._hook_token: str | None = None
         self._client = httpx.AsyncClient(timeout=None, trust_env=False)
@@ -43,7 +45,13 @@ class WorkerIngress:
         self._socket: socket.socket | None = None
         self.port: int | None = None
         self.socket_path: Path | None = None
-        self.app = Starlette(routes=[Route("/{path:path}", self.forward, methods=["GET", "POST"])])
+        self.app = Starlette(
+            routes=[Route("/{path:path}", self.forward, methods=["GET", "POST", "DELETE"])]
+        )
+
+    def set_mcp(self, paths: set[str], token: str) -> None:
+        self._mcp_paths = paths
+        self._mcp_token = token
 
     def set_hook(self, session_id: str, token: str) -> None:
         self._hook_path = f"/v1/runtime/agy/{session_id}/hook"
@@ -55,6 +63,8 @@ class WorkerIngress:
             return False
         if self._route_prefix and path.startswith(self._route_prefix):
             expected = self._route_token
+        elif path in self._mcp_paths:
+            expected = self._mcp_token
         elif path == self._hook_path:
             expected = self._hook_token
         else:

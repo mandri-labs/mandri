@@ -11,6 +11,7 @@ from codex_cli_bin import bundled_codex_path
 from mandri.cli.agy_run import AgyRunProfile, close_agy_run, prepare_agy_run, wait_agy_process
 from mandri.cli.daemon_client import base_url, error_message, request
 from mandri.cli.daemon_command import DaemonCommand
+from mandri.cli.mcp_binding import CliMcpBinding
 from mandri.cli.native_run import NativeRunCommand
 from mandri.cli.run_errors import (
     DaemonUnreachableError,
@@ -23,6 +24,8 @@ from mandri.config.toml_adapter import TomlConfigAdapter
 from mandri.core.catalog_file import materialize_catalog
 from mandri.core.ids import HARNESS_WIRE_FORMATS, HarnessKind
 from mandri.core.launch import ModelMetadata, build_harness_launch, merged_env
+from mandri.core.mcp_launch import mcp_launch
+from mandri.core.mcp_names import avoid_collisions
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode
 from mandri.sessions.agy_binary import find_agy_binary
 from mandri.sessions.agy_profiles import configure_agy_model
@@ -49,6 +52,7 @@ class RunCommand(DaemonCommand):
         self._binary: Path | None = None
         self._agy_profile: AgyRunProfile | None = None
         self._catalogs: tempfile.TemporaryDirectory[str] | None = None
+        self._mcp: CliMcpBinding | None = None
 
     def run(self) -> int:
         defaults = TomlConfigAdapter(self._spec.base_dir).load().defaults
@@ -75,6 +79,8 @@ class RunCommand(DaemonCommand):
                     close_agy_run(self._agy_profile)
                 if self._catalogs is not None:
                     self._catalogs.cleanup()
+                if self._mcp is not None:
+                    self._mcp.close()
 
     def _build_run_plan(self) -> RunPlan:
         spec = self._spec
@@ -97,6 +103,16 @@ class RunCommand(DaemonCommand):
         if self._agy_profile is not None:
             configure_agy_model(self._agy_profile.root, env)
         args = list(launch.args)
+        self._mcp = CliMcpBinding(url, spec.harness)
+        if self._mcp.binding is not None:
+            binding, diagnostics = avoid_collisions(
+                spec.harness, self._mcp.binding, env, spec.cwd or Path.cwd()
+            )
+            for diagnostic in diagnostics:
+                self._console.log(f"MCP: {diagnostic}")
+            mcp = mcp_launch(spec.harness, binding, env)
+            args.extend(mcp.args)
+            env.update(mcp.env)
         if spec.harness is HarnessKind.CODEX:
             if self._catalogs is None:
                 self._catalogs = tempfile.TemporaryDirectory(prefix="mandri-codex-models-")

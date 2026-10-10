@@ -127,6 +127,9 @@
         "interaction_mode": {
           "$ref": "#/components/messages/interaction_mode"
         },
+        "mcpEvents": {
+          "$ref": "#/components/messages/mcpEvents"
+        },
         "ping": {
           "$ref": "#/components/messages/ping"
         },
@@ -1825,6 +1828,54 @@
           "$ref": "#/components/schemas/InteractionModeFrame"
         },
         "title": "InteractionModeFrame"
+      },
+      "mcpEvents": {
+        "description": "MCP server health changes.",
+        "payload": {
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "raw": {
+              "$ref": "#/components/schemas/McpEvent"
+            },
+            "seq": {
+              "title": "Seq",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "ts": {
+              "title": "Ts",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "topic",
+            "seq",
+            "source",
+            "raw",
+            "ts"
+          ],
+          "title": "EventFrame",
+          "type": "object"
+        },
+        "title": "mcp.events"
       },
       "ping": {
         "payload": {
@@ -4180,6 +4231,29 @@
         "title": "InteractionModeFrame",
         "type": "object"
       },
+      "McpEvent": {
+        "properties": {
+          "deleted": {
+            "default": false,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "server_id"
+        ],
+        "title": "McpEvent",
+        "type": "object"
+      },
       "ParentAgentCapabilities": {
         "properties": {
           "create": {
@@ -5431,6 +5505,30 @@
         }
       ],
       "title": "Subscribe to gateway.events"
+    },
+    "mcpEvents.events": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/mcpEvents"
+        }
+      ],
+      "title": "mcp.events events"
+    },
+    "mcpEvents.subscribe": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/subscribe"
+        }
+      ],
+      "title": "Subscribe to mcp.events"
     },
     "request": {
       "action": "receive",

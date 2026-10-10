@@ -33,6 +33,7 @@ class ProviderConfig:
     kind: str
     api_base: str | None = None
     api_key: str = ""
+    enabled: bool = True
 
 
 @dataclass(frozen=True)

@@ -50,6 +50,7 @@ from mandri.core.types.execution import (
     PrivacyMode,
     ProtectionError,
 )
+from mandri.core.types.mcp import McpEvent
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 Direction = Literal["send", "receive"]
@@ -151,6 +152,7 @@ class TopicSpec:
 
 
 TOPICS: dict[str, TopicSpec] = {
+    "mcp.events": TopicSpec("mcp.events", McpEvent, "send", "MCP server health changes."),
     "conversations.all": TopicSpec(
         "conversations.all",
         ConversationStatusPayload,

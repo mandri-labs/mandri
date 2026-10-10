@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock
 import httpx
 import litellm
 import pytest
-from mandri.core.ids import ModelRef, ProviderKind, RouteId, SecretRef
-from mandri.gateway.litellm_adapter import OpenAIHandler, _credentials
+from mandri.core.ids import ProviderKind, RouteId, SecretRef
+from mandri.gateway.litellm_adapter import AnthropicHandler, OpenAIHandler, _credentials
 from mandri.gateway.provider_call import provider_call
 from mandri.gateway.route_registry import ResolvedRoute
 from mandri.gateway.types.model import Model
 from mandri.gateway.unauthenticated_client import unauthenticated_client
-from mandri.providers.service import Provider, ProviderState
+from mandri.providers.service import Provider, ProviderState, provider_model_ref
 
 
 def route(kind=ProviderKind.CUSTOM, key=""):
@@ -27,7 +27,7 @@ def route(kind=ProviderKind.CUSTOM, key=""):
         ),
         model=Model(
             provider=kind,
-            model_ref=ModelRef("openai/local-model"),
+            model_ref=provider_model_ref(kind, "local-model"),
             api_base="http://local-provider.test/v1",
             api_key=SecretRef(key),
         ),
@@ -36,7 +36,10 @@ def route(kind=ProviderKind.CUSTOM, key=""):
 
 @pytest.mark.parametrize("kind", [ProviderKind.CUSTOM, ProviderKind.LM_STUDIO])
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_keyless_provider_never_sends_ambient_credentials(monkeypatch, kind, streaming):
+@pytest.mark.parametrize("protocol", ["chat", "anthropic"])
+async def test_keyless_provider_never_sends_ambient_credentials(
+    monkeypatch, kind, streaming, protocol
+):
     requests = []
     transports = []
 
@@ -53,7 +56,10 @@ async def test_keyless_provider_never_sends_ambient_credentials(monkeypatch, kin
                 content=(
                     'data: {"id":"test","object":"chat.completion.chunk","created":0,'
                     '"model":"local-model","choices":[{"index":0,"delta":{"content":"ok"},'
-                    '"finish_reason":null}]}\n\ndata: [DONE]\n\n'
+                    '"finish_reason":null}]}\n\n'
+                    'data: {"id":"test","object":"chat.completion.chunk","created":0,'
+                    '"model":"local-model","choices":[],"usage":{"prompt_tokens":6,'
+                    '"completion_tokens":3,"total_tokens":9}}\n\ndata: [DONE]\n\n'
                 ),
             )
         return httpx.Response(
@@ -63,6 +69,7 @@ async def test_keyless_provider_never_sends_ambient_credentials(monkeypatch, kin
                 "object": "chat.completion",
                 "created": 0,
                 "model": "local-model",
+                "usage": {"prompt_tokens": 6, "completion_tokens": 3, "total_tokens": 9},
                 "choices": [
                     {
                         "index": 0,
@@ -86,12 +93,30 @@ async def test_keyless_provider_never_sends_ambient_credentials(monkeypatch, kin
         transport,
     )
     for _ in range(2):
-        result = await OpenAIHandler().chat_completions(
-            route(kind), {"messages": [{"role": "user", "content": "test"}], "stream": streaming}
-        )
+        body = {"messages": [{"role": "user", "content": "test"}], "stream": streaming}
+        if protocol == "anthropic":
+            result = await AnthropicHandler().messages(route(kind), {**body, "max_tokens": 100})
+        else:
+            result = await OpenAIHandler().chat_completions(route(kind), body)
         if streaming:
             chunks = [chunk async for chunk in result]
-            assert any(chunk.choices[0].delta.content == "ok" for chunk in chunks)
+            if protocol == "anthropic":
+                assert any(b'"text": "ok"' in chunk for chunk in chunks)
+                events = [
+                    json.loads(line[6:])
+                    for chunk in chunks
+                    for line in chunk.decode().splitlines()
+                    if line.startswith("data: ")
+                ]
+                assert any(
+                    event.get("usage") == {"input_tokens": 6, "output_tokens": 3}
+                    for event in events
+                )
+            else:
+                assert any(chunk.choices[0].delta.content == "ok" for chunk in chunks)
+        elif protocol == "anthropic":
+            assert result["content"] == [{"type": "text", "text": "ok"}]
+            assert result["usage"] == {"input_tokens": 6, "output_tokens": 3}
         else:
             assert result.choices[0].message.content == "ok"
     assert len(requests) == 2

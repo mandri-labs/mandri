@@ -236,9 +236,12 @@ class AnthropicHandler:
         safeguards = payload.pop("safeguards", None)
         if safeguards is not None:
             payload["extra_body"] = {**payload.get("extra_body", {}), "safeguards": safeguards}
+        model_ref = str(route.model.model_ref)
+        if route.model.provider is ProviderKind.CUSTOM:
+            model_ref = "custom_openai/" + model_ref.removeprefix("openai/")
         try:
             kwargs = {
-                "model": str(route.model.model_ref),
+                "model": model_ref,
                 "drop_params": True,
                 "num_retries": 0,
                 "timeout": _STREAM_TIMEOUT if stream else _CALL_TIMEOUT_SECONDS,

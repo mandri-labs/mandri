@@ -23,7 +23,7 @@ from mandri.sessions.transcripts.resolver import TranscriptResolver
 from .substitutes import make_session
 
 
-@pytest.fixture(params=["0.154.0", "0.157.0", "0.159.0", "0.161.0"])
+@pytest.fixture(params=["0.154.0", "0.157.0", "0.159.0", "0.161.0", "0.162.1"])
 def native_source(tmp_path: Path, request):
     workspace = tmp_path / "workspace"
     (workspace / "api/src").mkdir(parents=True)
@@ -55,7 +55,7 @@ def native_source(tmp_path: Path, request):
         "payload": {"id": "native-1", "cli_version": request.param, "cwd": "/workspace/api/src"},
     }
     turn = {"type": "response_item", "payload": {"type": "message", "content": "synthetic"}}
-    if request.param == "0.161.0":
+    if request.param in {"0.161.0", "0.162.1"}:
         metadata["ordinal"] = 0
         metadata["payload"]["session_id"] = "native-1"
         metadata["payload"]["history_mode"] = "paginated"

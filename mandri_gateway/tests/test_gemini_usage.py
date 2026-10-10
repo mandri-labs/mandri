@@ -1,4 +1,5 @@
 import json
+from types import MappingProxyType
 from unittest.mock import AsyncMock
 
 import httpx
@@ -203,3 +204,27 @@ async def test_stream_tool_call_content_survives_usage_translation(monkeypatch, 
     assert [
         item["usageMetadata"]["totalTokenCount"] for item in payloads if "usageMetadata" in item
     ] == [140]
+
+
+async def test_stream_accepts_read_only_adapter_payload(monkeypatch):
+    payload = MappingProxyType({"candidates": [], "usageMetadata": {"totalTokenCount": 0}})
+    monkeypatch.setattr(
+        GoogleGenAIAdapter,
+        "translate_streaming_completion_to_generate_content",
+        lambda self, chunk, state: payload,
+    )
+    terminal = chunk(usage={"prompt_tokens": 123, "completion_tokens": 17, "total_tokens": 140})
+    monkeypatch.setattr("litellm.acompletion", AsyncMock(return_value=chunks(terminal)))
+    result = await generate_content(model="custom_openai/fixture", stream=True, contents=[])
+    observed = [json.loads(raw.decode()[6:]) async for raw in result]
+    assert observed == [
+        {
+            "candidates": [],
+            "usageMetadata": {
+                "promptTokenCount": 123,
+                "candidatesTokenCount": 17,
+                "totalTokenCount": 140,
+            },
+        }
+    ]
+    assert payload["usageMetadata"] == {"totalTokenCount": 0}

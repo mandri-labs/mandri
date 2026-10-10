@@ -1,5 +1,5 @@
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 import litellm
@@ -42,7 +42,8 @@ def usage_metadata(response: ModelResponse | ModelResponseStream) -> dict[str, i
     return result
 
 
-def _with_usage(payload: dict[str, Any], response: Any) -> dict[str, Any]:
+def _with_usage(payload: Mapping[str, object], response: Any) -> dict[str, Any]:
+    payload = dict(payload)
     payload.pop("usageMetadata", None)
     usage = usage_metadata(response)
     if usage:

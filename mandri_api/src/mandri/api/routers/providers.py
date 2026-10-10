@@ -9,7 +9,8 @@ from mandri.api.errors import ERROR_RESPONSES, NOT_FOUND, NOT_FOUND_CONFLICT, Ap
 from mandri.core.ids import ProviderKind
 from mandri.gateway.catalog_enrichment import enrich_entries
 from mandri.gateway.model_capabilities import metadata_capabilities
-from mandri.gateway.reasoning_catalog import parse_chatgpt_entry, parse_lm_studio_entry
+from mandri.gateway.reasoning_catalog import enrich_reasoning_entries
+from mandri.gateway.reasoning_metadata import parse_reasoning_entry
 from mandri.providers.catalog import model_entries
 from mandri.providers.chatgpt_login import ChatGptLoginSession
 from mandri.providers.errors import (
@@ -262,10 +263,11 @@ def _model_out(wiring: GatewayWiring, provider: Provider, entry: dict[str, Any])
     provider_name = provider.name
     catalog = wiring.reasoning_catalog
     info = None if catalog is None else catalog.lookup(provider_name, f"{provider_name}/{model_id}")
-    if provider.kind is ProviderKind.LM_STUDIO:
-        info = parse_lm_studio_entry(entry) or info
-    if provider.kind is ProviderKind.CHATGPT:
-        info = parse_chatgpt_entry(entry) or info
+    live = parse_reasoning_entry(entry)
+    if live is not None:
+        info = live
+        if catalog is not None:
+            catalog.update(provider_name, model_id, live)
     capabilities = metadata_capabilities(entry)
     reasoning = capabilities["reasoning_supported"]
     if reasoning is None and info is not None:
@@ -326,4 +328,7 @@ async def list_provider_models(
             status=502,
         ) from None
     entries = await enrich_entries(provider.kind, entries, client)
+    entries = await enrich_reasoning_entries(provider, entries)
+    if wiring.reasoning_catalog is not None:
+        wiring.reasoning_catalog.register(provider)
     return [_model_out(wiring, provider, entry) for entry in entries]

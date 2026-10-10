@@ -1,23 +1,34 @@
 """Reasoning effort catalog per provider model, resolved at daemon startup."""
 
-import dataclasses
 import logging
+import re
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 from mandri.core.ids import ProviderKind
-from mandri.gateway.model_metadata import openrouter_reasoning_efforts
+from mandri.gateway.reasoning_metadata import (
+    ReasoningInfo as ReasoningInfo,
+)
+from mandri.gateway.reasoning_metadata import (
+    parse_reasoning_entry,
+    parse_template_reasoning,
+)
+from mandri.providers.catalog import model_entries
 from mandri.providers.chatgpt.codex_models import catalog_entry, models_url
 from mandri.providers.chatgpt.identity import request_headers as chatgpt_headers
 from mandri.providers.refs import MODEL_REF_PREFIXES
 from mandri.providers.service import Provider, ProvidersRegistry
-from mandri.providers.verify import lm_studio_base, models_params
+from mandri.providers.verify import (
+    lm_studio_base,
+    models_endpoint,
+    models_headers,
+    models_params,
+)
 
 _TIMEOUT_SECONDS = 10.0
 _MODELS_DEV_URL = "https://models.dev/api.json"
 _LM_STUDIO_MODELS_PATH = "/api/v1/models"
-_OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api"
 _MODELS_DEV_IDS: dict[ProviderKind, str] = {
     ProviderKind.OPENROUTER: "openrouter",
     ProviderKind.OPENAI: "openai",
@@ -31,28 +42,8 @@ _MODELS_DEV_IDS: dict[ProviderKind, str] = {
 logger = logging.getLogger(__name__)
 
 
-@dataclasses.dataclass(frozen=True)
-class ReasoningInfo:
-    efforts: list[str]
-    default_effort: str | None = None
-
-
 def parse_models_dev_entry(entry: Any) -> ReasoningInfo | None:
-    if not isinstance(entry, dict):
-        return None
-    options = entry.get("reasoning_options")
-    if isinstance(options, dict):
-        options = [options]
-    if not isinstance(options, list):
-        return None
-    efforts: list[str] = []
-    for option in options:
-        if not isinstance(option, dict) or option.get("type") != "effort":
-            continue
-        values = option.get("values")
-        if isinstance(values, list):
-            efforts.extend(value for value in values if isinstance(value, str))
-    return _normalize(efforts)
+    return parse_reasoning_entry(entry)
 
 
 def parse_lm_studio_entry(entry: Any) -> ReasoningInfo | None:
@@ -120,21 +111,6 @@ async def _fetch_json(url: str, headers: dict[str, str], body: dict[str, str] | 
     except (httpx.HTTPError, ValueError) as error:
         logger.warning("reasoning catalog fetch failed for %s: %s", url, error)
         return None
-
-
-async def _openrouter_live(base: str, api_key: str) -> dict[str, ReasoningInfo]:
-    payload = await _fetch_json(base.rstrip("/") + "/v1/models", _auth_headers(api_key))
-    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
-        return {}
-    catalog: dict[str, ReasoningInfo] = {}
-    for entry in payload["data"]:
-        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
-            continue
-        efforts = list(openrouter_reasoning_efforts(entry))
-        info = _normalize(efforts)
-        if info is not None:
-            catalog[entry["id"]] = info
-    return catalog
 
 
 async def _models_dev_catalog() -> dict[str, dict[str, ReasoningInfo]]:
@@ -265,16 +241,30 @@ def _merge(
 
 
 class ReasoningCatalog:
-    def __init__(self, entries: dict[tuple[str, str], ReasoningInfo] | None = None) -> None:
+    def __init__(
+        self,
+        entries: dict[tuple[str, str], ReasoningInfo] | None = None,
+        models_dev: dict[str, dict[str, ReasoningInfo]] | None = None,
+    ) -> None:
         self._entries = dict(entries or {})
+        self._fallback = models_dev or {}
+        self._custom_providers: set[str] = set()
 
     @classmethod
     async def build(cls, list_providers: Callable[[], list[Provider]]) -> "ReasoningCatalog":
         entries: dict[tuple[str, str], ReasoningInfo] = {}
+        providers = list_providers()
+        discovered = {}
+        for provider in providers:
+            discovered[provider.name] = await _provider_live(provider)
         models_dev = await _models_dev_catalog()
-        for provider in list_providers():
-            await _merge_provider(entries, provider, models_dev)
-        return cls(entries)
+        for provider in providers:
+            fallback = _models_dev_provider(provider, models_dev)
+            _merge(entries, provider.name, fallback)
+            _merge(entries, provider.name, discovered[provider.name])
+        catalog = cls(entries, models_dev)
+        catalog._custom_providers = {p.name for p in providers if p.kind is ProviderKind.CUSTOM}
+        return catalog
 
     def lookup(self, provider_name: str, model_ref: str) -> ReasoningInfo | None:
         prefix = provider_name + "/"
@@ -284,35 +274,106 @@ class ReasoningCatalog:
             return info
         tail = bare.rpartition("/")[2]
         if tail and tail != bare:
-            return self._entries.get((provider_name, tail))
+            info = self._entries.get((provider_name, tail))
+            if info is not None:
+                return info
+        if provider_name in self._custom_providers:
+            return _search_models_dev(bare, self._fallback)
         return None
 
+    def update(self, provider_name: str, model_id: str, info: ReasoningInfo) -> None:
+        self._entries[(provider_name, model_id)] = info
 
-async def _merge_provider(
-    entries: dict[tuple[str, str], ReasoningInfo],
-    provider: Provider,
-    models_dev: dict[str, dict[str, ReasoningInfo]],
-) -> None:
+    def register(self, provider: Provider) -> None:
+        if provider.kind is ProviderKind.CUSTOM:
+            self._custom_providers.add(provider.name)
+        for model_id, info in _models_dev_provider(provider, self._fallback).items():
+            self._entries.setdefault((provider.name, model_id), info)
+
+
+async def _provider_live(provider: Provider) -> dict[str, ReasoningInfo]:
     base = str(provider.api_base) if provider.api_base else ""
     if provider.kind is ProviderKind.CHATGPT:
-        _merge(
-            entries,
-            provider.name,
-            await _chatgpt_probe(base, str(provider.api_key)),
-        )
-        return
-    _merge(entries, provider.name, _models_dev_provider(provider, models_dev))
+        return await _chatgpt_probe(base, str(provider.api_key))
     if provider.kind is ProviderKind.LM_STUDIO and base:
-        _merge(entries, provider.name, await _lm_studio_probe(base, str(provider.api_key)))
+        return await _lm_studio_probe(base, str(provider.api_key))
     if provider.kind is ProviderKind.OLLAMA and base:
-        _merge(entries, provider.name, await _ollama_probe(base, str(provider.api_key)))
-    if provider.kind is ProviderKind.OPENROUTER:
-        openrouter_base = base or _OPENROUTER_DEFAULT_BASE
-        _merge(
-            entries,
-            provider.name,
-            await _openrouter_live(openrouter_base, str(provider.api_key)),
-        )
+        return await _ollama_probe(base, str(provider.api_key))
+    if not base and provider.kind in {
+        ProviderKind.CUSTOM,
+        ProviderKind.LM_STUDIO,
+        ProviderKind.OLLAMA,
+    }:
+        return {}
+    payload = await _fetch_json(
+        models_endpoint(provider.kind, provider.api_base),
+        models_headers(provider.kind, str(provider.api_key)),
+    )
+    try:
+        models = model_entries(provider.kind, payload)
+    except ValueError:
+        return {}
+    models = await enrich_reasoning_entries(provider, models)
+    return {
+        entry["id"]: info for entry in models if (info := parse_reasoning_entry(entry)) is not None
+    }
+
+
+async def enrich_reasoning_entries(
+    provider: Provider, models: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    if provider.kind is not ProviderKind.CUSTOM or not provider.api_base:
+        return models
+    if not any(parse_reasoning_entry(entry) is None for entry in models):
+        return models
+    props = await _fetch_json(
+        str(provider.api_base).rstrip("/").removesuffix("/v1") + "/props",
+        models_headers(provider.kind, str(provider.api_key)),
+    )
+    if not isinstance(props, dict):
+        return models
+    model_id = props.get("model_alias")
+    info = parse_reasoning_entry(props) or parse_template_reasoning(props.get("chat_template"))
+    if info is None:
+        return models
+    return [
+        {
+            **entry,
+            "reasoning_efforts": info.efforts,
+            "default_effort": info.default_effort,
+            **({"reasoning": False} if not info.efforts else {}),
+        }
+        if parse_reasoning_entry(entry) is None
+        and (entry["id"] == model_id or entry.get("alias_of") == model_id)
+        else entry
+        for entry in models
+    ]
+
+
+def _normalized_model_id(model_id: str) -> str:
+    name = model_id.rpartition("/")[2].lower().removesuffix(".gguf")
+    return re.sub(r"[-_:](?:i?q[0-9]+(?:_[a-z0-9]+)*|bf16|fp16|f16|fp32|f32)$", "", name)
+
+
+def _search_models_dev(
+    model_id: str, catalog: dict[str, dict[str, ReasoningInfo]]
+) -> ReasoningInfo | None:
+    name = _normalized_model_id(model_id)
+    matches = [
+        info
+        for models in catalog.values()
+        for candidate, info in models.items()
+        if _normalized_model_id(candidate) == name
+    ]
+    if not matches:
+        return None
+    efforts = [effort for effort in matches[0].efforts if all(effort in m.efforts for m in matches)]
+    if not efforts:
+        return None
+    default = matches[0].default_effort
+    if not all(m.default_effort == default for m in matches):
+        default = None
+    return ReasoningInfo(efforts, default if default in efforts else None)
 
 
 async def build_reasoning_catalog(providers: ProvidersRegistry) -> ReasoningCatalog:

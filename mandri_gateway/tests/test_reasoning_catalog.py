@@ -287,3 +287,114 @@ async def test_live_capabilities_are_provider_scoped_and_override_static_catalog
     assert catalog.lookup("ollama", "plain") == ReasoningInfo([])
     assert sum(url.endswith("/api/v1/models") for url, _ in calls) == 1
     assert sum(url.endswith("/api/show") for url, _ in calls) == 2
+
+
+async def test_custom_api_precedes_models_dev_and_preserves_missing_model_fallback(fetch_recorder):
+    calls = fetch_recorder(
+        {
+            "http://localhost:9999/v1/models": {
+                "data": [
+                    {"id": "shared", "reasoning": {"supported_efforts": ["low", "high"]}},
+                    {"id": "missing"},
+                ]
+            },
+            "https://models.dev/api.json": {
+                "local": {
+                    "models": {
+                        "shared": {"reasoning_options": {"type": "effort", "values": ["medium"]}},
+                        "missing": {"reasoning_options": {"type": "effort", "values": ["medium"]}},
+                    }
+                }
+            },
+        }
+    )
+    catalog = await ReasoningCatalog.build(
+        lambda: [_provider("local", ProviderKind.CUSTOM, "http://localhost:9999/v1", "secret")]
+    )
+    assert calls[0] == ("http://localhost:9999/v1/models", {"Authorization": "Bearer secret"})
+    assert catalog.lookup("local", "local/shared") == ReasoningInfo(["low", "high"])
+    assert catalog.lookup("local", "local/missing") == ReasoningInfo(["medium"])
+
+
+@pytest.mark.parametrize("payload", [None, {}, {"data": "invalid"}, {"data": []}])
+async def test_custom_api_failure_still_searches_models_dev(fetch_recorder, payload):
+    fetch_recorder(
+        {
+            "http://localhost:9999/v1/models": payload,
+            "https://models.dev/api.json": {
+                "vendor": {
+                    "models": {
+                        "org/local-model": {
+                            "reasoning_options": {"type": "effort", "values": ["low", "high"]}
+                        },
+                    }
+                }
+            },
+        }
+    )
+    catalog = await ReasoningCatalog.build(
+        lambda: [_provider("local", ProviderKind.CUSTOM, "http://localhost:9999/v1")]
+    )
+    assert catalog.lookup("local", "local/local-model-iq2_xs") == ReasoningInfo(["low", "high"])
+    assert catalog.lookup("local", "local/local-model-other") is None
+
+
+async def test_cross_provider_fallback_only_exposes_agreed_options(fetch_recorder):
+    fetch_recorder(
+        {
+            "https://models.dev/api.json": {
+                "a": {"models": {"model": {"reasoning_efforts": ["low", "medium", "high"]}}},
+                "b": {"models": {"model": {"reasoning_efforts": ["low", "medium", "xhigh"]}}},
+            }
+        }
+    )
+    catalog = await ReasoningCatalog.build(
+        lambda: [_provider("local", ProviderKind.CUSTOM, "http://localhost:9999/v1")]
+    )
+    assert catalog.lookup("local", "local/model-q4_k_m.gguf") == ReasoningInfo(["low", "medium"])
+
+
+async def test_props_are_model_scoped_and_cannot_override_explicit_options(fetch_recorder):
+    fetch_recorder(
+        {
+            "http://localhost:9999/v1/models": {
+                "data": [
+                    {"id": "model"},
+                    {"id": "alias", "alias_of": "model"},
+                    {"id": "other"},
+                    {"id": "explicit", "alias_of": "model", "reasoning_efforts": ["medium"]},
+                ]
+            },
+            "http://localhost:9999/props": {
+                "model_alias": "model",
+                "chat_template": "{% if reasoning_effort not in ('low', 'high') %}"
+                "{{ raise_exception('no') }}{% endif %}",
+            },
+        }
+    )
+    catalog = await ReasoningCatalog.build(
+        lambda: [_provider("local", ProviderKind.CUSTOM, "http://localhost:9999/v1")]
+    )
+    assert catalog.lookup("local", "model") == ReasoningInfo(["low", "high"])
+    assert catalog.lookup("local", "alias") == ReasoningInfo(["low", "high"])
+    assert catalog.lookup("local", "other") is None
+    assert catalog.lookup("local", "explicit") == ReasoningInfo(["medium"])
+
+
+async def test_api_disabled_reasoning_overrides_models_dev(fetch_recorder):
+    fetch_recorder(
+        {
+            "http://localhost:9999/v1/models": {"data": [{"id": "model", "reasoning": False}]},
+            "https://models.dev/api.json": {
+                "local": {
+                    "models": {
+                        "model": {"reasoning_efforts": ["high"]},
+                    }
+                }
+            },
+        }
+    )
+    catalog = await ReasoningCatalog.build(
+        lambda: [_provider("local", ProviderKind.CUSTOM, "http://localhost:9999/v1")]
+    )
+    assert catalog.lookup("local", "model") == ReasoningInfo([])

@@ -7,6 +7,8 @@ from typing import Any
 
 from mandri.core.clock import system_now_ms
 from mandri.core.types.usage import UsageAccount
+from mandri.runtime.agy_auth import require_agy_authentication
+from mandri.runtime.agy_probe import agy_probe_env
 from mandri.runtime.process import ManagedProcess, spawn
 from mandri.sessions.usage.accounts import codex_account_snapshot
 
@@ -91,13 +93,14 @@ class NativeAccountReader:
 
 
 async def _agy_usage(binary: Path, cwd: Path, env: Mapping[str, str]) -> Mapping[str, Any]:
+    await require_agy_authentication([str(binary)], cwd)
     process: ManagedProcess | None = None
     tasks: list[asyncio.Task[bytes]] = []
     try:
         process = await spawn(
             [str(binary), "-p", "/usage", "--output-format", "json"],
             cwd=cwd,
-            env={**env, "AGY_CLI_DISABLE_AUTO_UPDATE": "true"},
+            env=agy_probe_env(env),
             line_limit=256 * 1024,
         )
         tasks = [

@@ -12,7 +12,7 @@ from mandri.runtime.native_catalog import NativeModel, discover_models
 from mandri.runtime.native_launch import native_launch
 from mandri.runtime.process import ManagedProcess
 from mandri.runtime.session_state import RuntimeStates
-from mandri.sessions.agy_profiles import prepare_agy_profile
+from mandri.sessions.agy_profiles import default_agy_root
 from mandri.sessions.errors import SessionConflictError
 from mandri.sessions.service import SessionsService
 
@@ -57,9 +57,7 @@ class ModelSelectionService:
         kind = HarnessKind(harness)
         plan = native_launch(kind)
         if kind is HarnessKind.AGY:
-            profile = prepare_agy_profile(
-                self._agy_profiles, "catalog", native=True, canonical_root=self._agy_home
-            )
+            profile = self._agy_home or default_agy_root()
             command = [command[0], "--gemini_dir", str(profile), "models"]
         rows = await discover_models(
             kind,

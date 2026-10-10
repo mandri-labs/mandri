@@ -7,6 +7,8 @@ from typing import Any
 from mandri.core.clock import system_now_ms
 from mandri.core.ids import HarnessKind
 from mandri.core.types.usage import UsageAccount
+from mandri.runtime.agy_auth import require_agy_authentication
+from mandri.runtime.agy_probe import agy_probe_env
 from mandri.runtime.control.errors import ControlTransportError
 from mandri.runtime.control.stdio_rpc import StdioRpcConnection
 from mandri.runtime.process import ManagedProcess
@@ -73,6 +75,9 @@ async def read_native_usage(
     env: Mapping[str, str],
     spawn: Callable[..., Awaitable[ManagedProcess]],
 ) -> list[UsageAccount]:
+    if harness is HarnessKind.AGY:
+        await require_agy_authentication(command, cwd)
+        env = agy_probe_env(env)
     process = await spawn(command, cwd=cwd, env=env, line_limit=1024 * 1024)
     stderr = asyncio.create_task(_drain(process, harness))
     try:

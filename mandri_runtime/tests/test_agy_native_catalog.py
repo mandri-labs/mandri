@@ -11,6 +11,8 @@ from mandri.runtime.native_catalog import discover_models
 from mandri.runtime.native_launch import native_launch
 from mandri.runtime.session_state import RuntimeStates
 
+pytestmark = pytest.mark.usefixtures("agy_native_credentials")
+
 
 def process_with(lines: list[str], code: int = 0):
     remaining = iter([*lines, ""])
@@ -31,12 +33,14 @@ async def test_agy_catalog_preserves_native_slugs_without_inventing_effort_metad
             "claude-example\tClaude Example (Thinking)\n",
         ]
     )
+    spawn = AsyncMock(return_value=process)
+    env = {"AGY_CLI_INTERACTIVE_HEADLESS": "true", "AGY_CLI_NONINTERACTIVE_HEADLESS": "false"}
     models = await discover_models(
         HarnessKind.AGY,
         ["agy", "models"],
         "synthetic-workspace",
-        {},
-        AsyncMock(return_value=process),
+        env,
+        spawn,
     )
     assert [model.id for model in models] == [
         "default",
@@ -46,6 +50,12 @@ async def test_agy_catalog_preserves_native_slugs_without_inventing_effort_metad
     ]
     assert models[1].display_name == "Gemini Example (High)"
     assert all(model.reasoning_efforts == () and model.default_effort is None for model in models)
+    assert spawn.call_args.kwargs["env"] == {
+        "AGY_CLI_NONINTERACTIVE_HEADLESS": "true",
+        "AGY_CLI_DISABLE_AUTO_UPDATE": "true",
+    }
+    assert env["AGY_CLI_INTERACTIVE_HEADLESS"] == "true"
+    assert env["AGY_CLI_NONINTERACTIVE_HEADLESS"] == "false"
     process.write_stdin.assert_not_called()
     process.stop.assert_awaited_once_with(grace=1)
 
@@ -104,8 +114,6 @@ async def test_catalog_uses_google_profile_and_strips_gateway_credentials(
     ):
         monkeypatch.setenv(key, "synthetic-gateway-value")
     monkeypatch.setenv("SYNTHETIC_PRESERVED_SETTING", "keep")
-    prepare = Mock(return_value=Path("synthetic-profile"))
-    monkeypatch.setattr("mandri.runtime.model_selection.prepare_agy_profile", prepare)
     service = ModelSelectionService(
         {"agy": ["agy", "-p", "--input-format", "stream-json"]},
         RuntimeStates(),
@@ -117,13 +125,7 @@ async def test_catalog_uses_google_profile_and_strips_gateway_credentials(
     spawn = AsyncMock(return_value=process)
     models = await service.native_models("agy", "synthetic-workspace", spawn)
     assert models[1].id == "gemini-example"
-    prepare.assert_called_once_with(
-        Path("synthetic-profiles-root"),
-        "catalog",
-        native=True,
-        canonical_root=Path("synthetic-native-root"),
-    )
-    assert spawn.call_args.args == (["agy", "--gemini_dir", "synthetic-profile", "models"],)
+    assert spawn.call_args.args == (["agy", "--gemini_dir", "synthetic-native-root", "models"],)
     env = spawn.call_args.kwargs["env"]
     assert env["SYNTHETIC_PRESERVED_SETTING"] == "keep"
     assert all(
@@ -137,6 +139,23 @@ async def test_catalog_uses_google_profile_and_strips_gateway_credentials(
     )
     assert await service.native_models("agy", "synthetic-workspace", spawn) == models
     spawn.assert_awaited_once()
+
+
+async def test_model_catalog_uses_native_file_credentials(monkeypatch, tmp_path, agy_oauth_token):
+    monkeypatch.setattr("mandri.runtime.agy_auth._stored_credential", lambda: None)
+    store = tmp_path / "native/antigravity-cli"
+    (store / "cache").mkdir(parents=True)
+    (store / "cache/antigravity-keyring-unavailable").touch()
+    (store / "antigravity-oauth-token").write_text(agy_oauth_token, encoding="utf-8")
+    profiles = tmp_path / "separate-profiles"
+    service = ModelSelectionService(
+        {"agy": ["agy"]}, RuntimeStates(), None, tmp_path / "native", profiles
+    )
+    spawn = AsyncMock(return_value=process_with(["gemini-example\tGemini Example\n"]))
+    rows = await service.native_models("agy", str(tmp_path), spawn)
+    assert rows[1].id == "gemini-example"
+    assert spawn.call_args.args[0] == ["agy", "--gemini_dir", str(tmp_path / "native"), "models"]
+    assert not profiles.exists()
 
 
 def test_explicit_native_effort_and_resume_are_forwarded_without_gateway_auth() -> None:

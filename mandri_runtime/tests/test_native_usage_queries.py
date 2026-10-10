@@ -8,6 +8,8 @@ from mandri.core.ids import HarnessKind
 from mandri.runtime.control.errors import ControlTransportError
 from mandri.runtime.native_usage import read_native_usage
 
+pytestmark = pytest.mark.usefixtures("agy_native_credentials")
+
 
 class QuotaProcess:
     def __init__(self, responses):
@@ -129,6 +131,25 @@ async def test_agy_reads_structured_command_groups_without_using_response_text()
     assert "private text" not in repr(result)
     assert process.messages == []
     process.stop.assert_awaited_once()
+
+
+@pytest.mark.parametrize("interactive", [None, "true", "false"])
+async def test_agy_quota_reads_force_noninteractive_authentication(interactive):
+    process = QuotaProcess([{"status": "SUCCESS", "command": {"data": {}}}])
+    spawn = AsyncMock(return_value=process)
+    env = {"PATH": "synthetic", "AGY_CLI_NONINTERACTIVE_HEADLESS": "false"}
+    if interactive is not None:
+        env["AGY_CLI_INTERACTIVE_HEADLESS"] = interactive
+    original = dict(env)
+    await read_native_usage(
+        HarnessKind.AGY, "profile", ["agy", "-p", "/usage"], Path("/empty"), env, spawn
+    )
+    launched = spawn.call_args.kwargs["env"]
+    assert launched["AGY_CLI_NONINTERACTIVE_HEADLESS"] == "true"
+    assert launched["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"
+    assert "AGY_CLI_INTERACTIVE_HEADLESS" not in launched
+    assert launched["PATH"] == "synthetic"
+    assert env == original
 
 
 async def test_agy_login_prompt_fails_immediately_and_stops_the_process():

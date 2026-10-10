@@ -14,7 +14,7 @@ from mandri.runtime.docker_command_catalog import DockerCommandDiscovery
 from mandri.runtime.native_command_catalog import discover_commands
 from mandri.runtime.native_launch import native_launch
 from mandri.runtime.process import ManagedProcess
-from mandri.sessions.agy_profiles import prepare_agy_profile
+from mandri.sessions.agy_profiles import default_agy_root
 
 
 def create_command_catalog_cache(
@@ -54,12 +54,7 @@ def create_command_catalog_cache(
             argument == "--gemini_dir" or argument.startswith("--gemini_dir=")
             for argument in command
         ):
-            profile = prepare_agy_profile(
-                profiles_dir,
-                "command-catalog",
-                native=True,
-                canonical_root=Path(sessions.agy_home) if sessions.agy_home else None,
-            )
+            profile = Path(sessions.agy_home) if sessions.agy_home else default_agy_root()
             command.extend(("--gemini_dir", str(profile)))
         return await discover_commands(kind, command, scope.cwd or default_cwd, env, spawn)
 

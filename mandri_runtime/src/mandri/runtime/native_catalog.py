@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from mandri.core.ids import HarnessKind
+from mandri.runtime.agy_auth import require_agy_authentication
+from mandri.runtime.agy_probe import agy_probe_env
 from mandri.runtime.control.errors import ControlTransportError
 from mandri.runtime.control.pi_rpc import PiRpcConnection
 from mandri.runtime.control.stdio_rpc import StdioRpcConnection
@@ -86,6 +88,9 @@ async def discover_models(
 ) -> list[NativeModel]:
     if harness is HarnessKind.PI and "--no-session" not in command:
         command = [*command, "--no-session"]
+    if harness is HarnessKind.AGY:
+        await require_agy_authentication(command, cwd)
+        env = agy_probe_env(env)
     process = await spawn(command, cwd=cwd, env=env)
     stderr = asyncio.create_task(_drain_stderr(process))
     connection = StdioRpcConnection(process)

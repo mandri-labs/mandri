@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx
 from mandri.core.ids import HarnessKind
+from mandri.runtime.agy_auth import require_agy_authentication
+from mandri.runtime.agy_probe import agy_probe_env
 from mandri.runtime.control.agy_commands import AgyCommandRunner
 from mandri.runtime.control.claude_commands import ClaudeCommands
 from mandri.runtime.control.codex_commands import CodexCommands
@@ -97,6 +99,8 @@ async def discover_commands(
     if not command:
         raise ControlError("No native harness executable is configured")
     if harness is HarnessKind.AGY:
+        await require_agy_authentication(command, cwd)
+        env = agy_probe_env(env)
 
         async def launch(argv: list[str]) -> ManagedProcess:
             return await spawn(argv, cwd=cwd, env=env)

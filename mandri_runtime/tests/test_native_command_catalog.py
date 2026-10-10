@@ -108,7 +108,9 @@ async def test_claude_only_initializes_and_preserves_dynamic_metadata():
     assert "--no-session-persistence" in spawn.call_args.args[0]
 
 
-async def test_agy_help_preserves_profile_and_never_starts_stream_conversation():
+async def test_agy_help_preserves_profile_and_never_starts_stream_conversation(
+    agy_native_credentials,
+):
     process = CatalogProcess(
         [
             {
@@ -125,7 +127,11 @@ async def test_agy_help_preserves_profile_and_never_starts_stream_conversation()
         HarnessKind.AGY,
         ["agy", "--gemini_dir", "/profiles/catalog", "--input-format", "stream-json"],
         "/work",
-        {"AGY_CLI_DISABLE_AUTO_UPDATE": "true"},
+        {
+            "AGY_CLI_DISABLE_AUTO_UPDATE": "true",
+            "AGY_CLI_INTERACTIVE_HEADLESS": "true",
+            "AGY_CLI_NONINTERACTIVE_HEADLESS": "false",
+        },
         spawn,
     )
     assert result[0]["name"] == "future-command"
@@ -139,6 +145,10 @@ async def test_agy_help_preserves_profile_and_never_starts_stream_conversation()
         "json",
     ]
     assert spawn.call_args.kwargs["cwd"] == "/work"
+    assert spawn.call_args.kwargs["env"] == {
+        "AGY_CLI_DISABLE_AUTO_UPDATE": "true",
+        "AGY_CLI_NONINTERACTIVE_HEADLESS": "true",
+    }
     process.stop.assert_awaited_once()
 
 

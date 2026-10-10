@@ -172,6 +172,9 @@ def test_catalog_entry_keeps_slug_and_efforts() -> None:
         }
     )
     assert entry == {
+        "slug": "gpt-5.6-sol",
+        "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}],
+        "default_reasoning_level": "high",
         "id": "gpt-5.6-sol",
         "display_name": "GPT-5.6 Sol",
         "reasoning_efforts": ["low", "high"],

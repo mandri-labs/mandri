@@ -19,12 +19,13 @@ from mandri.api.routers._gateway_privacy import (
     upstream_response,
 )
 from mandri.core.ids import RouteId, WireFormat
+from mandri.core.model_metadata import ModelMetadata
 from mandri.core.protocol.types import RouteId as ApiRouteId
 from mandri.core.types.execution import PrivacyMode, ProtectionError
 from mandri.gateway.auth import child_token_from_headers
 from mandri.gateway.dropped_params import dropped_params
 from mandri.gateway.errors.upstream import RouteNotFoundError, UpstreamError
-from mandri.gateway.listings import anthropic_listing, codex_listing, openai_listing
+from mandri.gateway.listings import anthropic_listing, codex_listing, gemini_listing, openai_listing
 from mandri.gateway.litellm_adapter import (
     upstream_error,
 )
@@ -384,14 +385,22 @@ async def _serve_model_metadata(
         provider.api_base,
         str(provider.api_key),
     )
-    if metadata is None:
-        raise ApiError(
-            code="model_metadata_unavailable",
-            message=f"no metadata for {model_arg}",
-            status=404,
+    metadata = metadata or ModelMetadata()
+    info = lookup_efforts(wiring, model_arg)
+    if info is not None:
+        metadata = metadata.with_fallback(
+            ModelMetadata(
+                reasoning_efforts=tuple(info.efforts),
+                default_reasoning_effort=info.default_effort,
+                reasoning_supported=bool(info.efforts),
+            ).with_source("reasoning_catalog")
         )
     payload = metadata.to_payload()
-    payload["reasoning"] = _reasoning_payload(lookup_efforts(wiring, model_arg))
+    payload["reasoning"] = _reasoning_payload(
+        ReasoningInfo(list(metadata.reasoning_efforts), metadata.default_reasoning_effort)
+        if metadata.reasoning_efforts is not None
+        else None
+    )
     return JSONResponse(content=payload)
 
 
@@ -768,7 +777,8 @@ async def _serve_models_listing(
     request: Request,
     error_builder: Callable[[int, str], dict[str, Any]],
     builder: Callable[[str], dict[str, Any]],
-    builder_override: Callable[[str, ReasoningInfo | None], dict[str, Any]] | None = None,
+    builder_override: Callable[[str, ReasoningInfo | None, ModelMetadata | None], dict[str, Any]]
+    | None = None,
 ) -> Response:
     unauthorized = _authorize(wiring, route_id, request, error_builder)
     if unauthorized is not None:
@@ -783,7 +793,13 @@ async def _serve_models_listing(
         reasoning = _governed_reasoning(
             wiring, resolved.provider.name, str(resolved.model.model_ref)
         )
-        return JSONResponse(content=builder_override(model_id, reasoning))
+        metadata = await fetch_model_metadata(
+            resolved.provider.kind,
+            str(resolved.model.model_ref),
+            resolved.provider.api_base,
+            str(resolved.provider.api_key),
+        )
+        return JSONResponse(content=builder_override(model_id, reasoning, metadata))
     return JSONResponse(content=builder(model_id))
 
 
@@ -799,6 +815,40 @@ async def anthropic_list_models(
 @router.get("/llm/{route_id}/models", operation_id="openai_list_models")
 async def openai_list_models(route_id: ApiRouteId, request: Request, wiring: Gateway) -> Response:
     return await _serve_models_listing(wiring, route_id, request, _openai_error, openai_listing)
+
+
+async def _gemini_model_metadata(
+    wiring: GatewayWiring, route_id: str, request: Request
+) -> Response:
+    unauthorized = _authorize(wiring, route_id, request, _gemini_error)
+    if unauthorized is not None:
+        return unauthorized
+    try:
+        resolved = await wiring.registry.resolve(RouteId(route_id))
+    except (RouteNotFoundError, ProviderNotFoundError) as error:
+        return JSONResponse(status_code=404, content=_gemini_error(404, str(error)))
+    metadata = await fetch_model_metadata(
+        resolved.provider.kind,
+        str(resolved.model.model_ref),
+        resolved.provider.api_base,
+        str(resolved.provider.api_key),
+    )
+    return JSONResponse(content=gemini_listing("mandri-route", metadata or ModelMetadata()))
+
+
+@router.get("/llm/{route_id}/v1beta/models", operation_id="gemini_list_models")
+async def gemini_list_models(route_id: ApiRouteId, request: Request, wiring: Gateway) -> Response:
+    response = await _gemini_model_metadata(wiring, route_id, request)
+    if response.status_code != 200:
+        return response
+    return JSONResponse(content={"models": [json.loads(bytes(response.body))]})
+
+
+@router.get("/llm/{route_id}/v1beta/models/{model_name}", operation_id="gemini_get_model")
+async def gemini_get_model(
+    route_id: ApiRouteId, model_name: str, request: Request, wiring: Gateway
+) -> Response:
+    return await _gemini_model_metadata(wiring, route_id, request)
 
 
 @router.post(

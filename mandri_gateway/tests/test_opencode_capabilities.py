@@ -26,7 +26,10 @@ def test_unknown_capabilities_stay_enabled(metadata):
     assert all(entry[key] for key in ("reasoning", "attachment", "tool_call", "temperature"))
     assert entry["interleaved"] == {"field": "reasoning_content"}
     assert set(entry["modalities"]["input"]) == {"text", "image", "audio", "video", "pdf"}
-    assert entry["limit"]["context"] > entry["limit"]["output"] > 0
+    if metadata is not None and metadata.available_context is not None:
+        assert entry["limit"]["context"] > entry["limit"]["output"] > 0
+    else:
+        assert "limit" not in entry
 
 
 @pytest.mark.parametrize(

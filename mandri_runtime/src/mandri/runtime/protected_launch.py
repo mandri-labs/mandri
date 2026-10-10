@@ -41,6 +41,7 @@ def _opencode_config(env: dict[str, str], base: str, token: str) -> str:
         provider = config["provider"]["mandri"]
         options = provider["options"]
         models = provider["models"]
+        native = config["providers"]["mandri"]
         if (
             not isinstance(config, dict)
             or not isinstance(models, dict)
@@ -48,6 +49,11 @@ def _opencode_config(env: dict[str, str], base: str, token: str) -> str:
             or provider["npm"] != "@ai-sdk/openai-compatible"
             or options["baseURL"] != f"{base}/v1"
             or options["apiKey"] != token
+            or native["package"] != "@opencode/ai/providers/openai-compatible"
+            or native["settings"]["baseURL"] != f"{base}/v1"
+            or native["settings"]["apiKey"] != token
+            or not isinstance(native["models"], dict)
+            or GATEWAY_MODEL_ID not in native["models"]
         ):
             raise ValueError
     except (KeyError, ValueError, TypeError):
@@ -76,4 +82,5 @@ def _opencode_config(env: dict[str, str], base: str, token: str) -> str:
     config.update(model=GATEWAY_MODEL_REF, small_model=GATEWAY_MODEL_REF)
     config["enabled_providers"] = ["mandri"]
     config["provider"] = {"mandri": provider}
+    config["providers"] = {"mandri": native}
     return json.dumps(config)

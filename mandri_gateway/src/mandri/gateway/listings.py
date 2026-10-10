@@ -1,28 +1,11 @@
 """Bound-model listing payloads in provider-native shapes."""
 
+import json
 from typing import Any
 
+from mandri.core.codex_catalog import catalog
+from mandri.core.model_metadata import ModelMetadata
 from mandri.gateway.reasoning_catalog import ReasoningInfo
-
-_DEFAULT_EFFORTS = ("none", "low", "medium", "high")
-_EFFORT_DESCRIPTIONS = {
-    "none": "No reasoning effort",
-    "off": "No reasoning effort",
-}
-_TRUNCATION_LIMIT_BYTES = 20000
-
-
-def _effort_description(effort: str) -> str:
-    return _EFFORT_DESCRIPTIONS.get(effort, f"Reasoning effort {effort}")
-
-
-def _reasoning_levels(reasoning: ReasoningInfo | None) -> list[dict[str, str]]:
-    efforts = (
-        list(reasoning.efforts)
-        if reasoning is not None and reasoning.efforts
-        else list(_DEFAULT_EFFORTS)
-    )
-    return [{"effort": effort, "description": _effort_description(effort)} for effort in efforts]
 
 
 def anthropic_listing(model_id: str) -> dict[str, Any]:
@@ -48,22 +31,26 @@ def openai_listing(model_id: str) -> dict[str, Any]:
     return {"object": "list", "data": [entry]}
 
 
-def codex_listing(model_id: str, reasoning: ReasoningInfo | None = None) -> dict[str, Any]:
-    default_level = (
-        reasoning.default_effort if reasoning is not None and reasoning.default_effort else "none"
-    )
-    entry = {
-        "slug": model_id,
-        "display_name": model_id,
-        "supported_in_api": True,
-        "supported_reasoning_levels": _reasoning_levels(reasoning),
-        "default_reasoning_level": default_level,
-        "shell_type": "unified_exec",
-        "visibility": "list",
-        "priority": 0,
-        "support_verbosity": False,
-        "truncation_policy": {"mode": "bytes", "limit": _TRUNCATION_LIMIT_BYTES},
-        "experimental_supported_tools": [],
-        "input_modalities": ["text", "image"],
-    }
-    return {"models": [entry], "base_instructions": ""}
+def codex_listing(
+    model_id: str, reasoning: ReasoningInfo | None = None, metadata: ModelMetadata | None = None
+) -> dict[str, Any]:
+    metadata = metadata or ModelMetadata()
+    if reasoning is not None:
+        metadata = metadata.with_fallback(
+            ModelMetadata(
+                reasoning_efforts=tuple(reasoning.efforts),
+                default_reasoning_effort=reasoning.default_effort,
+                reasoning_supported=bool(reasoning.efforts),
+            )
+        )
+    result: dict[str, Any] = json.loads(catalog(model_id, metadata))
+    return result
+
+
+def gemini_listing(model_id: str, metadata: ModelMetadata) -> dict[str, Any]:
+    entry: dict[str, Any] = {"name": f"models/{model_id}", "displayName": model_id}
+    if metadata.available_context is not None:
+        entry["inputTokenLimit"] = metadata.input_tokens or metadata.available_context
+    if metadata.output_tokens is not None:
+        entry["outputTokenLimit"] = metadata.output_tokens
+    return entry

@@ -3594,6 +3594,99 @@
         ]
       }
     },
+    "/v1/gateway/llm/{route_id}/v1beta/models": {
+      "get": {
+        "operationId": "gemini_list_models",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "description": "Route identifier (36-char lowercase uuid4)",
+              "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+              "title": "Route Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Gemini List Models",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/v1/gateway/llm/{route_id}/v1beta/models/{model_name}": {
+      "get": {
+        "operationId": "gemini_get_model",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "description": "Route identifier (36-char lowercase uuid4)",
+              "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+              "title": "Route Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_name",
+            "required": true,
+            "schema": {
+              "title": "Model Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Gemini Get Model",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
     "/v1/gateway/llm/{route_id}/v1beta/models/{model_name}:generateContent": {
       "post": {
         "operationId": "gemini_generate",

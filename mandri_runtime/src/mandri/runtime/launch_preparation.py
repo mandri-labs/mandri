@@ -5,12 +5,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from mandri.core.catalog_file import materialize_catalog
 from mandri.core.ids import HarnessKind, HarnessSessionId
 from mandri.core.pi import managed_extension_path
 from mandri.core.types.execution import PrivacyMode, ProtectionError
 from mandri.gateway.model_metadata import ModelMetadata
 from mandri.runtime import wiring
-from mandri.runtime.codex_catalog import materialize_catalog
 from mandri.runtime.control import modes
 from mandri.runtime.native_launch import native_launch
 from mandri.runtime.protected_launch import protected_launch

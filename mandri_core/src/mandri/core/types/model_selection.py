@@ -21,10 +21,10 @@ _GATEWAY = HarnessModelCapabilities()
 _NATIVE = (ModelSource.GATEWAY, ModelSource.NATIVE)
 _HARNESS_MODELS = MappingProxyType(
     {
-        HarnessKind.CODEX: HarnessModelCapabilities(_NATIVE),
-        HarnessKind.CLAUDE: HarnessModelCapabilities(_NATIVE),
+        HarnessKind.CODEX: HarnessModelCapabilities(_NATIVE, gateway_model_requires_restart=True),
+        HarnessKind.CLAUDE: HarnessModelCapabilities(_NATIVE, gateway_model_requires_restart=True),
         HarnessKind.OPENCODE: HarnessModelCapabilities(gateway_model_requires_restart=True),
-        HarnessKind.AGY: HarnessModelCapabilities(_NATIVE),
+        HarnessKind.AGY: HarnessModelCapabilities(_NATIVE, gateway_model_requires_restart=True),
         HarnessKind.PI: HarnessModelCapabilities(
             _NATIVE,
             gateway_model_requires_restart=True,

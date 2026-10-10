@@ -11,6 +11,7 @@ from mandri.core.types.model_selection import ModelSource
 from mandri.sessions.adapters.agy_sessions import AgySessionsAdapter
 from mandri.sessions.agents.agy import AgyAgentDiscovery
 from mandri.sessions.agy_profiles import (
+    configure_agy_model,
     merge_agy_hooks,
     prepare_agy_profile,
     read_agy_json,
@@ -148,6 +149,37 @@ def test_profiles_share_history_without_mutating_global_settings(tmp_path: Path)
     assert read_agy_json(canonical / "antigravity-cli/settings.json") == settings
     assert read_agy_json(profile / "config/projects/project.json") == {"name": "Synthetic project"}
     assert path.is_file()
+
+
+def test_gateway_metadata_preserves_native_custom_model_settings(tmp_path: Path) -> None:
+    path = tmp_path / "antigravity-cli/settings.json"
+    write_agy_json(
+        path,
+        {
+            "customModelsConfig": {
+                "customModels": {
+                    "mandri": {
+                        "contextWindow": 32768,
+                        "maxTokens": 4096,
+                        "modelFeatures": {"contextWindowCompression": True},
+                    },
+                    "personal": {"modelName": "personal"},
+                }
+            }
+        },
+    )
+    configure_agy_model(tmp_path, {"MANDRI_AGY_MODEL": json.dumps({"maxTokens": 65536})})
+    models = read_agy_json(path)["customModelsConfig"]["customModels"]
+    assert models["mandri"] == {
+        "contextWindow": 32768,
+        "maxTokens": 65536,
+        "modelFeatures": {"contextWindowCompression": True},
+        "modelName": "mandri-route",
+    }
+    assert models["personal"] == {"modelName": "personal"}
+    previous = read_agy_json(path)
+    configure_agy_model(tmp_path, {})
+    assert read_agy_json(path) == previous
 
 
 def test_purge_removes_only_target_and_reconciles_indexes(

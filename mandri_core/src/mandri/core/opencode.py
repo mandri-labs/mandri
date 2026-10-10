@@ -21,7 +21,6 @@ def model_entry(metadata: ModelMetadata | None) -> dict[str, Any]:
     reasoning = metadata.reasoning_supported is not False
     entry: dict[str, Any] = {
         "name": "Mandri Gateway",
-        "limit": {"context": metadata.context_window, "output": metadata.output_tokens},
         "reasoning": reasoning,
         "attachment": metadata.attachment is not False,
         "tool_call": metadata.tool_call is not False,
@@ -36,8 +35,45 @@ def model_entry(metadata: ModelMetadata | None) -> dict[str, Any]:
             ),
         },
     }
+    limits = {
+        key: value
+        for key, value in (
+            ("context", metadata.available_context),
+            ("input", metadata.input_tokens),
+            ("output", metadata.output_tokens),
+        )
+        if value is not None
+    }
+    if limits:
+        entry["limit"] = limits
     if reasoning and metadata.reasoning_efforts:
         entry["variants"] = {
             effort: {"reasoningEffort": effort} for effort in metadata.reasoning_efforts
         }
     return entry
+
+
+def provider_entry(route_base: str, token: str, metadata: ModelMetadata | None) -> dict[str, Any]:
+    legacy = model_entry(metadata)
+    entry: dict[str, Any] = {
+        "name": legacy["name"],
+        "capabilities": {
+            "tools": legacy["tool_call"],
+            "input": legacy["modalities"]["input"],
+            "output": legacy["modalities"]["output"],
+        },
+    }
+    if "limit" in legacy:
+        entry["limit"] = legacy["limit"]
+    if "variants" in legacy:
+        entry["variants"] = [
+            {"id": name, "settings": {"reasoningEffort": name}} for name in legacy["variants"]
+        ]
+    if legacy["reasoning"]:
+        entry["compatibility"] = {"reasoningField": "reasoning_content"}
+    return {
+        "name": "Mandri Gateway",
+        "package": "@opencode/ai/providers/openai-compatible",
+        "settings": {"baseURL": route_base, "apiKey": token},
+        "models": {GATEWAY_MODEL_ID: entry},
+    }

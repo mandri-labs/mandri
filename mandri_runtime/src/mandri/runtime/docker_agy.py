@@ -9,7 +9,12 @@ from mandri.runtime.control.modes import agy_launch_args
 from mandri.runtime.docker_config import NATIVE_HOME, WORKSPACE_ROOT
 from mandri.runtime.docker_ingress import WorkerIngress
 from mandri.runtime.launch_preparation import PreparedLaunch
-from mandri.sessions.agy_profiles import merge_agy_hooks, read_agy_json, write_agy_json
+from mandri.sessions.agy_profiles import (
+    configure_agy_model,
+    merge_agy_hooks,
+    read_agy_json,
+    write_agy_json,
+)
 
 
 def prepare_docker_agy(
@@ -28,10 +33,10 @@ def prepare_docker_agy(
     profile = state / ".gemini"
     settings = read_agy_json(profile / "antigravity-cli/settings.json")
     settings.update(enableTelemetry=False, useG1Credits=False, modelProvider="gemini")
-    settings.setdefault("customModelsConfig", {}).setdefault("customModels", {})["mandri"] = {
-        "modelName": "mandri-route"
-    }
+    custom = settings.setdefault("customModelsConfig", {}).setdefault("customModels", {})
+    custom["mandri"] = {**custom.get("mandri", {}), "modelName": "mandri-route"}
     write_agy_json(profile / "antigravity-cli/settings.json", settings)
+    configure_agy_model(profile, prepared.env)
     for name in ("conversations", "brain"):
         (profile / "antigravity-cli" / name).mkdir(parents=True, exist_ok=True)
 

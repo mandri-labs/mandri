@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from mandri.runtime.codex_catalog import materialize_catalog
+from mandri.core.catalog_file import materialize_catalog
 from mandri.runtime.docker_client import DockerClient
 from mandri.runtime.docker_config import (
     GENERATION_LABEL,

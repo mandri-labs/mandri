@@ -85,6 +85,6 @@ async def test_gateway_switch_restarts_only_for_launch_bound_settings(
     )
     runtime._session_state("session").launched_model = (ModelSource.GATEWAY, "provider/old", "low")
     assert await runtime._models.needs_restart("session") is (
-        (harness in (HarnessKind.OPENCODE, HarnessKind.PI) and changed_model)
+        changed_model
         or (harness is HarnessKind.PI and changed_effort)
     )

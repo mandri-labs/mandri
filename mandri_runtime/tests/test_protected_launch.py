@@ -117,6 +117,7 @@ def test_opencode_helpers_keep_permissions_and_only_use_the_scoped_provider() ->
     config = json.loads(prepared.env["OPENCODE_CONFIG_CONTENT"])
     assert config["enabled_providers"] == ["mandri"]
     assert list(config["provider"]) == ["mandri"]
+    assert list(config["providers"]) == ["mandri"]
     assert config["model"] == config["small_model"] == "mandri/mandri_gateway"
     assert config["permission"] == extra["permission"]
     assert config["agent"] == {
@@ -131,6 +132,16 @@ def test_opencode_provider_adapter_override_fails_before_launch(field: str, valu
     launch = build_harness_launch(HarnessKind.OPENCODE, 8175, "synthetic-route", "chosen", "token")
     config = json.loads(launch.env["OPENCODE_CONFIG_CONTENT"])
     config["provider"]["mandri"][field] = value
+    altered = replace(launch, env={"OPENCODE_CONFIG_CONTENT": json.dumps(config)})
+    with pytest.raises(ProtectionError, match="provider configuration"):
+        protected_launch(altered, HarnessKind.OPENCODE, 8175, "synthetic-route", "token", "chosen")
+
+
+@pytest.mark.parametrize("field,value", [("package", "unqualified-sdk"), ("settings", {})])
+def test_opencode_native_provider_override_fails_before_launch(field: str, value: Any) -> None:
+    launch = build_harness_launch(HarnessKind.OPENCODE, 8175, "synthetic-route", "chosen", "token")
+    config = json.loads(launch.env["OPENCODE_CONFIG_CONTENT"])
+    config["providers"]["mandri"][field] = value
     altered = replace(launch, env={"OPENCODE_CONFIG_CONTENT": json.dumps(config)})
     with pytest.raises(ProtectionError, match="provider configuration"):
         protected_launch(altered, HarnessKind.OPENCODE, 8175, "synthetic-route", "token", "chosen")

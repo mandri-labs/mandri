@@ -20,6 +20,18 @@ def capability(entry: dict[str, Any], name: str, *parameters: str) -> bool | Non
             value = optional_bool(source.get(name))
             if value is not None:
                 return value
+    template = entry.get("chat_template_caps")
+    if isinstance(template, dict):
+        aliases = {"tool_call": ("supports_tool_calls", "supports_tools")}
+        for key in aliases.get(name, ()):
+            value = optional_bool(template.get(key))
+            if value is not None:
+                return value
+    advertised = optional_strings(capabilities)
+    if advertised is not None:
+        advertised_names = {"tool_call": "tools", "reasoning": "thinking", "vision": "vision"}
+        if name in advertised_names:
+            return advertised_names[name] in advertised
     supported = optional_strings(entry.get("supported_parameters"))
     if parameters and supported is not None:
         return any(parameter in supported for parameter in parameters)
@@ -32,6 +44,10 @@ def metadata_capabilities(entry: dict[str, Any]) -> dict[str, Any]:
     if attachment is None and inputs is not None:
         attachment = any(item != "text" for item in inputs)
     vision = capability(entry, "vision")
+    if vision is None:
+        modalities_info = entry.get("modalities")
+        if isinstance(modalities_info, dict):
+            vision = optional_bool(modalities_info.get("vision"))
     tools = capability(entry, "tool_call", "tools", "tool_choice")
     if tools is None:
         tools = capability(entry, "trained_for_tool_use")
@@ -45,7 +61,9 @@ def metadata_capabilities(entry: dict[str, Any]) -> dict[str, Any]:
     return {
         "input_modalities": inputs,
         "output_modalities": modalities(entry, "output"),
-        "image_input": "image" in inputs if inputs is not None else vision,
+        "image_input": vision
+        if vision is not None
+        else ("image" in inputs if inputs is not None else None),
         "reasoning_supported": reasoning,
         "tool_call": tools,
         "attachment": attachment,

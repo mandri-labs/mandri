@@ -3,7 +3,9 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from mandri.core.ids import ProviderKind
+from mandri.gateway.chat_usage_transport import chat_usage_transport
 from mandri.gateway.chatgpt_adapter import ChatGptAdapter
+from mandri.gateway.output_budget import retry_kwargs
 from mandri.gateway.privacy_call import guarded_call
 from mandri.gateway.privacy_egress import EgressGuard, provider_base
 from mandri.gateway.privacy_transport import install_transport_observers
@@ -17,11 +19,14 @@ async def provider_call(
     kwargs: dict[str, Any],
     guard: EgressGuard | None,
 ) -> Any:
+    install_transport_observers()
     client = kwargs.get("client")
     if client is None:
-        return await _provider_call(route, call, kwargs, guard)
+        with chat_usage_transport():
+            return await _provider_call(route, call, kwargs, guard)
     try:
-        result = await _provider_call(route, call, kwargs, guard)
+        with chat_usage_transport():
+            result = await _provider_call(route, call, kwargs, guard)
     except BaseException:
         await client.close()
         raise
@@ -45,6 +50,21 @@ async def _client_stream(stream: AsyncIterator[Any], client: Any) -> AsyncIterat
 
 
 async def _provider_call(
+    route: ResolvedRoute,
+    call: Callable[..., Awaitable[Any]],
+    kwargs: dict[str, Any],
+    guard: EgressGuard | None,
+) -> Any:
+    try:
+        return await _attempt_provider_call(route, call, kwargs, guard)
+    except Exception as error:
+        fallback = retry_kwargs(kwargs, error)
+        if fallback is None:
+            raise
+        return await _attempt_provider_call(route, call, fallback, guard)
+
+
+async def _attempt_provider_call(
     route: ResolvedRoute,
     call: Callable[..., Awaitable[Any]],
     kwargs: dict[str, Any],

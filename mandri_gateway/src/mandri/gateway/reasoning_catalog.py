@@ -1,12 +1,12 @@
 """Reasoning effort catalog per provider model, resolved at daemon startup."""
 
 import logging
-import re
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 from mandri.core.ids import ProviderKind
+from mandri.gateway.model_matching import normalized_model_id
 from mandri.gateway.reasoning_metadata import (
     ReasoningInfo as ReasoningInfo,
 )
@@ -350,20 +350,15 @@ async def enrich_reasoning_entries(
     ]
 
 
-def _normalized_model_id(model_id: str) -> str:
-    name = model_id.rpartition("/")[2].lower().removesuffix(".gguf")
-    return re.sub(r"[-_:](?:i?q[0-9]+(?:_[a-z0-9]+)*|bf16|fp16|f16|fp32|f32)$", "", name)
-
-
 def _search_models_dev(
     model_id: str, catalog: dict[str, dict[str, ReasoningInfo]]
 ) -> ReasoningInfo | None:
-    name = _normalized_model_id(model_id)
+    name = normalized_model_id(model_id)
     matches = [
         info
         for models in catalog.values()
         for candidate, info in models.items()
-        if _normalized_model_id(candidate) == name
+        if normalized_model_id(candidate) == name
     ]
     if not matches:
         return None

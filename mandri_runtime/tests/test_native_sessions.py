@@ -143,13 +143,15 @@ async def test_pending_native_change_reuses_session_only_once():
     assert runtime._routes.mock_calls == []
 
 
-async def test_gateway_selection_keeps_existing_route_update_path():
+async def test_gateway_selection_restarts_to_refresh_launch_metadata():
     session = dataclasses.replace(record(), model_source=ModelSource.GATEWAY, model="provider/new")
     runtime, _ = runtime_for(session)
     runtime._session_state("session-1").launched_model = (ModelSource.GATEWAY, "provider/old", None)
     runtime.stop_session = AsyncMock()
+    runtime._resume_session = AsyncMock()
     await runtime._apply_pending_model("session-1")
-    runtime.stop_session.assert_not_awaited()
+    runtime.stop_session.assert_awaited_once_with("session-1", restore_native=False)
+    runtime._resume_session.assert_awaited_once_with("session-1")
 
 
 def test_native_launch_preserves_harness_settings_and_removes_gateway_auth():

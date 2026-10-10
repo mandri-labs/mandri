@@ -20,6 +20,7 @@ def catalog_entry(entry: Any) -> dict[str, Any] | None:
     if not isinstance(slug, str) or not slug:
         return None
     result: dict[str, Any] = {
+        **entry,
         "id": slug,
         "display_name": entry.get("display_name") or slug,
         "reasoning_efforts": _efforts(entry),

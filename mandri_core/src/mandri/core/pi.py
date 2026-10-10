@@ -21,13 +21,21 @@ def model_entry(model: str, metadata: ModelMetadata | None = None) -> dict[str, 
     entry: dict[str, Any] = {
         "id": GATEWAY_MODEL_ID,
         "name": model,
-        "reasoning": capabilities.reasoning_supported is True
-        or bool(capabilities.reasoning_efforts),
-        "input": ["text", "image"] if capabilities.image_input is True else ["text"],
-        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
-        "contextWindow": capabilities.context_window,
-        "maxTokens": capabilities.output_tokens,
     }
+    if capabilities.reasoning_supported is not None or capabilities.reasoning_efforts:
+        entry["reasoning"] = capabilities.reasoning_supported is not False
+    if capabilities.input_modalities is not None:
+        inputs = [item for item in capabilities.input_modalities if item in ("text", "image")]
+        if capabilities.image_input is False:
+            inputs = [item for item in inputs if item != "image"]
+        if inputs:
+            entry["input"] = inputs
+    elif capabilities.image_input is not None:
+        entry["input"] = ["text", "image"] if capabilities.image_input else ["text"]
+    if capabilities.available_context is not None:
+        entry["contextWindow"] = capabilities.available_context
+    if capabilities.output_tokens is not None:
+        entry["maxTokens"] = capabilities.output_tokens
     if capabilities.reasoning_efforts:
         entry["thinkingLevelMap"] = {
             level: level if level in capabilities.reasoning_efforts else None

@@ -1,65 +1,41 @@
-"""Tests for the Codex bound-model listing payload."""
+import json
 
-from mandri.gateway.listings import codex_listing
+from mandri.core.codex_catalog import catalog
+from mandri.core.model_metadata import ModelMetadata
+from mandri.gateway.listings import codex_listing, gemini_listing
 from mandri.gateway.reasoning_catalog import ReasoningInfo
 
-_REQUIRED_MODEL_KEYS = (
-    "slug",
-    "display_name",
-    "supported_in_api",
-    "supported_reasoning_levels",
-    "shell_type",
-    "visibility",
-    "priority",
-    "support_verbosity",
-    "truncation_policy",
-    "experimental_supported_tools",
-    "input_modalities",
-)
 
-
-def test_codex_listing_has_full_model_info_shape() -> None:
-    payload = codex_listing("z-ai/glm-5.2")
-    assert payload["base_instructions"] == ""
-    entry = payload["models"][0]
-    assert entry["slug"] == "z-ai/glm-5.2"
-    assert entry["display_name"] == "z-ai/glm-5.2"
+def test_listing_preserves_the_native_prompt_and_capabilities():
+    native = json.loads(catalog("fixture", ModelMetadata()))
+    assert codex_listing("fixture") == native
+    entry = native["models"][0]
+    assert entry["model_messages"]["instructions_template"]
+    assert entry["shell_type"] == "shell_command"
     assert entry["supported_in_api"] is True
-    for key in _REQUIRED_MODEL_KEYS:
-        assert key in entry
-    assert entry["shell_type"] == "unified_exec"
-    assert entry["visibility"] == "list"
-    assert isinstance(entry["priority"], int)
-    assert entry["support_verbosity"] is False
-    assert entry["truncation_policy"]["mode"] == "bytes"
-    assert isinstance(entry["truncation_policy"]["limit"], int)
-    assert entry["experimental_supported_tools"] == []
-    assert entry["input_modalities"] == ["text", "image"]
 
 
-def test_codex_listing_default_levels_without_catalog() -> None:
-    entry = codex_listing("m1")["models"][0]
-    assert [level["effort"] for level in entry["supported_reasoning_levels"]] == [
-        "none",
-        "low",
-        "medium",
-        "high",
-    ]
-    assert all(level["description"] for level in entry["supported_reasoning_levels"])
-    assert entry["default_reasoning_level"] == "none"
-
-
-def test_codex_listing_uses_catalog_efforts_and_default() -> None:
+def test_known_efforts_are_filtered_to_levels_the_harness_understands():
     reasoning = ReasoningInfo(efforts=["off", "on", "medium"], default_effort="medium")
-    entry = codex_listing("m1", reasoning)["models"][0]
-    assert [level["effort"] for level in entry["supported_reasoning_levels"]] == [
-        "off",
-        "on",
-        "medium",
-    ]
+    entry = codex_listing("fixture", reasoning)["models"][0]
+    assert [level["effort"] for level in entry["supported_reasoning_levels"]] == ["medium"]
     assert entry["default_reasoning_level"] == "medium"
 
 
-def test_codex_listing_is_backward_compatible_without_reasoning() -> None:
-    payload = codex_listing("m1")
-    assert set(payload) == {"models", "base_instructions"}
+def test_explicit_metadata_takes_precedence_over_reasoning_fallback():
+    entry = codex_listing(
+        "fixture",
+        ReasoningInfo(efforts=["high"], default_effort="high"),
+        ModelMetadata(context_window=65536, reasoning_supported=False, reasoning_efforts=()),
+    )["models"][0]
+    assert entry["context_window"] == 65536
+    assert entry["supported_reasoning_levels"] == []
+
+
+def test_gemini_listing_supplies_only_known_limits():
+    assert gemini_listing("fixture", ModelMetadata(input_tokens=32768)) == {
+        "name": "models/fixture",
+        "displayName": "fixture",
+        "inputTokenLimit": 32768,
+    }
+    assert "outputTokenLimit" not in gemini_listing("fixture", ModelMetadata())

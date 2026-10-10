@@ -52,6 +52,8 @@ async def test_sparse_catalog_enrichment_is_cached_and_keeps_live_exclusions(mon
 
 async def test_lm_studio_fetch_uses_native_metadata(monkeypatch):
     def upstream(request):
+        if request.url.host == "models.dev":
+            return httpx.Response(200, json={})
         assert str(request.url) == "http://localhost:1234/api/v1/models"
         return httpx.Response(
             200,

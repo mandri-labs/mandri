@@ -40,7 +40,7 @@ def test_explicit_catalog_hosted_search_capability_round_trips(supported):
     [
         (["tools", "tool_choice"], False),
         (["tools", "web_search_options"], True),
-        (None, False),
+        (None, None),
     ],
 )
 def test_function_tools_do_not_imply_hosted_search(parameters, expected):
@@ -75,9 +75,9 @@ def test_unadvertised_search_does_not_disable_any_coding_tool_or_permission():
     assert unknown.env == {key: value for key, value in supported.env.items() if key != CATALOG_ENV}
     catalog = json.loads(supported.env[CATALOG_ENV])
     assert catalog["models"][0]["supports_search_tool"] is True
-    assert unknown.args[-2:] == ("-c", 'web_search="disabled"')
+    assert not any("web_search" in arg for arg in unknown.args)
     assert supported.args[-2:] == ("-c", "model_context_window=128000")
-    assert unknown.args[:-2] == supported.args[:-2]
+    assert unknown.args == supported.args[:-2]
     assert not any("sandbox" in value or "approval" in value for value in unknown.args)
 
 

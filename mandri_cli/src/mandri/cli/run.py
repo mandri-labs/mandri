@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -19,10 +20,12 @@ from mandri.cli.run_errors import (
 )
 from mandri.cli.types import RunSpec
 from mandri.config.toml_adapter import TomlConfigAdapter
+from mandri.core.catalog_file import materialize_catalog
 from mandri.core.ids import HARNESS_WIRE_FORMATS, HarnessKind
 from mandri.core.launch import ModelMetadata, build_harness_launch, merged_env
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode
 from mandri.sessions.agy_binary import find_agy_binary
+from mandri.sessions.agy_profiles import configure_agy_model
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,7 @@ class RunCommand(DaemonCommand):
         self._plan: RunPlan | None = None
         self._binary: Path | None = None
         self._agy_profile: AgyRunProfile | None = None
+        self._catalogs: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self) -> int:
         defaults = TomlConfigAdapter(self._spec.base_dir).load().defaults
@@ -69,6 +73,8 @@ class RunCommand(DaemonCommand):
             finally:
                 if self._agy_profile is not None:
                     close_agy_run(self._agy_profile)
+                if self._catalogs is not None:
+                    self._catalogs.cleanup()
 
     def _build_run_plan(self) -> RunPlan:
         spec = self._spec
@@ -87,12 +93,20 @@ class RunCommand(DaemonCommand):
             metadata,
             effort=spec.effort,
         )
+        env = merged_env(os.environ, launch)
+        if self._agy_profile is not None:
+            configure_agy_model(self._agy_profile.root, env)
+        args = list(launch.args)
+        if spec.harness is HarnessKind.CODEX:
+            if self._catalogs is None:
+                self._catalogs = tempfile.TemporaryDirectory(prefix="mandri-codex-models-")
+            materialize_catalog(args, env, Path(self._catalogs.name))
         return RunPlan(
             route_id=route_id,
             model=spec.model_arg,
             token=token,
-            env=merged_env(os.environ, launch),
-            args=launch.args,
+            env=env,
+            args=tuple(args),
         )
 
     @staticmethod

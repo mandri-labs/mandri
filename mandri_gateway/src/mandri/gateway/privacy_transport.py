@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 from mandri.core.ids import ProviderKind
 from mandri.core.types.execution import ProtectionError
+from mandri.gateway.chat_usage_transport import CURRENT_CHAT_USAGE, normalize_chat_usage
 from mandri.gateway.privacy_egress import EgressGuard
 from mandri.gateway.provider_adapter import CURRENT_ADAPTER
 from mandri.gateway.usage_transport import observe_response
@@ -71,6 +72,8 @@ async def _provider_send(
             scope.failure = encoding_error
             raise encoding_error
     await observe_response(response, continuation=continuation)
+    if CURRENT_CHAT_USAGE.get():
+        normalize_chat_usage(response)
     return response
 
 

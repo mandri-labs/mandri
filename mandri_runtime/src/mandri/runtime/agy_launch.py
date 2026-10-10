@@ -17,6 +17,7 @@ from mandri.runtime.launch_preparation import PreparedLaunch
 from mandri.sessions.adapters.agy_sessions import AgySessionsAdapter
 from mandri.sessions.agy_lease import AgyConversationLease
 from mandri.sessions.agy_profiles import (
+    configure_agy_model,
     default_agy_root,
     merge_agy_hooks,
     prepare_agy_profile,
@@ -140,6 +141,8 @@ def _prepare_profile(
     native_id: str | None,
 ) -> tuple[PreparedLaunch, AgyLaunch]:
     profile = prepare_agy_profile(profiles, session_id, native=native, canonical_root=canonical)
+    if not native:
+        configure_agy_model(profile, prepared.env)
     settings = read_agy_json(profile / "antigravity-cli/settings.json")
     permissions = settings.get("permissions", {})
     if not isinstance(permissions, dict):

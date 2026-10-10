@@ -5,10 +5,11 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from mandri.core.agy import model_env
 from mandri.core.codex_catalog import CATALOG_ENV, catalog
 from mandri.core.ids import HarnessKind
 from mandri.core.model_metadata import ModelMetadata as ModelMetadata
-from mandri.core.opencode import GATEWAY_MODEL_ID, GATEWAY_MODEL_REF, model_entry
+from mandri.core.opencode import GATEWAY_MODEL_ID, GATEWAY_MODEL_REF, model_entry, provider_entry
 from mandri.core.pi import gateway_env, gateway_extension_path
 
 _CLAUDE_BASE_SUFFIX = ""
@@ -84,6 +85,7 @@ def build_harness_launch(
                 "GEMINI_API_KEY": token,
                 "GOOGLE_GEMINI_BASE_URL": route_base,
                 "AGY_CLI_DISABLE_AUTO_UPDATE": "true",
+                **model_env(metadata),
             },
             strip=("GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI"),
             args=("--model", "mandri"),
@@ -112,10 +114,15 @@ def claude_env(
         "ANTHROPIC_AUTH_TOKEN": auth_token,
         "ANTHROPIC_MODEL": model,
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
     }
     if metadata is not None:
-        env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(metadata.context_window)
-        env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(metadata.output_tokens)
+        if metadata.available_context is not None:
+            env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(metadata.available_context)
+        if metadata.output_tokens is not None:
+            env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(metadata.output_tokens)
+        if metadata.auto_compact_token_limit is not None:
+            env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(metadata.auto_compact_token_limit)
     return env
 
 
@@ -134,9 +141,11 @@ def codex_args(route_base: str, model: str, metadata: ModelMetadata | None = Non
         "-c",
         'model_providers.mandri.wire_api="responses"',
     ]
-    if metadata is not None:
-        args.extend(("-c", f"model_context_window={metadata.context_window}"))
-    if metadata is None or not metadata.hosted_web_search:
+    if metadata is not None and metadata.available_context is not None:
+        args.extend(("-c", f"model_context_window={metadata.available_context}"))
+    if metadata is not None and metadata.auto_compact_token_limit is not None:
+        args.extend(("-c", f"model_auto_compact_token_limit={metadata.auto_compact_token_limit}"))
+    if metadata is not None and metadata.hosted_web_search is False:
         args.extend(("-c", 'web_search="disabled"'))
     return args
 
@@ -157,6 +166,7 @@ def opencode_env(
                 "models": {GATEWAY_MODEL_ID: model_entry(metadata)},
             }
         },
+        "providers": {"mandri": provider_entry(route_base, api_key, metadata)},
         "autoupdate": False,
         "share": "disabled",
         "enabled_providers": ["mandri"],

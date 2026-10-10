@@ -14,6 +14,7 @@ from mandri.gateway.gemini_completion import generate_content
 from mandri.gateway.gemini_request import normalize_contents
 from mandri.gateway.privacy_count import protected_count_tokens
 from mandri.gateway.privacy_egress import EgressGuard, provider_base
+from mandri.gateway.prompt_trace import PromptTrace
 from mandri.gateway.provider_call import provider_call
 from mandri.gateway.provider_identity import identity_headers
 from mandri.gateway.ratelimit_headers import from_exception
@@ -94,9 +95,13 @@ def _credentials(route: ResolvedRoute, guard: EgressGuard | None = None) -> dict
 
 
 class OpenAIHandler:
+    def __init__(self) -> None:
+        self._prompts = PromptTrace()
+
     async def chat_completions(
         self, route: ResolvedRoute, body: dict[str, Any], *, guard: EgressGuard | None = None
     ) -> Any:
+        self._prompts.observe(route.conversation_id or str(route.route_id), body)
         payload = {key: value for key, value in body.items() if key != "model"}
         if route.reasoning_effort:
             payload = {
@@ -127,6 +132,9 @@ class OpenAIHandler:
 
 
 class ResponsesHandler:
+    def __init__(self) -> None:
+        self._prompts = PromptTrace()
+
     _PASSTHROUGH_PARAMS = frozenset(
         {
             "instructions",
@@ -145,12 +153,15 @@ class ResponsesHandler:
             "user",
             "include",
             "service_tier",
+            "prompt_cache_key",
+            "prompt_cache_retention",
         }
     )
 
     async def responses(
         self, route: ResolvedRoute, body: dict[str, Any], *, guard: EgressGuard | None = None
     ) -> Any:
+        self._prompts.observe(route.conversation_id or str(route.route_id), body)
         payload = {key: value for key, value in body.items() if key in self._PASSTHROUGH_PARAMS}
         stream = bool(body.get("stream", False))
         input_value = body.get("input")
@@ -189,6 +200,16 @@ class ResponsesHandler:
             **_credentials(route, guard),
             **payload,
         }
+        client_metadata = body.get("client_metadata")
+        extra_body: dict[str, Any] = dict(call_kwargs.get("extra_body") or {})
+        if isinstance(client_metadata, dict):
+            extra_body["client_metadata"] = client_metadata
+        if use_chat_completions and "prompt_cache_retention" in payload:
+            extra_body["prompt_cache_retention"] = payload["prompt_cache_retention"]
+        if use_chat_completions and stream:
+            extra_body["stream_options"] = {"include_usage": True}
+        if extra_body:
+            call_kwargs["extra_body"] = extra_body
         try:
             return await provider_call(route, litellm.aresponses, call_kwargs, guard)
         except (ProtectionError, UpstreamError):
@@ -198,9 +219,13 @@ class ResponsesHandler:
 
 
 class AnthropicHandler:
+    def __init__(self) -> None:
+        self._prompts = PromptTrace()
+
     async def messages(
         self, route: ResolvedRoute, body: dict[str, Any], *, guard: EgressGuard | None = None
     ) -> Any:
+        self._prompts.observe(route.conversation_id or str(route.route_id), body)
         payload = {key: value for key, value in body.items() if key != "model"}
         if route.reasoning_effort:
             payload = {
@@ -208,6 +233,9 @@ class AnthropicHandler:
             }
             payload["output_config"] = {"effort": route.reasoning_effort}
         stream = bool(payload.pop("stream", False))
+        safeguards = payload.pop("safeguards", None)
+        if safeguards is not None:
+            payload["extra_body"] = {**payload.get("extra_body", {}), "safeguards": safeguards}
         try:
             kwargs = {
                 "model": str(route.model.model_ref),
@@ -249,6 +277,9 @@ class AnthropicHandler:
 
 
 class GeminiHandler:
+    def __init__(self) -> None:
+        self._prompts = PromptTrace()
+
     async def generate_content(
         self,
         route: ResolvedRoute,
@@ -257,6 +288,7 @@ class GeminiHandler:
         *,
         guard: EgressGuard | None = None,
     ) -> Any:
+        self._prompts.observe(route.conversation_id or str(route.route_id), body)
         try:
             kwargs = {
                 "stream": stream,

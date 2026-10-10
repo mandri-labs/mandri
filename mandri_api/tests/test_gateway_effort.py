@@ -1,9 +1,11 @@
 """Effort governance tests for the gateway REST routes."""
 
+import json
 from typing import Any
 
 import mandri.api.routers.gateway as gateway_router
 from mandri.api.deps import GatewayWiring, gateway_wiring, providers_registry
+from mandri.core.codex_catalog import catalog
 from mandri.core.ids import EpochMs, ModelRef, ProviderKind, RouteId, SecretRef, WireFormat
 from mandri.gateway.model_metadata import ModelMetadata
 from mandri.gateway.reasoning_catalog import ReasoningCatalog, ReasoningInfo
@@ -155,7 +157,11 @@ def test_model_metadata_without_catalog_has_null_reasoning(make_client, monkeypa
     assert response.json()["reasoning"] is None
 
 
-def test_codex_listing_receives_catalog_info(make_client) -> None:
+def test_codex_listing_receives_catalog_info(make_client, monkeypatch) -> None:
+    async def fake_fetch(*args: Any) -> ModelMetadata:
+        return ModelMetadata(context_window=262144)
+
+    monkeypatch.setattr(gateway_router, "fetch_model_metadata", fake_fetch)
     registry = StubRegistry(make_resolved_route())
     wiring = make_wiring(registry, ReasoningCatalog(CATALOG_ENTRIES))
     client = make_client({gateway_wiring: lambda: wiring})
@@ -172,9 +178,15 @@ def test_codex_listing_receives_catalog_info(make_client) -> None:
         "high",
     ]
     assert entry["default_reasoning_level"] == "medium"
+    assert entry["context_window"] == 262144
+    assert entry["model_messages"]["instructions_template"]
 
 
-def test_codex_listing_without_catalog_uses_defaults(make_client) -> None:
+def test_codex_listing_without_catalog_uses_defaults(make_client, monkeypatch) -> None:
+    async def fake_fetch(*args: Any) -> ModelMetadata:
+        return ModelMetadata()
+
+    monkeypatch.setattr(gateway_router, "fetch_model_metadata", fake_fetch)
     registry = StubRegistry(make_resolved_route())
     wiring = make_wiring(registry, None)
     client = make_client({gateway_wiring: lambda: wiring})
@@ -185,10 +197,29 @@ def test_codex_listing_without_catalog_uses_defaults(make_client) -> None:
     )
     assert response.status_code == 200
     entry = response.json()["models"][0]
-    assert [level["effort"] for level in entry["supported_reasoning_levels"]] == [
-        "none",
-        "low",
-        "medium",
-        "high",
-    ]
-    assert entry["default_reasoning_level"] == "none"
+    native = json.loads(catalog("mandri-route", ModelMetadata()))["models"][0]
+    assert entry["supported_reasoning_levels"] == native["supported_reasoning_levels"]
+    assert entry["default_reasoning_level"] == native["default_reasoning_level"]
+
+
+def test_gemini_discovery_requires_authorization_and_preserves_partial_limits(
+    make_client, monkeypatch
+) -> None:
+    async def fake_fetch(*args: Any) -> ModelMetadata:
+        return ModelMetadata(context_window=65536, tool_call=True)
+
+    monkeypatch.setattr(gateway_router, "fetch_model_metadata", fake_fetch)
+    wiring = make_wiring(StubRegistry(make_resolved_route()), None)
+    client = make_client({gateway_wiring: lambda: wiring})
+    base = f"/v1/gateway/llm/{ROUTE_ID}/v1beta/models"
+    assert client.get(base).status_code == 401
+    headers = {"x-goog-api-key": wiring.auth.issue(ROUTE_ID)}
+    response = client.get(base, headers=headers)
+    assert response.status_code == 200
+    model = response.json()["models"][0]
+    assert model == {
+        "name": "models/mandri-route",
+        "displayName": "mandri-route",
+        "inputTokenLimit": 65536,
+    }
+    assert client.get(base + "/mandri-route", headers=headers).json() == model

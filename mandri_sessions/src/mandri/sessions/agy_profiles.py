@@ -8,6 +8,20 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from mandri.core.agy import MODEL_ENV
+
+
+def configure_agy_model(profile: Path, env: dict[str, str]) -> None:
+    raw = env.get(MODEL_ENV)
+    if raw is None:
+        return
+    config = json.loads(raw)
+    settings_path = profile / "antigravity-cli/settings.json"
+    settings = read_agy_json(settings_path)
+    custom = settings.setdefault("customModelsConfig", {}).setdefault("customModels", {})
+    custom["mandri"] = {**custom.get("mandri", {}), **config, "modelName": "mandri-route"}
+    write_agy_json(settings_path, settings)
+
 
 def default_agy_root() -> Path:
     return Path.home() / ".gemini"
@@ -75,7 +89,7 @@ def prepare_agy_profile(
     else:
         settings["modelProvider"] = "gemini"
         custom = settings.setdefault("customModelsConfig", {}).setdefault("customModels", {})
-        custom["mandri"] = {"modelName": "mandri-route"}
+        custom["mandri"] = {**custom.get("mandri", {}), "modelName": "mandri-route"}
     write_agy_json(settings_path, settings)
     hooks_path = profile / "config/hooks.json"
     hooks = read_agy_json(hooks_path if hooks_path.exists() else canonical / "config/hooks.json")

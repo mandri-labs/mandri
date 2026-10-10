@@ -6,6 +6,7 @@ import httpx
 import pytest
 from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from mandri.core.ids import ModelRef, ProviderKind, RouteId, SecretRef, Url
+from mandri.gateway import privacy_transport
 from mandri.gateway.litellm_adapter import (
     AnthropicHandler,
     GeminiHandler,
@@ -71,16 +72,24 @@ async def upstream(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[list[dict[s
             {"index": 0, "delta": {"role": "assistant", "content": "OK"}, "finish_reason": None}
         ]
         start = json.dumps(response)
+        response.pop("usage")
         response["choices"] = [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+        response["usage"] = {
+            "prompt_tokens": 321,
+            "completion_tokens": 17,
+            "total_tokens": 338,
+            "prompt_tokens_details": {"cached_tokens": 300},
+        }
         content = f"data: {start}\n\ndata: {json.dumps(response)}\n\ndata: [DONE]\n\n"
         return httpx.Response(
             200,
-            content=content,
+            stream=httpx.ByteStream(content.encode()),
             headers={"content-type": "text/event-stream"},
             request=request,
         )
 
-    monkeypatch.setattr(httpx.AsyncClient, "send", send)
+    privacy_transport.install_transport_observers()
+    monkeypatch.setattr(privacy_transport, "_ASYNC_SEND", send)
     yield requests
     await GLOBAL_LOGGING_WORKER.flush()
 
@@ -149,3 +158,43 @@ async def test_explicit_search_options_are_omitted_on_upstream_wire(
     assert "web_search_options" not in upstream[0]
     assert upstream[0]["messages"] == body["messages"]
     assert upstream[0].get("stream", False) is stream
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_responses_cache_metadata_survives_chat_conversion(upstream, stream):
+    response = await ResponsesHandler().responses(
+        route(ProviderKind.CUSTOM),
+        {
+            "input": "test",
+            "stream": stream,
+            "prompt_cache_key": "stable-conversation",
+            "prompt_cache_retention": "in_memory",
+            "client_metadata": {"x-codex-turn-metadata": {"thread_source": "thread_title"}},
+        },
+    )
+    if stream:
+        events = [event.model_dump() async for event in response]
+        completed = next(event for event in events if event["type"] == "response.completed")
+        assert completed["response"]["usage"]["input_tokens"] == 321
+        assert completed["response"]["usage"]["input_tokens_details"]["cached_tokens"] == 300
+    assert len(upstream) == 1
+    assert upstream[0]["prompt_cache_key"] == "stable-conversation"
+    assert upstream[0]["prompt_cache_retention"] == "in_memory"
+    assert upstream[0]["client_metadata"] == {
+        "x-codex-turn-metadata": {"thread_source": "thread_title"}
+    }
+    if stream:
+        assert upstream[0]["stream_options"] == {"include_usage": True}
+
+
+async def test_claude_safeguards_survive_sdk_conversion(upstream):
+    safeguards = {"synthetic": True}
+    await AnthropicHandler().messages(
+        route(ProviderKind.CUSTOM),
+        {
+            "messages": [{"role": "user", "content": "test"}],
+            "max_tokens": 32,
+            "safeguards": safeguards,
+        },
+    )
+    assert upstream[0]["safeguards"] == safeguards

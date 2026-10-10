@@ -27,7 +27,7 @@ class PiSessionCheckpoint:
         self.path.with_name(self.path.name + ".mandri-leaf").unlink(missing_ok=True)
         if not pending.is_file():
             return
-        if pending.is_symlink():
+        if self.roots and pending.is_symlink():
             raise ControlTransportError("Pi session checkpoint cannot be a symbolic link")
         if pi_session_header_id(pending) != self.native_id:
             raise ControlTransportError("Pi checkpoint identity does not match its session")

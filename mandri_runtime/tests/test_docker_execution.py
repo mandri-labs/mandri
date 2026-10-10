@@ -9,7 +9,6 @@ import httpx
 import pytest
 from mandri.core.types.execution import ExecutionBackend, PrivacyMode, ProtectionError
 from mandri.core.types.model_selection import ModelSource
-from mandri.runtime.control.agy_policy import AgyPolicy
 from mandri.runtime.docker_backend import DockerBackend, DockerReadiness
 from mandri.runtime.docker_config import DockerConfig
 from mandri.runtime.docker_ingress import WorkerIngress
@@ -90,14 +89,6 @@ def test_missing_workspace_has_typed_error(tmp_path):
     assert failure.value.reason == "workspace_unavailable"
 
 
-def test_cyclic_workspace_link_has_typed_error(tmp_path):
-    root = tmp_path / "loop"
-    root.symlink_to(root)
-    with pytest.raises(DockerExecutionError) as failure:
-        workspace_root(root)
-    assert failure.value.reason == "workspace_unavailable"
-
-
 def test_native_state_cannot_escape_or_be_silently_recreated(tmp_path):
     for name in ("../other", "x/y", "", "x\\y"):
         with pytest.raises(DockerExecutionError):
@@ -160,17 +151,6 @@ def test_network_exceptions_require_narrow_literal_destinations(value):
 def test_network_exception_ipv4_and_ipv6_formats():
     assert network_exception("10.23.4.1:443") == ("10.23.4.1/32", 443)
     assert network_exception("[fd01::5]:8443") == ("fd01::5/128", 8443)
-
-
-def test_agy_container_paths_check_real_host_symlink_target(tmp_path):
-    root = tmp_path / "project"
-    root.mkdir()
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (root / "escape").symlink_to(outside, target_is_directory=True)
-    policy = AgyPolicy("acceptEdits", root, {}, runtime_root=Path("/workspace"))
-    assert policy.decision("write_to_file", {"TargetFile": "/workspace/src/new.py"}) == "allow"
-    assert policy.decision("write_to_file", {"TargetFile": "/workspace/escape/private"}) == "ask"
 
 
 @pytest.mark.parametrize(

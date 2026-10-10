@@ -23,6 +23,7 @@ COMPONENTS = {
 SOURCE_SUFFIXES = {".py", ".typed"}
 SOURCE_FILES = {"pyproject.toml", "README.md", "LICENSE", "PKG-INFO", ".gitignore"}
 RESOURCE_FILES = {
+    "core/resources/codex_model.json",
     "core/resources/codex_prompt_0_154.md",
     "core/resources/codex_prompt_0_154.NOTICE",
     "core/resources/pi_gateway.ts",

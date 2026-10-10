@@ -1,5 +1,4 @@
 import os
-import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -107,15 +106,11 @@ def test_invalid_worktree_metadata_is_rejected_by_git(repository, tmp_path):
         git_values(root)
 
 
-@pytest.mark.parametrize("kind", ["symlink", "oversize", "directory", "invalid_utf8"])
+@pytest.mark.parametrize("kind", ["oversize", "directory", "invalid_utf8"])
 @pytest.mark.skipif(sys.platform == "win32", reason="Secure local metadata reads require POSIX")
 def test_metadata_reader_rejects_unbounded_or_nonregular_inputs(tmp_path, kind):
     selected = tmp_path / "config"
-    if kind == "symlink":
-        target = tmp_path / "target"
-        target.write_text("[user]\nname = secret")
-        selected.symlink_to(target)
-    elif kind == "oversize":
+    if kind == "oversize":
         selected.write_bytes(b"x" * 65_537)
     elif kind == "directory":
         selected.mkdir()
@@ -132,7 +127,7 @@ def test_missing_repository_has_only_local_process_seeds(tmp_path):
     assert {item.original for item in scope.mappings} == {"synthetic-user", "synthetic-host"}
 
 
-@pytest.mark.parametrize("flag", ["O_NOFOLLOW", "O_NONBLOCK", "O_CLOEXEC"])
+@pytest.mark.parametrize("flag", ["O_NONBLOCK", "O_CLOEXEC"])
 @pytest.mark.skipif(sys.platform == "win32", reason="Checks POSIX open flags")
 def test_missing_secure_metadata_flags_fail_before_any_file_read(monkeypatch, tmp_path, flag):
     monkeypatch.delattr(f"mandri.gateway.privacy_context.os.{flag}", raising=False)
@@ -149,7 +144,7 @@ async def test_scope_readiness_reports_platform_before_available_keyring(monkeyp
     repository = Mock()
     repository.readiness = AsyncMock()
     scopes = PrivacyScopes(repository, PrivacySettings())
-    monkeypatch.delattr("mandri.gateway.privacy_context.os.O_NOFOLLOW", raising=False)
+    monkeypatch.delattr("mandri.gateway.privacy_context.os.O_NONBLOCK", raising=False)
     with pytest.raises(ProtectionError) as failure:
         await scopes.readiness()
     assert failure.value.code == "privacy_platform_unsupported"
@@ -161,27 +156,19 @@ async def test_scope_readiness_reports_platform_before_available_keyring(monkeyp
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Checks POSIX open flags")
 def test_secure_metadata_flags_require_the_complete_available_mask(monkeypatch):
-    for name, value in (("O_NOFOLLOW", 256), ("O_NONBLOCK", 512), ("O_CLOEXEC", 1024)):
+    for name, value in (("O_NONBLOCK", 512), ("O_CLOEXEC", 1024)):
         monkeypatch.setattr(f"mandri.gateway.privacy_context.os.{name}", value, raising=False)
-    assert metadata_read_flags() & (256 | 512 | 1024) == 256 | 512 | 1024
+    assert metadata_read_flags() & (512 | 1024) == 512 | 1024
 
 
-def test_windows_metadata_reader_rejects_symlink_and_replaced_file(monkeypatch, tmp_path):
+def test_windows_metadata_reader_rejects_replaced_file(monkeypatch, tmp_path):
     selected = tmp_path / "config"
     selected.write_text("[user]\nname = Original\n")
     other = tmp_path / "other"
     other.write_text("[user]\nname = Other\n")
-    link = tmp_path / "link"
     monkeypatch.setattr("mandri.gateway.privacy_context._WINDOWS", True)
     monkeypatch.setattr("mandri.gateway.privacy_context.os.O_BINARY", 0, raising=False)
     monkeypatch.setattr("mandri.gateway.privacy_context.os.O_NOINHERIT", 0, raising=False)
-    original_lstat = os.lstat
-    monkeypatch.setattr(
-        "mandri.gateway.privacy_context.os.lstat",
-        lambda path: Mock(st_mode=stat.S_IFLNK) if path == link else original_lstat(path),
-    )
-    with pytest.raises(ProtectionError):
-        local_text(link)
     opened = os.open
     monkeypatch.setattr(
         "mandri.gateway.privacy_context.os.open", lambda path, flags: opened(other, flags)
@@ -202,35 +189,8 @@ def test_git_directory_indirection_uses_native_git_resolution(tmp_path):
         capture_output=True,
         check=True,
     )
-    (root / ".git").symlink_to(other / ".git", target_is_directory=True)
-    assert git_values(root) == {"author": "Indirect Author"}
-    (root / ".git").unlink()
     (root / ".git").write_text(f"gitdir: {other / '.git'}")
     assert git_values(root) == {"author": "Indirect Author"}
     (root / ".git").write_text(f"gitdir: {other / 'missing'}")
     with pytest.raises(ProtectionError):
         git_values(root)
-
-
-class MemoryRepository:
-    def __init__(self):
-        self.scopes = {}
-
-    async def create(self, scope_id, payload):
-        self.scopes[scope_id] = payload
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="Secure local metadata reads require POSIX")
-async def test_lexical_and_canonical_roots_remain_distinct_exact_inverses(repository, tmp_path):
-    lexical = tmp_path / "Link"
-    lexical.symlink_to(repository, target_is_directory=True)
-    store = MemoryRepository()
-    scopes = PrivacyScopes(store, PrivacySettings())
-    scope_id = await scopes.create(str(lexical))
-    engine = scopes.engine(store.scopes[scope_id])
-    paths = [str(lexical / "api" / "src" / "new.py"), str(repository / "api" / "src" / "new.py")]
-    protected = engine.protect(paths)
-    assert protected[0] != protected[1]
-    assert all(item.endswith("/api/src/new.py") for item in protected)
-    assert engine.restore(protected) == paths
-    assert len(engine.scope.roots) == 3

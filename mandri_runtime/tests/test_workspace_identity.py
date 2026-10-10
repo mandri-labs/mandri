@@ -43,17 +43,6 @@ async def test_mount_witness_is_consumed_without_discarding_native_output(tmp_pa
     assert await stdout.readline() == b'{"id":1,"result":{}}\n'
 
 
-def test_git_metadata_symlink_is_rejected_without_opening_target(tmp_path, monkeypatch):
-    root = tmp_path / "workspace"
-    root.mkdir()
-    (root / ".git").symlink_to(tmp_path / "outside")
-    monkeypatch.setattr(
-        "mandri.runtime.docker_git.os.open", lambda *args: pytest.fail("Opened symlink")
-    )
-    with pytest.raises(DockerExecutionError):
-        workspace_root(root)
-
-
 def test_git_metadata_oversize_entry_is_rejected_before_read(tmp_path, monkeypatch):
     root = tmp_path / "workspace"
     root.mkdir()

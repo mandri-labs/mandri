@@ -41,7 +41,7 @@ def key_creation_lock(installation: Path) -> Iterator[None]:
         installation.mkdir(mode=0o700, parents=True, exist_ok=True)
         descriptor = os.open(
             installation / ".privacy-key.lock",
-            os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+            os.O_RDWR | os.O_CREAT,
             0o600,
         )
         with os.fdopen(descriptor, "r+b") as handle:

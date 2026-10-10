@@ -190,28 +190,15 @@ def test_invalid_history_boundaries_fail_before_copy(bundle, field, value):
     assert not bundle.destination.exists()
 
 
-@pytest.mark.parametrize("change", ["missing", "duplicate", "symlink", "directory_symlink"])
-def test_ancestor_resolution_rejects_missing_ambiguous_or_linked_files(bundle, change):
+@pytest.mark.parametrize("change", ["missing", "duplicate"])
+def test_ancestor_resolution_rejects_missing_or_ambiguous_files(bundle, change):
     path = bundle.paths[BASE]
     if change == "missing":
         path.unlink()
-    elif change == "duplicate":
+    else:
         duplicate = bundle.home / "archived_sessions" / path.name
         duplicate.parent.mkdir()
         duplicate.write_bytes(path.read_bytes())
-    elif change == "symlink":
-        retained = path.with_name("retained.jsonl")
-        path.rename(retained)
-        path.symlink_to(retained)
-    else:
-        with sqlite3.connect(bundle.home / "state_5.sqlite") as database:
-            database.execute("CREATE TABLE threads (id TEXT, rollout_path TEXT)")
-            database.execute(
-                "INSERT INTO threads VALUES (?, ?)", (SELECTED, str(bundle.paths[SELECTED]))
-            )
-        retained = path.parent.with_name("retained")
-        path.parent.rename(retained)
-        path.parent.symlink_to(retained, target_is_directory=True)
     with (
         pytest.raises(ProtectionError),
         selected_codex_source(bundle.session, ExecutionBackend.DOCKER, bundle.reader()),
@@ -299,15 +286,3 @@ def test_ancestor_metadata_ordinal_must_match_its_inherited_boundary(bundle):
         selected_codex_source(bundle.session, ExecutionBackend.DOCKER, bundle.reader()),
     ):
         pytest.fail("Inconsistent inherited ordinal was accepted")
-
-
-@pytest.mark.skipif(os.name == "nt", reason="Windows cannot rename directories with open files")
-def test_source_directory_symlink_introduced_after_admission_is_rejected(bundle):
-    with (
-        pytest.raises(ProtectionError),
-        selected_codex_source(bundle.session, ExecutionBackend.DOCKER, bundle.reader()) as source,
-    ):
-        retained = bundle.paths[SELECTED].parent.with_name("retained")
-        bundle.paths[SELECTED].parent.rename(retained)
-        bundle.paths[SELECTED].parent.symlink_to(retained, target_is_directory=True)
-        source.copy_rollout(bundle.destination)

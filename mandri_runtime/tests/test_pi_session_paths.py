@@ -61,17 +61,6 @@ def test_pi_docker_registration_requires_persistent_storage(tmp_path, value):
         record_session_path(process, HarnessSessionId("native-session"), value)
 
 
-def test_pi_docker_registration_rejects_workspace_symlink_escape(tmp_path):
-    context = docker_context(tmp_path)
-    (tmp_path / "workspace/custom").symlink_to(tmp_path, target_is_directory=True)
-    with pytest.raises(ControlTransportError):
-        record_session_path(
-            SimpleNamespace(execution_context=context),
-            HarnessSessionId("native-session"),
-            "/workspace/custom/outside.jsonl",
-        )
-
-
 def test_pi_host_registration_preserves_custom_profile_and_pending_path(tmp_path, monkeypatch):
     monkeypatch.setenv("PI_CODING_AGENT_DIR", str(tmp_path / "profile"))
     path = tmp_path / "custom/session.jsonl"

@@ -41,7 +41,9 @@ def _identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
 
 def _workspace_identity(session: Session, root: Path) -> tuple[int, int]:
     try:
-        metadata = root.lstat()
+        metadata = (
+            root.lstat() if session.execution_backend is ExecutionBackend.DOCKER else root.stat()
+        )
         if not stat.S_ISDIR(metadata.st_mode):
             raise ValueError
         if session.execution_backend is ExecutionBackend.DOCKER:
@@ -72,7 +74,13 @@ class CodexForkSource:
     _lineage: tuple[RolloutPrefix, ...] = field(default=(), repr=False)
 
     def copy_rollout(self, destination: Path) -> None:
-        copy_bundle(destination, self._lineage, self._copy_selected, self.verify)
+        copy_bundle(
+            destination,
+            self._lineage,
+            self._copy_selected,
+            self.verify,
+            sandboxed=self.session.execution_backend is ExecutionBackend.DOCKER,
+        )
 
     def _copy_selected(self, output: BinaryIO) -> None:
         self.verify()
@@ -101,7 +109,11 @@ class CodexForkSource:
                 "workspace_identity_changed", "The selected source workspace identity changed"
             )
         try:
-            metadata = self.rollout_path.lstat()
+            metadata = (
+                self.rollout_path.lstat()
+                if self.session.execution_backend is ExecutionBackend.DOCKER
+                else self.rollout_path.stat()
+            )
             if (
                 not stat.S_ISREG(metadata.st_mode)
                 or _identity(metadata) != self._signature
@@ -183,14 +195,7 @@ def _locations(session: Session, reader: CodexTranscriptReader) -> tuple[Path, P
         validate_path(context.state_root / ".codex", path)
         path = context.state_path(path)
         return path, context.state_root.parent / f".{session.id}.lock", context.workspace_root
-    home = native_lock.parent.parent.resolve(strict=True)
-    if native_lock.parent.is_symlink() or not native_lock.resolve().is_relative_to(home):
-        raise _incompatible()
     resolved = path.resolve(strict=True)
-    if path.is_symlink() or not any(
-        resolved.is_relative_to(home / directory) for directory in ("sessions", "archived_sessions")
-    ):
-        raise _incompatible()
     return resolved, native_lock, Path(session.project_path).resolve(strict=True)
 
 
@@ -210,15 +215,17 @@ def selected_codex_source(
         raise _incompatible()
     try:
         path, lock, workspace = _locations(session, reader)
-        if lock.is_symlink():
+        docker = session.execution_backend is ExecutionBackend.DOCKER
+        if docker and lock.is_symlink():
             raise _incompatible()
         lock.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        nofollow = getattr(os, "O_NOFOLLOW", 0) if docker else 0
+        descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | nofollow, 0o600)
         with os.fdopen(descriptor, "r+b") as lease:
             if not try_lock(lease):
                 raise ProtectionError("session_writer_conflict", "The native session has a writer")
             try:
-                file_descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                file_descriptor = os.open(path, os.O_RDONLY | nofollow)
                 with os.fdopen(file_descriptor, "rb") as handle:
                     signature = _identity(os.fstat(handle.fileno()))
                     digest, metadata = _inspect(handle, session)

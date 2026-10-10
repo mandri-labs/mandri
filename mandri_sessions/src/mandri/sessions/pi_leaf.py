@@ -13,8 +13,6 @@ def read_pi_leaf(
     path: Path, native_id: str | None, signature: tuple[int, int, int]
 ) -> PiLeaf | None:
     pointer = path.with_name(path.name + ".mandri-leaf")
-    if pointer.is_symlink():
-        return None
     try:
         with pointer.open("rb") as handle:
             record = json.loads(handle.read(65536))

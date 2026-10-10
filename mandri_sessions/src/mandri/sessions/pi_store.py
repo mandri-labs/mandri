@@ -234,11 +234,8 @@ class PiSessionStore:
                 self._checked(root)
             if root is None or not root.is_dir():
                 continue
-            resolved_root = root.resolve()
             for pattern in ("*.jsonl", "*/*.jsonl"):
-                for path in root.glob(pattern):
-                    if not path.is_symlink() and path.resolve().is_relative_to(resolved_root):
-                        paths.add(path)
+                paths.update(root.glob(pattern))
         return paths
 
     def _checked(self, path: Path) -> Path:

@@ -37,9 +37,7 @@ class FilePrivacyKey:
             if create:
                 try:
                     self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    fd = os.open(
-                        self._path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
-                    )
+                    fd = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 except FileExistsError:
                     pass
                 except OSError:
@@ -52,7 +50,7 @@ class FilePrivacyKey:
                         handle.flush()
                         os.fsync(handle.fileno())
             try:
-                fd = os.open(self._path, os.O_RDONLY | os.O_NOFOLLOW)
+                fd = os.open(self._path, os.O_RDONLY)
                 with os.fdopen(fd, "rb") as handle:
                     metadata = os.fstat(handle.fileno())
                     if (

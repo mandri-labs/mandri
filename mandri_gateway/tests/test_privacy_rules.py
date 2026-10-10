@@ -99,7 +99,6 @@ async def test_local_extensions_are_persisted_and_configuration_changes_do_not_c
     "change",
     [
         "permissions",
-        "symlink",
         "missing",
         "inside_workspace",
         "oversize",
@@ -112,10 +111,6 @@ def test_invalid_local_rules_fail_closed_without_echoing_private_values(private_
     file, workspace = private_rules
     if change == "permissions":
         file.chmod(0o644)
-    elif change == "symlink":
-        source = file.with_suffix(".source")
-        file.rename(source)
-        file.symlink_to(source)
     elif change == "missing":
         file.unlink()
     elif change == "inside_workspace":

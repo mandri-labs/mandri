@@ -51,6 +51,8 @@ def copy_bundle(
     prefixes: tuple[RolloutPrefix, ...],
     selected_copy: Callable[[BinaryIO], None],
     verify: Callable[[], None],
+    *,
+    sandboxed: bool = False,
 ) -> None:
     verify()
     files = []
@@ -64,11 +66,14 @@ def copy_bundle(
                 _parents(home, target.parent, directories)
                 copies.append((target, prefix.copy))
         for path, copy in copies:
-            if path.parent.resolve(strict=True) != path.parent:
+            if sandboxed and path.parent.resolve(strict=True) != path.parent:
                 raise incompatible()
             descriptor = os.open(
                 path,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | (getattr(os, "O_NOFOLLOW", 0) if sandboxed else 0),
                 0o600,
             )
             with os.fdopen(descriptor, "wb") as output:

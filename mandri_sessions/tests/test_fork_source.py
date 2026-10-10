@@ -224,9 +224,14 @@ def test_legacy_context_without_workspace_identity_cannot_fork(native_source):
     assert path.read_bytes() == original
 
 
-def test_host_fork_uses_only_selected_native_store(native_source, tmp_path):
+@pytest.mark.parametrize("external", [False, True])
+def test_host_fork_uses_only_selected_native_store(native_source, tmp_path, external):
     session, path = native_source
     session = replace(session, execution_backend=ExecutionBackend.HOST, execution_context=None)
+    if external:
+        directory = tmp_path / "selected-history"
+        directory.mkdir()
+        path = path.rename(directory / path.name)
     rows = path.read_text().splitlines()
     metadata = json.loads(rows[0])
     metadata["payload"]["cwd"] = str(session.project_path)
@@ -234,7 +239,9 @@ def test_host_fork_uses_only_selected_native_store(native_source, tmp_path):
     reader = CodexTranscriptReader(path.parent)
     with selected_codex_source(session, ExecutionBackend.HOST, reader) as source:
         assert source.rollout_path == path
-        source.copy_rollout(tmp_path / "selected.jsonl")
+        destination = tmp_path / "selected.jsonl"
+        source.copy_rollout(destination)
+        assert destination.read_bytes() == path.read_bytes()
 
 
 async def test_cancelled_admission_releases_source_lease(native_source, monkeypatch):

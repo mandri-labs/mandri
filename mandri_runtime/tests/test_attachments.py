@@ -98,21 +98,24 @@ async def test_relative_files_use_session_cwd_not_daemon_cwd(tmp_path, monkeypat
             assert stream.read() == b"workspace result"
 
 
-async def test_reject_cross_session_and_outside_workspace(tmp_path):
+async def test_reject_cross_session_and_invalid_attachment_identities(tmp_path):
     record = session(tmp_path)
     store = AttachmentStore(tmp_path / "uploads")
     item = await store.upload(record, "notes.txt", chunks(b"notes"))
     with pytest.raises(AttachmentError):
         store.read("another-session", item.id)
-    secret = tmp_path / "secret.txt"
-    secret.write_text("secret")
-    (Path(record.project_path) / "escape").symlink_to(secret)
-    for path in [str(secret), "../../secret.txt", "escape"]:
-        with pytest.raises(AttachmentError):
-            open_session_file(record, store, path)
     for identity in ["../secret", "a" * 32]:
         with pytest.raises(AttachmentError):
             store.prepare(record, "", [identity])
+
+
+def test_docker_session_file_remains_limited_to_mounted_directories(tmp_path):
+    record = session(tmp_path, backend=ExecutionBackend.DOCKER)
+    store = AttachmentStore(tmp_path / "uploads")
+    external = tmp_path / "selected.txt"
+    external.write_bytes(b"selected content")
+    with pytest.raises(AttachmentError, match="outside"):
+        open_session_file(record, store, str(external))
 
 
 async def test_privacy_change_preserves_image_delivery_and_harness_support_is_checked(tmp_path):
@@ -265,7 +268,7 @@ async def test_host_attachment_storage_does_not_require_mounted_project(tmp_path
         assert stream.read() == PNG
 
 
-async def test_prepare_repairs_modified_materialized_bytes_and_rejects_symlink(tmp_path):
+async def test_prepare_repairs_modified_materialized_bytes(tmp_path):
     record = session(tmp_path)
     store = AttachmentStore(tmp_path / "uploads")
     item = await store.upload(record, "notes.txt", chunks(b"original"))
@@ -275,10 +278,3 @@ async def test_prepare_repairs_modified_materialized_bytes_and_rejects_symlink(t
     path.write_bytes(b"modified")
     assert store.prepare(record, "", [item.id]) == original
     assert path.read_bytes() == b"original"
-    path.chmod(0o644)
-    path.unlink()
-    outside = tmp_path / "outside.txt"
-    outside.write_bytes(b"original")
-    path.symlink_to(outside)
-    with pytest.raises(AttachmentError, match="symbolic link"):
-        store.prepare(record, "", [item.id])

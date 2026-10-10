@@ -87,15 +87,6 @@ def test_forged_rollout_path_cannot_read_host_file(docker_session, tmp_path):
         reader.page(transcript_reference(session), None, 10)
 
 
-def test_symlinked_native_database_rejected_before_open(docker_session, tmp_path):
-    session, state, _ = docker_session
-    external = tmp_path / "external.sqlite"
-    external.write_text("must not be opened")
-    (state / ".codex/state_5.sqlite").symlink_to(external)
-    with pytest.raises(ProtectionError, match="external path"):
-        TranscriptResolver({}).for_session(session)
-
-
 def test_docker_owner_tracks_durable_state_lease(docker_session):
     session, state, _ = docker_session
     assert docker_ownership(session).owner is SessionOwner.UNOWNED

@@ -22,7 +22,7 @@ def unavailable() -> ProtectionError:
 def metadata_read_flags() -> int:
     if _WINDOWS:
         return os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(getattr(os, "O_NOINHERIT", 0))
-    flags = [getattr(os, name, None) for name in ("O_NOFOLLOW", "O_NONBLOCK", "O_CLOEXEC")]
+    flags = [getattr(os, name, None) for name in ("O_NONBLOCK", "O_CLOEXEC")]
     if any(type(flag) is not int or flag == 0 for flag in flags):
         raise ProtectionError(
             "privacy_platform_unsupported",
@@ -38,7 +38,7 @@ def metadata_read_flags() -> int:
 def local_text(path: Path, *, optional: bool = False) -> str | None:
     flags = metadata_read_flags()
     try:
-        expected = os.lstat(path) if _WINDOWS else None
+        expected = os.stat(path) if _WINDOWS else None
         if expected is not None and not stat.S_ISREG(expected.st_mode):
             raise unavailable()
         descriptor = os.open(path, flags)

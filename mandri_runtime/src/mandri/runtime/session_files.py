@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from typing import BinaryIO
 
+from mandri.core.types.execution import ExecutionBackend
 from mandri.core.types.sessions import Session
 from mandri.runtime.attachments import MAX_FILE_BYTES, AttachmentError, AttachmentStore
 from mandri.runtime.file_context import SessionFileContext
@@ -17,10 +18,18 @@ def open_session_file(
     roots = [context.workspace, context.attachments]
     try:
         resolved = candidate.resolve(strict=True)
-        root = next((root for root in roots if resolved.is_relative_to(root)), None)
-        if root is None:
-            raise AttachmentError("File is outside this session's directories")
-        fd = _open_beneath(root, resolved.relative_to(root))
+        if session.execution_backend is ExecutionBackend.DOCKER:
+            root = next((root for root in roots if resolved.is_relative_to(root)), None)
+            if root is None:
+                raise AttachmentError("File is outside this session's directories")
+            fd = _open_beneath(root, resolved.relative_to(root))
+        else:
+            selected = Path(os.path.abspath(candidate))
+            if not any(
+                selected.is_relative_to(root) or resolved.is_relative_to(root) for root in roots
+            ):
+                raise AttachmentError("File is outside this session's directories")
+            fd = os.open(resolved, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
         stream = os.fdopen(fd, "rb")
         metadata = os.fstat(stream.fileno())
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > MAX_FILE_BYTES:

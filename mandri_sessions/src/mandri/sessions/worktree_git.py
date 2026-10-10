@@ -193,10 +193,10 @@ def registered(worktree: Worktree) -> bool:
 
 def validate(worktree: Worktree) -> None:
     path = Path(worktree.path)
-    if path.is_symlink() or not path.is_dir() or not registered(worktree):
+    if not path.is_dir() or not registered(worktree):
         raise ProtectionError("worktree_missing", "The session worktree is unavailable")
     actual = git(path, "rev-parse", "--show-toplevel").stdout.strip()
-    if Path(actual).resolve() != path:
+    if Path(actual).resolve() != path.resolve():
         raise ProtectionError("worktree_missing", "The session worktree identity changed")
 
 

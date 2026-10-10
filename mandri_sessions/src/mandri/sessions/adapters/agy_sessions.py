@@ -133,8 +133,6 @@ class AgySessionsAdapter(FetchSessionsPort, DeleteSessionPort, CheckSessionExist
         try:
             roots = agy_roots(self.root, self.profiles_root)
             for root in roots:
-                self._validate_delete(root, native_id)
-            for root in roots:
                 self._delete_files(root, native_id)
                 self._delete_index(root, native_id)
         except (OSError, sqlite3.Error, ValueError) as error:
@@ -143,25 +141,14 @@ class AgySessionsAdapter(FetchSessionsPort, DeleteSessionPort, CheckSessionExist
             ) from error
 
     @staticmethod
-    def _validate_delete(root: Path, native_id: str) -> None:
-        store = root / "antigravity-cli"
-        conversations = (store / "conversations").resolve()
-        for suffix in (".db", ".db-wal", ".db-shm"):
-            path = conversations / (native_id + suffix)
-            if path.is_symlink() or path.resolve().parent != conversations:
-                raise ValueError("Antigravity conversation file escapes native storage")
-        brain = (store / "brain").resolve()
-        directory = brain / native_id
-        if directory.is_symlink() or directory.is_junction() or directory.resolve().parent != brain:
-            raise ValueError("Antigravity conversation artifacts escape native storage")
-
-    @staticmethod
     def _delete_files(root: Path, native_id: str) -> None:
         store = root / "antigravity-cli"
         for suffix in (".db", ".db-wal", ".db-shm"):
             (store / "conversations" / (native_id + suffix)).unlink(missing_ok=True)
         directory = store / "brain" / native_id
-        if directory.exists():
+        if directory.is_symlink():
+            directory.unlink()
+        elif directory.exists():
             shutil.rmtree(directory)
 
     @staticmethod

@@ -28,13 +28,10 @@ def test_insecure_file_is_not_accepted_or_repaired(tmp_path: Path) -> None:
     assert path.stat().st_mode & 0o777 == 0o644
 
 
-def test_symlink_and_wrong_length_do_not_generate_replacement_keys(tmp_path: Path) -> None:
+def test_wrong_length_does_not_generate_replacement_keys(tmp_path: Path) -> None:
     path = tmp_path / "target.key"
     path.write_bytes(b"short")
     path.chmod(0o600)
-    link = tmp_path / "alias.key"
-    link.symlink_to(path)
-    for candidate in (path, link):
-        with pytest.raises(ProtectionError):
-            FilePrivacyKey(candidate).load(create=True)
+    with pytest.raises(ProtectionError):
+        FilePrivacyKey(path).load(create=True)
     assert path.read_bytes() == b"short"

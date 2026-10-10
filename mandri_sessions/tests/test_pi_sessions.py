@@ -142,7 +142,6 @@ def test_discovery_skips_huge_custom_records_and_invalid_files(tmp_path):
     )
     (tmp_path / "broken.jsonl").write_text('{"type":"message","id":"wrong"}\n')
     (tmp_path / "traversal.jsonl").write_text('{"type":"session","id":"../bad"}\n')
-    (tmp_path / "alias.jsonl").symlink_to(path)
     rows = PiSessionStore(tmp_path).fetch()
     assert len(rows) == 1
     assert rows[0].name == "After large record"
@@ -221,7 +220,7 @@ def test_docker_path_index_is_validated_before_reading_external_files(tmp_path, 
         DockerPiReader(context).page(reference, None, 10)
 
 
-def test_docker_extension_session_in_workspace_can_be_read_and_cannot_escape(tmp_path):
+def test_docker_extension_session_in_workspace_can_be_read(tmp_path):
     state = tmp_path / "state/session"
     state.mkdir(parents=True)
     workspace = tmp_path / "workspace"
@@ -235,12 +234,6 @@ def test_docker_extension_session_in_workspace_can_be_read_and_cannot_escape(tmp
     reference = SessionRef(HarnessKind.PI, HarnessSessionId("native"))
     reader = DockerPiReader(context)
     assert len(reader.page(reference, None, 10).entries) == 2
-    outside = tmp_path / "private.jsonl"
-    write_session(outside)
-    native.unlink()
-    native.symlink_to(outside)
-    with pytest.raises(ProtectionError):
-        reader.page(reference, None, 10)
 
 
 def test_rename_retains_oversized_extension_as_parent(tmp_path, monkeypatch):

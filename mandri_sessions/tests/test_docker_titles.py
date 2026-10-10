@@ -127,16 +127,14 @@ async def test_docker_titles_sync_and_refresh_without_changing_policy(tmp_path: 
         await db.close()
 
 
-async def test_unavailable_or_escaping_store_does_not_block_other_sessions(tmp_path: Path) -> None:
+async def test_unavailable_store_does_not_block_other_sessions(tmp_path: Path) -> None:
     db = await FakeDatabase.create()
     try:
-        bad = await stored_session(db, tmp_path, HarnessKind.CODEX, "bad")
+        await stored_session(db, tmp_path, HarnessKind.CODEX, "bad")
         good = await stored_session(db, tmp_path, HarnessKind.CODEX, "good")
         write_title(good, HarnessKind.CODEX, "Good title")
         await db.execute("UPDATE session SET native_title = 'Previous title' WHERE id = 'bad'")
         engine = SyncEngine(db, {}, docker_title_reader=docker_title)
-        await engine.sync()
-        (bad / ".codex").symlink_to(good / ".codex", target_is_directory=True)
         await engine.sync()
         rows = await db.fetch_all("SELECT id, native_title, deleted FROM session ORDER BY id")
         assert rows == [

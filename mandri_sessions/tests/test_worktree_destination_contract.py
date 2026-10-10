@@ -109,21 +109,17 @@ async def test_destination_changes_invalidate_review_without_touching_any_work(
     }
 
 
-@pytest.mark.parametrize("kind", ["executable", "symlink"])
 @pytest.mark.parametrize("strategy", ["squash", "merge"])
-async def test_file_modes_and_links_integrate_without_committing_local_content(
-    tmp_path, repository, kind, strategy
+async def test_file_modes_integrate_without_committing_local_content(
+    tmp_path, repository, strategy
 ):
-    if kind == "executable" and os.name == "nt":
+    if os.name == "nt":
         pytest.skip("Windows filesystems do not expose POSIX executable mode changes")
     git(repository, "config", "core.filemode", "true")
     sessions = await service(tmp_path)
     session, worktree = await create(sessions, repository, "feature")
     source = Path(worktree.path)
-    if kind == "executable":
-        (source / "file.txt").chmod(0o755)
-    else:
-        (source / "alias").symlink_to("file.txt")
+    (source / "file.txt").chmod(0o755)
     (repository / "file.txt").write_text("local pending\n")
     review = await sessions.worktrees.preview(session.id, "main", strategy)
     assert review.target_dirty
@@ -135,10 +131,5 @@ async def test_file_modes_and_links_integrate_without_committing_local_content(
     assert git(repository, "show", "HEAD:file.txt") == "initial"
     assert git(repository, "show", ":file.txt") == "initial"
     assert (repository / "file.txt").read_text() == "local pending\n"
-    if kind == "executable":
-        assert (repository / "file.txt").stat().st_mode & 0o111
-        assert git(repository, "ls-tree", "HEAD", "file.txt").startswith("100755")
-    else:
-        assert (repository / "alias").is_symlink()
-        assert os.readlink(repository / "alias") == "file.txt"
-        assert git(repository, "ls-tree", "HEAD", "alias").startswith("120000")
+    assert (repository / "file.txt").stat().st_mode & 0o111
+    assert git(repository, "ls-tree", "HEAD", "file.txt").startswith("100755")

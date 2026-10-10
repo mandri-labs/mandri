@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import quote
 
+from mandri.core.types.execution import ExecutionBackend
 from mandri.core.types.prompt import PromptAttachment, UserPrompt
 from mandri.core.types.sessions import Session
 from mandri.runtime.file_context import SessionFileContext
@@ -152,11 +153,7 @@ class AttachmentStore:
             metadata = json.loads((directory / "metadata.json").read_text())
             attachment = Attachment(**metadata)
             path = directory / "content"
-            if (
-                directory.is_symlink()
-                or path.is_symlink()
-                or path.stat().st_size != attachment.size
-            ):
+            if path.stat().st_size != attachment.size:
                 raise AttachmentError("Attachment is unavailable")
             return attachment, path
         except (OSError, ValueError, TypeError) as error:
@@ -196,7 +193,7 @@ class AttachmentStore:
     def materialize(self, session: Session, item: Attachment, source: Path) -> str:
         context = SessionFileContext.from_session(session, self.directory(str(session.id)))
         destination, runtime_path = context.attachment_path(item.id, safe_name(item.name))
-        if any(
+        if session.execution_backend is ExecutionBackend.DOCKER and any(
             path.is_symlink()
             for path in (destination, *destination.parents)
             if path.is_relative_to(context.attachments)

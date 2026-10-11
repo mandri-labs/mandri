@@ -73,6 +73,7 @@ from mandri.runtime.control.errors import (
     ControlError,
     ControlTransportError,
     HarnessNotInitializedError,
+    ModeRejectedError,
     PromptDeliveryFailedError,
     SteerUnsupportedError,
 )
@@ -1315,8 +1316,6 @@ class RuntimeService:
         interaction = record.interaction_mode
         if mode is None:
             mode = interaction.mode if interaction is not None else None
-        elif record.harness is HarnessKind.OPENCODE and mode not in {"default", "auto"}:
-            modes.opencode_permission_rules(mode)
         return modes.resolve_launch(record.harness.value, mode, self._mode_defaults)
 
     async def _resume_route(
@@ -1402,8 +1401,12 @@ class RuntimeService:
             if listen_port is None or native_id_value is None:
                 raise SessionNotResumableError(f"session {session_id} cannot reattach opencode")
             revealed = await self._reattach_opencode(session_id, listen_port, native_id_value)
-            if launch_mode is not None and launch_mode.mode in modes.OPENCODE_PERMISSION_RULES:
+            if launch_mode is not None and launch_mode.mode in modes.OPENCODE_MODES:
                 await self._require_control(session_id).set_mode(launch_mode.mode)
+            elif launch_mode is not None and launch_mode.opencode_config.get("default_agent"):
+                await self._select_native_agent(
+                    session_id, launch_mode.opencode_config["default_agent"]
+                )
         else:
             resume_thread_id = (
                 native_id_value
@@ -1602,6 +1605,20 @@ class RuntimeService:
             if state.watcher is not None and self._registry.harness_of(session_id) == "opencode":
                 await state.watcher.set_auto_answer(self._approve_once if mode == "auto" else None)
             return application
+
+    async def select_session_agent(self, session_id: str, agent: str) -> None:
+        async with self._session_state(session_id).mode_lock:
+            state = self._session_state(session_id)
+            if state.resuming or state.stopping:
+                raise ControlTransportError("Session is already changing state")
+            await self._select_native_agent(session_id, agent)
+
+    async def _select_native_agent(self, session_id: str, agent: str) -> None:
+        control = self._require_control(session_id)
+        select = getattr(control, "select_agent", None)
+        if select is None:
+            raise ModeRejectedError("This harness does not support native agent selection")
+        await select(agent)
 
     async def _restart_for_mode(self, session_id: str, mode: str) -> None:
         if self._sessions is None:

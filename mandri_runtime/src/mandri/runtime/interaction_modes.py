@@ -50,19 +50,6 @@ class InteractionModes:
                 candidate = status.rsplit(":", 1)[-1] if isinstance(status, str) else None
                 if candidate in {"default", "acceptEdits", "plan", "bypassPermissions"}:
                     mode = candidate
-        elif harness == "opencode" and raw.get("type") == "session.updated":
-            info = _record(_record(raw.get("properties")).get("info"))
-            if native_id is not None and info.get("id") != native_id:
-                return None
-            permissions = info.get("permissions", info.get("permission"))
-            if permissions == [
-                {"action": "*", "resource": "*", "effect": "allow"}
-            ] or permissions == {"*": "allow"}:
-                mode = "auto"
-            elif permissions == [
-                {"action": "*", "resource": "*", "effect": "ask"}
-            ] or permissions == {"*": "ask"}:
-                mode = "default"
         elif harness == "codex":
             result = raw.get("result")
             if isinstance(result, dict) and isinstance(result.get("thread"), dict):

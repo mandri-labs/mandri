@@ -165,6 +165,10 @@ async def test_opencode_catalog_only_http_get_loopback_and_cleanup():
 
         def handle(request):
             requests.append(request)
+            if request.url.path == "/api/agent":
+                return httpx.Response(
+                    200, json={"data": [{"id": "build", "name": "Build", "mode": "primary"}]}
+                )
             return httpx.Response(
                 200, json={"data": [{"name": "custom", "description": "Configured command"}]}
             )
@@ -180,7 +184,7 @@ async def test_opencode_catalog_only_http_get_loopback_and_cleanup():
             {},
             spawn,
         )
-    assert result[0]["name"] == "custom"
+    assert [item["id"] for item in result] == ["compact", "agent:build", "custom"]
     assert spawn.call_args.args[0] == [
         "opencode",
         "serve",
@@ -192,6 +196,7 @@ async def test_opencode_catalog_only_http_get_loopback_and_cleanup():
     assert [(request.method, request.url.path) for request in requests] == [
         ("GET", "/api/integration"),
         ("GET", "/api/command"),
+        ("GET", "/api/agent"),
     ]
     assert requests[0].url.params["directory"] == "/work/café"
     process.stop.assert_awaited_once()

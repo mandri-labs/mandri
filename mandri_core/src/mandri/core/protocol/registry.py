@@ -271,6 +271,13 @@ class SessionInterruptParams(BaseModel):
     session_id: SessionId
 
 
+class SessionAgentParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: SessionId
+    agent: str = Field(min_length=1)
+
+
 class SessionHistoryParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -394,6 +401,11 @@ ACTIONS: dict[str, ActionSpec] = {
         name="session.mode",
         params=SessionModeParams,
         description="Change the interaction mode of a running session mid-flight.",
+    ),
+    "session.agent": ActionSpec(
+        name="session.agent",
+        params=SessionAgentParams,
+        description="Select the native agent used by subsequent turns.",
     ),
     "session.prompt": ActionSpec(
         name="session.prompt",

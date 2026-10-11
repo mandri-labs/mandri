@@ -160,7 +160,7 @@ async def test_unavailable_bypass_does_not_resolve_or_deliver_the_plan_request()
         (
             "opencode",
             {"type": "session.updated", "properties": {"info": {"permission": {"*": "allow"}}}},
-            "auto",
+            None,
         ),
         (
             "codex",

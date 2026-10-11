@@ -1,5 +1,7 @@
 from typing import Any
 
+from mandri.core.opencode_tasks import task_content
+
 
 def part_id(message_id: str, kind: str, ordinal: int | str) -> str:
     return f"{message_id}:{kind}:{ordinal}"
@@ -28,7 +30,25 @@ def message_record(message: dict[str, Any], session_id: str) -> dict[str, Any]:
     if isinstance(model, dict):
         info.update(providerID=model.get("providerID"), modelID=model.get("id"))
     parts: list[dict[str, Any]] = []
-    if kind in {"user", "synthetic", "system", "skill"}:
+    content: list[dict[str, Any]]
+    if kind == "compaction":
+        content = [
+            {
+                "type": "compaction",
+                **{
+                    key: message[key]
+                    for key in ("status", "reason", "summary", "error")
+                    if key in message
+                },
+            }
+        ]
+    elif kind == "idle":
+        content = message.get("content", [])
+    elif kind in {"synthetic", "shell"}:
+        content = task_content(message)
+    elif kind == "system":
+        content = []
+    elif kind in {"user", "skill"}:
         content = [{"type": "text", "text": message.get("text", "")}]
         content.extend(
             {
@@ -75,7 +95,13 @@ def message_record(message: dict[str, Any], session_id: str) -> dict[str, Any]:
 def message_events(message: dict[str, Any], session_id: str) -> list[dict[str, Any]]:
     record = message_record(message, session_id)
     if message.get("type") == "idle":
-        return [{"type": "session.idle", "properties": {"sessionID": session_id}}]
+        return [
+            {"type": "session.idle", "properties": {"sessionID": session_id}},
+            *[
+                {"type": "message.part.updated", "properties": {"part": part}}
+                for part in record["parts"]
+            ],
+        ]
     return [
         {"type": "message.updated", "properties": {"info": record["message"]}},
         *[

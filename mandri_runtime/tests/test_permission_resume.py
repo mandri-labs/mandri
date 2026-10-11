@@ -47,7 +47,7 @@ def test_resume_resolves_permission_override(harness, stored, override, expected
     [
         (HarnessKind.CLAUDE, "invalid"),
         (HarnessKind.CODEX, "default"),
-        (HarnessKind.OPENCODE, "another-agent"),
+        (HarnessKind.OPENCODE, " "),
     ],
 )
 async def test_invalid_override_fails_before_spawn(harness, mode):

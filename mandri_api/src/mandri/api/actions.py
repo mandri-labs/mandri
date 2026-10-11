@@ -14,6 +14,7 @@ from mandri.core.protocol.registry import (
     ActionRegistry,
     ApprovalAnswerParams,
     ApprovalCancelParams,
+    SessionAgentParams,
     SessionHistoryParams,
     SessionInterruptParams,
     SessionModeParams,
@@ -59,6 +60,7 @@ def build_action_registry(
     registry.register("approval.answer", _make_answer_handler(runtime))
     registry.register("approval.cancel", _make_cancel_handler(runtime))
     registry.register("session.mode", _make_mode_handler(runtime))
+    registry.register("session.agent", _make_agent_handler(runtime))
     registry.register("session.prompt", _make_prompt_handler(runtime))
     registry.register("session.interrupt", _make_interrupt_handler(runtime))
     if sessions is not None:
@@ -118,6 +120,10 @@ def _make_history_handler(
             with contextlib.suppress(SessionError, OSError, ValueError, TypeError):
                 busy, model = await sessions.external_status(SessionId(str(params.session_id)))
         turn_active = busy
+        native_agent = None
+        if params.cursor is None:
+            with contextlib.suppress(SessionError, OSError, ValueError, TypeError):
+                native_agent = await sessions.native_agent(SessionId(str(params.session_id)))
         if runtime is not None and runtime.registry.status(str(params.session_id)) == "live":
             busy = False
             turn_active = runtime.is_busy(str(params.session_id))
@@ -136,6 +142,7 @@ def _make_history_handler(
             "turn_active": turn_active,
             "external_busy": busy,
             "external_model": model,
+            "native_agent": native_agent,
         }
 
     return handle
@@ -221,6 +228,23 @@ def _make_mode_handler(
     return handle
 
 
+def _make_agent_handler(
+    runtime: RuntimeService,
+) -> Callable[[BaseModel], Awaitable[dict[str, typing.Any]]]:
+    async def handle(params: BaseModel) -> dict[str, typing.Any]:
+        if not isinstance(params, SessionAgentParams):
+            raise ProtocolError(ProtocolErrorCode.INVALID_PARAMS, "invalid agent selection")
+        try:
+            await runtime.select_session_agent(str(params.session_id), params.agent)
+        except SessionNotRunningError as error:
+            raise ProtocolError(ProtocolErrorCode.SESSION_NOT_RUNNING, str(error)) from error
+        except ControlError as error:
+            raise ProtocolError(ProtocolErrorCode.CONTROL_DELIVERY_FAILED, str(error)) from error
+        return {"session_id": str(params.session_id), "agent": params.agent}
+
+    return handle
+
+
 def _make_prompt_handler(
     runtime: RuntimeService,
 ) -> Callable[[BaseModel], Awaitable[dict[str, typing.Any]]]:
@@ -230,6 +254,8 @@ def _make_prompt_handler(
                 ProtocolErrorCode.INVALID_PARAMS, "invalid params for action: session.prompt"
             )
         try:
+            if params.agent is not None:
+                await runtime.select_session_agent(str(params.session_id), params.agent)
             outcome = (
                 await runtime.send_session_prompt(
                     str(params.session_id), params.content, params.attachments

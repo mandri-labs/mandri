@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from mandri.core.ids import HarnessSessionId, ModeApplication
 from mandri.core.types.config import SessionModeConfig
@@ -37,36 +38,48 @@ async def test_codex_profiles_reach_native_thread(profile, policy, sandbox, revi
     adapter._call.assert_awaited_once_with("thread/resume" if resume else "thread/start", expected)
 
 
-@pytest.mark.parametrize("mode,action", [("default", "ask"), ("auto", "allow")])
-async def test_opencode_permissions_reach_native_session(mode, action):
+@pytest.mark.parametrize("mode", ["default", "auto"])
+async def test_opencode_automation_preserves_native_agent_permissions(mode):
     launch = resolve_launch("opencode", mode, SessionModeConfig())
-    assert launch.opencode_config == {"permission": {"*": action}}
+    assert launch.opencode_config == {}
     assert launch.auto_approve is (mode == "auto")
     adapter = OpencodeControlAdapter("http://localhost", "s1")
-    adapter._request = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    rules = [{"action": "edit", "resource": "*", "effect": "deny"}]
+    adapter._request = AsyncMock(
+        return_value=httpx.Response(200, json={"data": {"permissions": rules}})
+    )
     try:
         await adapter.set_mode(mode)
-        adapter._request.assert_awaited_once_with(
-            "PATCH",
-            "/api/session/s1",
-            {"permissions": [{"action": "*", "resource": "*", "effect": action}]},
-        )
+        adapter._request.assert_awaited_once_with("GET", "/api/session/s1")
     finally:
         await adapter.aclose()
 
 
-async def test_legacy_opencode_rules_use_native_array_shape():
+@pytest.mark.parametrize("effect", ["ask", "allow"])
+async def test_opencode_removes_legacy_blanket_override(effect):
     adapter = OpencodeControlAdapter("http://localhost", "s1")
-    adapter._request = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    adapter._request = AsyncMock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "data": {"permissions": [{"action": "*", "resource": "*", "effect": effect}]}
+                },
+            ),
+            httpx.Response(200),
+        ]
+    )
     try:
-        await adapter.set_mode("acceptEdits")
-        adapter._request.assert_awaited_once_with(
-            "PATCH",
-            "/api/session/s1",
-            {"permissions": [{"action": "edit", "resource": "*", "effect": "allow"}]},
-        )
+        await adapter.set_mode("default")
+        adapter._request.assert_awaited_with("PATCH", "/api/session/s1", {"permissions": []})
     finally:
         await adapter.aclose()
+
+
+def test_opencode_plan_selects_the_native_agent():
+    launch = resolve_launch("opencode", "plan", SessionModeConfig())
+    assert launch.opencode_config == {"default_agent": "plan"}
+    assert not launch.auto_approve
 
 
 @pytest.mark.parametrize("mode", ["ask", "auto", "full-access"])

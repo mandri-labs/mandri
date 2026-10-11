@@ -301,6 +301,15 @@ class SessionsService:
             busy = None
         return busy, model
 
+    async def native_agent(self, session_id: SessionId) -> str | None:
+        session = await self.get_session(session_id)
+        reader = self._transcripts.for_session(session) if self._transcripts else None
+        inspect = getattr(reader, "native_agent", None)
+        if inspect is None or session.native_id is None:
+            return None
+        result = await asyncio.to_thread(inspect, transcript_reference(session))
+        return result if isinstance(result, str) else None
+
     async def native_ownership(self, session_id: SessionId) -> NativeOwnership:
         session = await self.get_session(session_id)
         if session.execution_backend is ExecutionBackend.DOCKER:

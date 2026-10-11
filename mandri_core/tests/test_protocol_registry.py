@@ -129,6 +129,7 @@ def test_actions_registry_covers_session_and_approval_actions() -> None:
         "approval.answer",
         "approval.cancel",
         "session.mode",
+        "session.agent",
         "session.prompt",
         "session.interrupt",
         "agent.list",

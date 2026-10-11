@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 from urllib.parse import quote
@@ -55,10 +56,16 @@ def permission_event(record: dict[str, Any]) -> dict[str, Any]:
 
 
 class OpencodeEvents:
-    def __init__(self, call: HttpCall) -> None:
+    def __init__(
+        self, call: HttpCall, recover_diff: Callable[[str, str], None] | None = None
+    ) -> None:
         self._call = call
+        self._recover_diff = recover_diff
         self._messages: dict[str, dict[str, Any]] = {}
         self._parts: dict[str, dict[str, Any]] = {}
+        self._compactions: dict[str, dict[str, Any]] = {}
+        self._turns: dict[str, str] = {}
+        self._shells: dict[str, dict[str, Any]] = {}
 
     async def convert(self, event: dict[str, Any]) -> list[dict[str, Any]]:
         data = event.get("data")
@@ -80,6 +87,41 @@ class OpencodeEvents:
             ]
         if kind == "permission.asked":
             return [permission_event(data)]
+        if kind.startswith("session.compaction."):
+            return self._compaction(event, data, str(owner), created)
+        if kind == "session.agent.selected":
+            return [{"type": kind, "properties": data}]
+        if kind == "session.synthetic":
+            return message_events(
+                {
+                    **data,
+                    "id": str(event["id"]).replace("evt_", "msg_", 1),
+                    "type": "synthetic",
+                    "time": {"created": created},
+                },
+                str(owner),
+            )
+        if kind in {"session.shell.started", "session.shell.ended"}:
+            shell = data["shell"]
+            current = self._shells.setdefault(
+                shell["id"],
+                {
+                    "id": str(event["id"]).replace("evt_", "msg_", 1),
+                    "type": "shell",
+                    "shellID": shell["id"],
+                    "command": shell["command"],
+                    "time": {"created": created},
+                },
+            )
+            current.update(
+                status=shell["status"], exit=shell.get("exit"), output=data.get("output")
+            )
+            if kind.endswith("ended"):
+                current["time"]["completed"] = created
+            converted = message_events(deepcopy(current), str(owner))
+            if kind.endswith("ended"):
+                self._shells.pop(shell["id"], None)
+            return converted
         if kind == "session.created":
             return [
                 {
@@ -116,6 +158,10 @@ class OpencodeEvents:
             ]
             if kind.endswith("failed"):
                 result.append({"type": "session.error", "properties": data})
+            if not running:
+                turn = self._turns.pop(str(owner), None)
+                if turn is not None and self._recover_diff is not None:
+                    self._recover_diff(str(owner), turn)
             return result
         if kind == "session.retry.scheduled":
             return [{"type": "session.status", "properties": {**data, "status": {"type": "retry"}}}]
@@ -132,7 +178,10 @@ class OpencodeEvents:
                 return []
             if response.status_code != 200:
                 raise ControlTransportError("OpenCode message recovery failed")
-            return message_events(response.json()["data"], str(owner))
+            message = response.json()["data"]
+            if message.get("type") == "user":
+                self._turns.setdefault(str(owner), message["id"])
+            return message_events(message, str(owner))
         message_id = data.get("assistantMessageID")
         if not isinstance(message_id, str):
             return [] if kind.startswith("session.") else [{"type": kind, "properties": data}]
@@ -185,6 +234,32 @@ class OpencodeEvents:
         if kind.startswith("session.tool."):
             return self._tool(kind, data, message_id, str(owner), created)
         return []
+
+    def _compaction(
+        self, event: dict[str, Any], data: dict[str, Any], owner: str, created: Any
+    ) -> list[dict[str, Any]]:
+        kind = event["type"]
+        current = self._compactions.setdefault(
+            owner,
+            {
+                "id": data.get("inputID") or str(event.get("id", owner)).replace("evt_", "msg_", 1),
+                "type": "compaction",
+                "status": "running",
+                "reason": data.get("reason", "auto"),
+                "summary": "",
+                "time": {"created": created},
+            },
+        )
+        if kind.endswith("delta"):
+            current["summary"] += data.get("text", "")
+        if kind.endswith("ended"):
+            current.update(status="completed", summary=data.get("text", ""))
+        if kind.endswith("failed"):
+            current.update(status="failed", error=data.get("error", {}))
+        result = message_events(deepcopy(current), owner)
+        if kind.endswith(("ended", "failed")):
+            self._compactions.pop(owner, None)
+        return result
 
     def _tool(
         self, kind: str, data: dict[str, Any], message_id: str, owner: str, created: Any

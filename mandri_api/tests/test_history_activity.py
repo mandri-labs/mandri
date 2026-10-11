@@ -11,6 +11,7 @@ from mandri.core.protocol.registry import SessionHistoryParams
 async def test_history_restores_working_state_independently_of_ownership(managed, busy):
     sessions = SimpleNamespace(
         statuses=None,
+        native_agent=AsyncMock(return_value=None),
         history=AsyncMock(
             return_value=SimpleNamespace(entries=[], next_token=None, has_more=False)
         ),

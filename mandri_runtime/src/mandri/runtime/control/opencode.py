@@ -30,8 +30,9 @@ from mandri.runtime.control.errors import (
     PromptDeliveryFailedError,
     PromptDeliveryUnknownError,
 )
-from mandri.runtime.control.modes import OPENCODE_PERMISSION_RULES
+from mandri.runtime.control.modes import OPENCODE_MODES
 from mandri.runtime.control.opencode_commands import OpencodeCommands
+from mandri.runtime.control.opencode_diffs import OpencodeDiffRecovery
 from mandri.runtime.control.opencode_events import OpencodeEvents, form_event, permission_event
 from mandri.runtime.control.opencode_questions import form_answers, question_answers
 from mandri.runtime.control.prompt import native_parts
@@ -125,7 +126,8 @@ class OpencodeControlAdapter(HarnessControl):
         self._seen: set[str] = set()
         self._closing = False
         self._approval_owners: dict[str, str] = {}
-        self._converter = OpencodeEvents(self._request)
+        self._diffs = OpencodeDiffRecovery(self._request, self._queue.put_nowait)
+        self._converter = OpencodeEvents(self._request, self._diffs.submit)
         self.agents = OpencodeAgentControl(self._request, str(self._session_id))
 
     async def capture_identity(self) -> HarnessSessionId:
@@ -180,26 +182,31 @@ class OpencodeControlAdapter(HarnessControl):
         return True
 
     async def set_mode(self, mode: str) -> ModeApplication:
-        rules = OPENCODE_PERMISSION_RULES.get(mode)
-        if rules is None:
+        if mode not in OPENCODE_MODES:
             raise ModeRejectedError(f"opencode does not support mode: {mode}")
-        response = await self._request(
-            "PATCH",
-            f"/api/session/{self._session_id}",
-            {
-                "permissions": [
-                    {
-                        "action": name,
-                        "resource": "*",
-                        "effect": action,
-                    }
-                    for name, action in rules.items()
-                ]
-            },
-        )
+        response = await self._request("GET", f"/api/session/{self._session_id}")
         if not _is_ok(response.status_code):
-            raise ModeRejectedError(f"opencode rejected mode {mode}: status {response.status_code}")
+            raise ModeRejectedError("OpenCode session permissions are unavailable")
+        try:
+            data = response.json().get("data")
+        except (ValueError, AttributeError):
+            raise ModeRejectedError("OpenCode session permissions are unavailable") from None
+        if not isinstance(data, dict):
+            raise ModeRejectedError("OpenCode session permissions are unavailable")
+        permissions = data.get("permissions")
+        if permissions in (
+            [{"action": "*", "resource": "*", "effect": "ask"}],
+            [{"action": "*", "resource": "*", "effect": "allow"}],
+        ):
+            response = await self._request(
+                "PATCH", f"/api/session/{self._session_id}", {"permissions": []}
+            )
+            if not _is_ok(response.status_code):
+                raise ModeRejectedError("OpenCode rejected native permission inheritance")
         return ModeApplication.MID_SESSION_APPLIED
+
+    async def select_agent(self, agent: str) -> None:
+        await OpencodeCommands(self._request, str(self._session_id)).select_agent(agent)
 
     async def send_prompt(self, text: str | UserPrompt) -> PromptOutcome:
         response = await self._request(
@@ -276,6 +283,7 @@ class OpencodeControlAdapter(HarnessControl):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError, httpx.HTTPError):
                 await task
+        await self._diffs.close()
         self._queue.put_nowait(None)
         await self._client.aclose()
 

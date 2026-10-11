@@ -14,6 +14,7 @@ from mandri.core.types.conversation_status import WorkDelta, WorkObservation
 from mandri.sessions.native_activity import native_model, native_turn_busy
 from mandri.sessions.opencode_store import message_table
 from mandri.sessions.transcripts.errors import TranscriptStoreError
+from mandri.sessions.transcripts.opencode_diffs import turn_files
 from mandri.sessions.transcripts.record_preview import MAX_PREVIEW_BYTES, preview_from_prefix
 from mandri.sessions.transcripts.record_view import MAX_INLINE_BYTES
 from mandri.sessions.transcripts.tokens import (
@@ -107,7 +108,17 @@ class OpencodeTranscriptReader:
         for row in reversed(rows):
             message_id = str(row[2])
             info = {**_decode_data(str(row[1]), int(row[3])), "id": message_id}
-            if info.get("type") in {"user", "assistant", "idle", "synthetic", "system", "skill"}:
+            self._with_files(info, str(session.native_id))
+            if info.get("type") in {
+                "user",
+                "assistant",
+                "idle",
+                "synthetic",
+                "system",
+                "skill",
+                "compaction",
+                "shell",
+            }:
                 entries.extend(
                     RawEvent(json.dumps(event))
                     for event in message_events(info, str(session.native_id))
@@ -322,13 +333,24 @@ class OpencodeTranscriptReader:
             parts.setdefault(str(message_id), []).append(part)
         return parts
 
-    @staticmethod
-    def _entry(row: tuple[Any, ...], parts: dict[str, list[Any]], session_id: str) -> RawEvent:
+    def _entry(
+        self, row: tuple[Any, ...], parts: dict[str, list[Any]], session_id: str
+    ) -> RawEvent:
         message_id = str(row[2])
         message = _decode_data(str(row[1]), int(row[3]))
+        self._with_files(message, session_id)
         if message.get("type") == "mandri.transcript_record":
             return RawEvent(json.dumps(message))
-        if message.get("type") in {"user", "assistant", "idle", "synthetic", "system", "skill"}:
+        if message.get("type") in {
+            "user",
+            "assistant",
+            "idle",
+            "synthetic",
+            "system",
+            "skill",
+            "compaction",
+            "shell",
+        }:
             raw = json.dumps(message_record(message, session_id))
             return RawEvent(json.dumps(_decode_data(raw, len(raw.encode("utf-8")))))
         if message_id not in parts:
@@ -346,6 +368,40 @@ class OpencodeTranscriptReader:
             if size > MAX_INLINE_BYTES
             else RawEvent(raw)
         )
+
+    def _with_files(self, message: dict[str, Any], session_id: str) -> None:
+        if message.get("type") != "idle":
+            return
+        try:
+            files = turn_files(self._db_path, session_id, message["id"])
+        except (OSError, sqlite3.Error):
+            return
+        if files is not None and files["files"]:
+            message["content"] = [files]
+
+    def native_agent(self, session: SessionRef) -> str | None:
+        uri = f"{self._db_path.resolve().as_uri()}?mode=ro"
+        try:
+            connection = sqlite3.connect(uri, uri=True, timeout=SQLITE_TIMEOUT_S)
+        except sqlite3.Error:
+            return None
+        try:
+            table = (
+                "session_v2"
+                if message_table(connection, str(session.native_id)) == "session_message"
+                else "session"
+            )
+            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if "agent" not in columns:
+                return None
+            row = connection.execute(
+                f"SELECT agent FROM {table} WHERE id=?", (str(session.native_id),)
+            ).fetchone()
+            return row[0] if row and isinstance(row[0], str) else None
+        except sqlite3.Error:
+            return None
+        finally:
+            connection.close()
 
     @staticmethod
     def _encode_token(rows: list[tuple[Any, ...]]) -> PageToken:

@@ -16,7 +16,6 @@ _CLAUDE_PERMISSION_FLAG = "--permission-mode"
 _CODEX_POLICY_KEY = "approvalPolicy"
 _CODEX_SANDBOX_KEY = "sandbox"
 _OPENCODE_AGENT_KEY = "default_agent"
-_OPENCODE_PERMISSION_KEY = "permission"
 
 CODEX_PROFILES: dict[str, dict[str, str]] = {
     "ask": {
@@ -36,13 +35,7 @@ CODEX_PROFILES: dict[str, dict[str, str]] = {
     },
 }
 
-OPENCODE_PERMISSION_RULES: dict[str, dict[str, str]] = {
-    "default": {"*": "ask"},
-    "auto": {"*": "allow"},
-    "bypassPermissions": {"bash": "allow", "edit": "allow", "webfetch": "allow"},
-    "acceptEdits": {"edit": "allow"},
-    "plan": {"bash": "deny", "edit": "deny", "webfetch": "deny"},
-}
+OPENCODE_MODES = frozenset({"default", "auto"})
 
 
 @dataclasses.dataclass(frozen=True)
@@ -93,16 +86,6 @@ def codex_session_params(policy: str | None, sandbox: str | None) -> dict[str, s
     return params
 
 
-def opencode_permission_rules(mode: str) -> dict[str, str]:
-    rules = OPENCODE_PERMISSION_RULES.get(mode)
-    if rules is None:
-        raise ConfigError(
-            f"unknown opencode interaction mode {mode!r}, expected one of "
-            f"{sorted(OPENCODE_PERMISSION_RULES)}"
-        )
-    return dict(rules)
-
-
 def resolve_launch(
     harness: str, mode: str | None, defaults: SessionModeConfig
 ) -> LaunchMode | None:
@@ -148,12 +131,10 @@ def _resolve_opencode(mode: str | None, defaults: SessionModeConfig) -> LaunchMo
     effective = mode if mode is not None else defaults.opencode_agent
     if effective is None:
         return LaunchMode()
-    rules = OPENCODE_PERMISSION_RULES.get(effective)
-    if rules is not None:
+    if effective in OPENCODE_MODES:
         return LaunchMode(
             mode=effective,
             auto_approve=effective == "auto",
-            opencode_config={_OPENCODE_PERMISSION_KEY: dict(rules)},
         )
     validate_opencode_agent(effective)
     return LaunchMode(mode=effective, opencode_config={_OPENCODE_AGENT_KEY: effective})

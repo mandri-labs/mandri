@@ -148,6 +148,9 @@
         "session": {
           "$ref": "#/components/messages/session"
         },
+        "session.agent": {
+          "$ref": "#/components/messages/session.agent"
+        },
         "session.commands": {
           "$ref": "#/components/messages/session.commands"
         },
@@ -2075,6 +2078,44 @@
           "type": "object"
         },
         "title": "session.{id}"
+      },
+      "session.agent": {
+        "correlationId": {
+          "location": "$message.payload#/op_id"
+        },
+        "description": "Select the native agent used by subsequent turns.",
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "session.agent",
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "op_id": {
+              "title": "Op Id",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/components/schemas/SessionAgentParams"
+            },
+            "type": {
+              "const": "request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "op_id",
+            "action",
+            "params"
+          ],
+          "title": "session.agent",
+          "type": "object"
+        },
+        "title": "session.agent"
       },
       "session.commands": {
         "correlationId": {
@@ -4541,6 +4582,28 @@
         "title": "ScopedCommandCatalog",
         "type": "object"
       },
+      "SessionAgentParams": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "minLength": 1,
+            "title": "Agent",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session identifier (36-char lowercase uuid4)",
+            "pattern": "^[0-9a-f][0-9a-f-]{34}[0-9a-f]$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "agent"
+        ],
+        "title": "SessionAgentParams",
+        "type": "object"
+      },
       "SessionHistoryParams": {
         "additionalProperties": false,
         "properties": {
@@ -5577,6 +5640,29 @@
         }
       ],
       "title": "Subscribe to runtimes"
+    },
+    "session.agent": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ws"
+      },
+      "description": "Select the native agent used by subsequent turns.",
+      "messages": [
+        {
+          "$ref": "#/channels/ws/messages/session.agent"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/ws"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/ws/messages/response"
+          }
+        ]
+      },
+      "title": "session.agent"
     },
     "session.commands": {
       "action": "receive",

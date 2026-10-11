@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock
 
 import httpx
@@ -7,6 +8,7 @@ from mandri.core.opencode_messages import message_record
 from mandri.core.types.agents import Agent, AgentState
 from mandri.runtime.agent_events import _updated
 from mandri.runtime.control.opencode import OpencodeControlAdapter
+from mandri.runtime.control.opencode_diffs import OpencodeDiffRecovery
 from mandri.runtime.control.opencode_events import OpencodeEvents, form_event
 from mandri.runtime.control.opencode_questions import form_answers
 
@@ -44,6 +46,137 @@ async def test_streamed_parts_replace_by_the_same_identity_as_history():
     )
     assert [p["id"] for p in parts] == [p["id"] for p in stored["parts"]]
     assert len({p["id"] for p in parts}) == 2
+
+
+@pytest.mark.parametrize("input_id", [None, "manual"])
+async def test_compaction_stream_and_history_share_identity_and_summary(input_id):
+    converter = OpencodeEvents(AsyncMock())
+    started = await converter.convert(
+        {
+            **event(
+                "session.compaction.started",
+                reason="manual" if input_id else "auto",
+                inputID=input_id,
+            ),
+            "id": "evt_compact",
+        }
+    )
+    delta = await converter.convert(event("session.compaction.delta", text="summary"))
+    ended = await converter.convert(event("session.compaction.ended", text="full summary"))
+    first = started[-1]["properties"]["part"]
+    assert first["status"] == "running"
+    assert delta[-1]["properties"]["part"]["summary"] == "summary"
+    terminal = ended[-1]["properties"]["part"]
+    assert terminal["status"] == "completed"
+    assert terminal["summary"] == "full summary"
+    stored = message_record(
+        {
+            "id": input_id or "msg_compact",
+            "type": "compaction",
+            "status": "completed",
+            "summary": "full summary",
+        },
+        "child",
+    )
+    assert terminal["id"] == first["id"] == stored["parts"][0]["id"]
+
+
+async def test_completed_turn_recovers_native_snapshot_diff_for_write_tools():
+    files = [
+        {"file": "hello.py", "patch": "+hello", "status": "added", "additions": 1, "deletions": 0}
+    ]
+    call = AsyncMock(
+        side_effect=[
+            httpx.Response(
+                200, json={"data": {"id": "user", "type": "user", "text": "Create file"}}
+            ),
+            httpx.Response(200, json={"data": files}),
+        ]
+    )
+    queue = asyncio.Queue()
+    recovery = OpencodeDiffRecovery(call, queue.put_nowait)
+    converter = OpencodeEvents(call, recovery.submit)
+    try:
+        await converter.convert(event("session.inbox.delivered", inboxID="user"))
+        converted = await converter.convert(event("session.execution.succeeded"))
+        assert converted[0]["properties"]["status"] == {"type": "idle"}
+        async with asyncio.timeout(1):
+            recovered = await queue.get()
+        assert recovered == {
+            "type": "session.diff",
+            "properties": {"sessionID": "child", "diff": files, "scope": "turn", "turnID": "user"},
+        }
+        call.assert_awaited_with("GET", "/api/session/child/diff?from=user", None)
+    finally:
+        await recovery.close()
+
+
+def test_internal_system_messages_do_not_render_as_assistant_text():
+    record = message_record(
+        {
+            "id": "system",
+            "type": "system",
+            "content": [{"type": "text", "text": "internal declarations"}],
+        },
+        "root",
+    )
+    assert record["parts"] == []
+
+
+@pytest.mark.parametrize("source", ["shell", "subagent", "custom-tool"])
+async def test_synthetic_background_results_are_tools_with_persistent_identity(source):
+    message = {
+        "description": "Background work",
+        "text": "result",
+        "metadata": {"source": source, "state": "completed", "childID": "child"},
+    }
+    converted = await OpencodeEvents(AsyncMock()).convert(
+        {**event("session.synthetic", **message), "id": "evt_notification"}
+    )
+    part = converted[-1]["properties"]["part"]
+    assert part["type"] == "tool"
+    assert part["tool"] == source
+    assert part["state"]["status"] == "completed"
+    assert part["state"]["output"] == "result"
+    assert part["state"]["metadata"]["sessionID"] == "child"
+    stored = message_record({**message, "id": "msg_notification", "type": "synthetic"}, "child")
+    assert part["id"] == stored["parts"][0]["id"]
+
+
+async def test_native_shell_lifecycle_preserves_command_and_output():
+    converter = OpencodeEvents(AsyncMock())
+    shell = {"id": "sh_job", "command": "echo hello", "status": "running"}
+    started = await converter.convert(
+        {**event("session.shell.started", shell=shell), "id": "evt_shell"}
+    )
+    ended = await converter.convert(
+        {
+            **event(
+                "session.shell.ended",
+                shell={**shell, "status": "exited", "exit": 0},
+                output={"output": "hello"},
+            ),
+            "id": "evt_shell_end",
+        }
+    )
+    assert started[-1]["properties"]["part"]["state"]["status"] == "running"
+    result = ended[-1]["properties"]["part"]
+    assert result["id"] == started[-1]["properties"]["part"]["id"]
+    assert result["state"]["status"] == "completed"
+    assert result["state"]["input"]["command"] == "echo hello"
+    assert result["state"]["output"] == "hello"
+
+
+@pytest.mark.parametrize(
+    "status,exit_code,expected",
+    [("exited", 1, "error"), ("timeout", None, "error"), ("killed", -9, "cancelled")],
+)
+def test_shell_failures_and_cancellations_remain_visible(status, exit_code, expected):
+    record = message_record(
+        {"id": "shell", "type": "shell", "command": "command", "status": status, "exit": exit_code},
+        "root",
+    )
+    assert record["parts"][0]["state"]["status"] == expected
 
 
 async def test_tools_preserve_input_output_timing_and_metadata():

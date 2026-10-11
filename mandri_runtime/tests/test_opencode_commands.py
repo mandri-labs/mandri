@@ -19,31 +19,46 @@ async def control():
 
 async def test_catalog_is_dynamic_and_does_not_expose_templates(control):
     control._request = AsyncMock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "data": [
-                    {
-                        "name": "custom",
-                        "description": "Custom command",
-                        "template": "private prompt",
-                        "hints": ["$1", "$ARGUMENTS"],
-                    }
-                ]
-            },
-        )
+        side_effect=[
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "name": "custom",
+                            "description": "Custom command",
+                            "template": "private prompt",
+                            "hints": ["$1", "$ARGUMENTS"],
+                        }
+                    ]
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "build", "name": "Build", "mode": "primary"},
+                        {"id": "plan", "name": "Plan", "mode": "primary"},
+                        {"id": "custom-agent", "name": "Custom agent", "mode": "all"},
+                        {"id": "explore", "name": "Explore", "mode": "subagent"},
+                        {"id": "hidden", "name": "Hidden", "mode": "primary", "hidden": True},
+                    ]
+                },
+            ),
+        ]
     )
-    assert await control.list_commands() == [
-        {
-            "id": "custom",
-            "name": "custom",
-            "description": "Custom command",
-            "aliases": [],
-            "argument_hint": "$1 $ARGUMENTS",
-            "kind": "prompt",
-        }
+    catalog = await control.list_commands()
+    assert [item["id"] for item in catalog] == [
+        "compact",
+        "agent:build",
+        "agent:plan",
+        "agent:custom-agent",
+        "custom",
     ]
-    control._request.assert_awaited_with("GET", "/api/command", None)
+    assert catalog[-1]["argument_hint"] == "$1 $ARGUMENTS"
+    assert all("template" not in item for item in catalog)
+    control._request.assert_awaited_with("GET", "/api/agent", None)
 
 
 async def test_execution_revalidates_catalog_and_preserves_arguments(control):
@@ -71,6 +86,108 @@ async def test_missing_command_never_falls_through_to_prompt(control):
     with pytest.raises(ControlError, match="no longer available"):
         await control.execute_command("removed", "")
     assert control._request.await_count == 2
+
+
+async def test_native_agent_selection_uses_native_id_without_permission_changes(control):
+    control._request = AsyncMock(
+        side_effect=[
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(
+                200, json={"data": [{"id": "custom", "name": "Custom", "mode": "primary"}]}
+            ),
+            httpx.Response(204),
+        ]
+    )
+    await control.execute_command("agent:custom", "")
+    control._request.assert_awaited_with(
+        "POST", "/api/session/native-session/agent", {"agent": "custom"}
+    )
+    assert control._request.await_count == 3
+
+
+@pytest.mark.parametrize("agent", ["build", "plan"])
+@pytest.mark.parametrize("via_command", [False, True])
+async def test_cold_session_waits_for_plugin_agents_before_selection(control, agent, via_command):
+    activated = False
+    calls = []
+
+    async def request(method, path, body=None):
+        nonlocal activated
+        calls.append((method, path, body))
+        if path == "/api/integration":
+            activated = True
+            return httpx.Response(200, json={"data": []})
+        if path == "/api/agent":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": name, "name": name.title(), "mode": "primary"}
+                        for name in ("build", "plan")
+                    ]
+                    if activated
+                    else []
+                },
+            )
+        assert method == "POST" and path == "/api/session/native-session/agent"
+        return httpx.Response(204)
+
+    control._request = AsyncMock(side_effect=request)
+    if via_command:
+        await control.execute_command(f"agent:{agent}", "")
+    else:
+        await control.select_agent(agent)
+    assert calls == [
+        ("GET", "/api/integration", None),
+        ("GET", "/api/agent", None),
+        ("POST", "/api/session/native-session/agent", {"agent": agent}),
+    ]
+
+
+async def test_agent_selection_does_not_continue_after_activation_failure(control):
+    control._request = AsyncMock(return_value=httpx.Response(503))
+    with pytest.raises(ControlTransportError, match="plugin activation"):
+        await control.select_agent("plan")
+    control._request.assert_awaited_once_with("GET", "/api/integration", None)
+
+
+@pytest.mark.parametrize("agent", ["missing", "explore", "hidden"])
+async def test_activated_catalog_rejects_unavailable_primary_agents(control, agent):
+    control._request = AsyncMock(
+        side_effect=[
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "build", "name": "Build", "mode": "primary"},
+                        {"id": "explore", "name": "Explore", "mode": "subagent"},
+                        {"id": "hidden", "name": "Hidden", "mode": "primary", "hidden": True},
+                    ]
+                },
+            ),
+        ]
+    )
+    with pytest.raises(ControlError, match="no longer available"):
+        await control.select_agent(agent)
+    assert control._request.await_count == 2
+
+
+async def test_native_compact_is_available_without_a_prompt_template(control):
+    control._request = AsyncMock(
+        side_effect=[httpx.Response(204), httpx.Response(200, json={"data": {"id": "compact"}})]
+    )
+    result = await control.execute_command("compact", "")
+    assert result["kind"] == "transcript"
+    control._request.assert_awaited_with("POST", "/api/session/native-session/compact", {})
+
+
+@pytest.mark.parametrize("command", ["compact", "agent:plan"])
+async def test_native_actions_reject_arguments_before_side_effects(control, command):
+    control._request = AsyncMock()
+    with pytest.raises(ControlError, match="does not accept arguments"):
+        await control.execute_command(command, "unexpected")
+    control._request.assert_not_awaited()
 
 
 async def test_rejected_gateway_selection_never_executes_command(control):

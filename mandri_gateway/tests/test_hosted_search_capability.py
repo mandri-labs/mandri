@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from mandri.core.codex_catalog import CATALOG_ENV
@@ -83,9 +83,11 @@ def test_unadvertised_search_does_not_disable_any_coding_tool_or_permission():
 
 async def test_named_provider_resolves_catalog_by_model_id(monkeypatch):
     provider = SimpleNamespace(kind=ProviderKind.OPENROUTER, api_base=None, api_key="scoped")
-    runtime = SimpleNamespace(_routes=SimpleNamespace(providers={"custom-provider": provider}))
+    providers = SimpleNamespace(get_active=Mock(return_value=provider))
+    runtime = SimpleNamespace(_routes=SimpleNamespace(providers=providers))
     fetch = AsyncMock(return_value=ModelMetadata(128000, 4096, hosted_web_search=True))
     monkeypatch.setattr("mandri.runtime.service.fetch_model_metadata", fetch)
     metadata = await RuntimeService._resolve_metadata(runtime, "custom-provider/vendor/model")
+    providers.get_active.assert_called_once_with("custom-provider")
     fetch.assert_awaited_once_with(ProviderKind.OPENROUTER, "vendor/model", None, "scoped")
     assert metadata is not None and metadata.hosted_web_search
